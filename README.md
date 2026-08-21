@@ -52,7 +52,7 @@ deployment.
 
 ## Building
 
-Requires Go 1.26 or newer. No cgo, no C toolchain.
+Requires Go 1.26.5 or newer. No cgo, no C toolchain.
 
 ```console
 $ git clone https://github.com/wegweiserzone/wegweiser
