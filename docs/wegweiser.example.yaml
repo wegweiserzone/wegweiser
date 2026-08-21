@@ -1,0 +1,65 @@
+# Wegweiser configuration.
+#
+# This file holds bootstrap settings and nothing else. Zones, records, the
+# reverse policy, tokens and retention live in the database and are reachable
+# through the API — a setting that lives only in a file is a feature that
+# exists only for whoever can log in to the machine (docs/decisions.md D11).
+#
+# Everything here is optional; what is left out takes the built-in default.
+# A command-line flag beats an environment variable, which beats this file,
+# which beats the default. `weg config show` prints what a server would start
+# with and where each value came from.
+#
+# The packaging puts this at /etc/wegweiser/config.yaml. `--config` or
+# $WEG_CONFIG moves it.
+
+dns:
+  # Where to answer queries, as host:port. The default is every address on
+  # port 53, which needs CAP_NET_BIND_SERVICE and not root.
+  # Environment: $WEG_LISTEN
+  listen: ":53"
+
+  # The largest UDP response to send, whatever a client advertises it can
+  # receive. A requestor may claim 4096 octets; whether the path between you
+  # carries them is not something it can know, and a fragmented response is a
+  # response that often does not arrive. 1232 is the DNS Flag Day advice.
+  # Environment: $WEG_UDP_RESPONSE_SIZE
+  udpResponseSize: 1232
+
+  # How many TCP connections to answer at once. Each one costs a goroutine and
+  # buffers that grow to the largest message its client has sent, so an
+  # unbounded accept loop is a cheap way to take this server's memory. 0 takes
+  # the built-in default of 150; a negative number removes the bound, which is
+  # a decision to make on purpose.
+  # Environment: $WEG_MAX_TCP_CLIENTS
+  maxTCPClients: 0
+
+api:
+  # Where to serve the HTTP API and the web interface. Loopback by default,
+  # because this API can change every zone this server answers for: exposing
+  # it to a network is a decision to make on purpose rather than one to
+  # inherit from a default. Put a reverse proxy with TLS in front of it.
+  # Environment: $WEG_API_LISTEN
+  listen: "127.0.0.1:8053"
+
+  # Whether to serve the web interface. It is part of the binary, so switching
+  # it off saves no memory worth counting — what it does is remove the routes
+  # entirely, so that a nameserver exposes an API and nothing that renders in
+  # a browser. The CLI can do everything the interface can (architecture
+  # invariant 1), so nothing becomes unreachable.
+  # Environment: $WEG_API_UI
+  ui: true
+
+database:
+  # Where the SQLite database lives. It is the source of truth; what queries
+  # are answered from is an in-memory snapshot built from it at startup.
+  # The directory has to exist.
+  # Environment: $WEG_DATABASE
+  path: "/var/lib/wegweiser/wegweiser.db"
+
+log:
+  # How loudly to report: debug, info, warn or error. Faults and lifecycle
+  # events go to standard error; what a command produced goes to standard
+  # output.
+  # Environment: $WEG_LOG_LEVEL
+  level: "info"

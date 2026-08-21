@@ -1,0 +1,6 @@
+node_modules/
+.svelte-kit/
+build/
+tests/.server.json
+test-results/
+playwright-report/

@@ -1,0 +1,205 @@
+# Changelog
+
+All notable changes to this project are documented here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Until v0.1.0 the
+public API is unstable and may change without a deprecation period.
+
+## [Unreleased]
+
+### Added
+
+#### DNS
+
+- Authoritative UDP and TCP listeners. `SO_REUSEPORT` datagram sockets, one per processor,
+  answered in the reading goroutine; connections read with an idle timeout and answered in
+  order. Shutdown drains queries in flight. Measured against the wire library's own server
+  over loopback: 1874 ns per query against 4751, four allocations against twenty-one.
+- Query resolution as a pure function of a snapshot and a question: the canonical name
+  search of RFC 1034 §4.3.2, referral before local data below a delegation, NODATA for an
+  empty non-terminal, wildcards only where no closer name exists (RFC 4592), and the SOA at
+  the negative-caching TTL of RFC 2308. `ANY` returns one RRset (RFC 8482), CNAME chains cap
+  at eight, and NS, MX and SRV targets bring their addresses.
+- Message layer with EDNS0 (RFC 6891), truncation, extended DNS errors (RFC 8914) and QNAME
+  case echoed as asked (0x20). Malformed queries are answered in a fixed order of checks;
+  only an unreadable header or a message that is already a response is dropped. Fuzzed from
+  the first commit.
+- Immutable snapshot published by atomic pointer swap, so a zone change never blocks a
+  query. Empty non-terminals, delegations and wildcards are resolved at build time.
+  `dns.Rebuild` builds one from a store, which is both startup and crash recovery.
+- Connections bounded at 150, settable with `--max-tcp-clients`.
+
+#### Zones and records
+
+- Zone model in `internal/zone`: names, record types, classes, TTLs, canonical record data,
+  RFC 1982 serial arithmetic and SOA parameters. Fuzzed from the first commit.
+- Address-to-reverse-name mapping, including IPv6 nibble form (RFC 3596 §2.5) and RFC 2317
+  classless delegation.
+- Validation of zone and record aggregates, including RFC 2181 RRset semantics and one
+  delegation rule (RFC 1034 §4.2.1) shared by the whole-zone check and the write path.
+- Automatic reverse management: an address record generates the matching PTR in the
+  responsible reverse zone and the entry follows the record it came from. RFC 2317
+  parent-side CNAMEs are generated where this server holds both sides. Conflicts (D3) and
+  missing reverse zones (D6) are returned as structured data, not logged. A generated record
+  can be detached and taken over (D4). A reverse zone created for a network already in use
+  is filled by reconciling it.
+
+#### Storage and history
+
+- ULID identifiers in `internal/id`; journal commit and event types in `internal/journal`.
+- `Store` interface in `internal/store` with a SQLite implementation: embedded forward-only
+  migrations, split read and write connection pools, connection settings verified at
+  startup, cursor paging, longest-prefix reverse zone lookup, and `IterZones` for a snapshot
+  rebuild. `internal/store/storetest` is the conformance suite every backend has to pass.
+- Write path in `internal/apply`: commands become record changes, record changes become
+  journal events, and the serial advances by one, in a single transaction. Zone creation,
+  update and deletion take the same path, so no write bypasses the journal. A commit
+  outlives the zone it describes.
+- Rollback to an earlier serial, written forward as a new commit rather than rewound: a
+  secondary that has seen a higher serial would refuse a jump back (RFC 1982).
+
+#### Zonefiles
+
+- RFC 1035 §5 reader: `$ORIGIN`, `$TTL`, parenthesised records, comments, `@`, relative
+  names, omitted owners, classes and TTLs. `$INCLUDE` is refused, and the number of records
+  a file may become is bounded.
+- Writer: absolute names, explicit TTL and class, canonical order of RFC 4034 §6.1.
+  Exporting the same zone twice produces the same bytes, and `named-checkzone` reads it.
+- Whole-zone import. The incoming SOA serial is the serial the zone starts at (D2). Records
+  a delegation would make unanswerable are skipped and reported rather than failing the file.
+
+#### API
+
+- OpenAPI specification in `internal/api/openapi.yaml` as the single source of truth, with
+  models, server interface and client generated from it. CI fails if the generated code
+  drifts.
+- Zones and records: create, list, read, update, delete. A write is answering on the wire
+  before the response reaches the client. RRset replacement sends the intended contents and
+  the server computes the difference; several sets in one request become one commit.
+- History: commits listed newest first, filtered by zone, kind, actor or time, each carrying
+  the records it removed and added. The history of a deleted zone survives under the name it
+  had. Rollback exposed as an endpoint.
+- Failures are RFC 9457 problem documents.
+- Bearer tokens with `read`, `write` and `admin` scopes, rate-limited per source address on
+  failure. The first start mints an administrator token and prints it once. Managing tokens
+  needs `admin`, and revoking the last administering token is refused.
+- Browser sessions: a token exchanged once for an `httpOnly` cookie, with a CSRF header on
+  state-changing requests (D5). Refused over plain HTTP from another machine.
+- Zonefile import and export over HTTP, with a body limit of their own.
+- Zone lookup by exact name, because `search` also matches `notexample.com`.
+- `GET /api/v1/metrics`; `/healthz` is the only endpoint needing no credential.
+- `GET /api/v1/queries/stream` as Server-Sent Events, with a `status` message before
+  anything happens and again whenever sampling or drops change. Exempt from the request
+  timeout.
+
+#### Observation
+
+- Every exchange is offered to one observer hook: question, answer, size, transport, source
+  and duration. 63 ns with something watching, 2 ns without, no allocations.
+- Prometheus metrics in `internal/metrics`: queries by transport, type and response code, a
+  latency histogram bracketing the sub-millisecond target of D12, response sizes, drops,
+  truncations, snapshot contents and build info, alongside the Go runtime and process
+  collectors. QTYPEs with no assigned mnemonic are counted together. 87 ns per query, no
+  allocations.
+- Live query stream in `internal/stream`. A watcher subscribes with a filter (name and
+  below, type, response code, client network) applied before anything is buffered. Under
+  burst it samples and reports the ratio rather than dropping silently (D9); a watcher that
+  falls behind loses its oldest events. 2 ns per query unwatched, 10 to 43 ns per watcher.
+
+#### CLI
+
+- `weg serve`, `weg health`, `weg version`, `weg config show`.
+- `weg zone list|show|create|delete|update|enable|disable|import|export|rollback`.
+  `--email` is turned into the RNAME of RFC 1035 §3.3.13 with the local part escaped.
+  `--ns-address` writes the name server's address record while the zone is created.
+  `--auto-reverse on|off|server` spells out the third state.
+- `weg record list|add|delete|update|enable|disable|detach`, written the way a zonefile is:
+  names relative to the zone unless dotted, `@` for the apex, record data as the rest of the
+  line. Deleting by name and type alone is refused where several records share them.
+  A `TXT` whose quotes the shell ate is quoted again.
+- `weg history list|show`, `weg token list|create|revoke`, `weg query tail`.
+- `--output text|json|yaml` on every command, colour off without a TTY, `NO_COLOR` honoured.
+  `weg token create` puts the secret alone on stdout.
+- Shell completion for bash, zsh and fish, with zone names, owner names and record types
+  fetched from the API and a two-second bound.
+
+#### Configuration
+
+- `/etc/wegweiser/config.yaml`, movable with `--config` or `$WEG_CONFIG`, holding bootstrap
+  settings only (D11). A flag beats an environment variable, which beats the file, which
+  beats the default, and every value records which of the four it came from.
+- A misspelt key is refused, naming the key. Tokens may not be set in the file.
+- `--log-level` and the `log.level` setting.
+- A client on the server's own machine reads the API address from the file.
+
+#### Packaging
+
+- systemd unit and container image, both unprivileged with `CAP_NET_BIND_SERVICE` alone. The
+  unit scores 1.4 on `systemd-analyze security`; `make unit-check` runs the verifier.
+- Image is `scratch` with one static binary, about 21 MB, uid 65532, carrying its own
+  configuration file and using `weg health` as its health check.
+- `make demo` brings a server up on unprivileged ports with a temporary database and sample
+  zones; `make demo-stop` removes it.
+
+#### Web interface
+
+- SvelteKit 5, TypeScript and Tailwind v4, built statically and embedded with `embed.FS`,
+  served at the root beside the API (D16). `api.ui: false` serves the API alone and says so.
+  Costs the binary 348 kB, 1.73 per cent.
+- Signal design system: one accent colour enforced by clearing Tailwind's palette, three
+  self-hosted faces (152 kB, latin subset), tabular figures for addresses, TTLs and serials,
+  dark first with light applied before the first paint. `/design` renders it as a reference.
+- Typed API client generated from the spec, with no HTTP library under it. The
+  `@ts-expect-error` directives in `client.types.test.ts` are the test.
+- Zone list and zone settings, with automatic reverse as a three-state control.
+- Record editor grouped by owner name, showing what a write caused: the PTR written, the one
+  refused for a conflict (D3), and the reverse zone that would be needed (D6). A generated
+  record is not edited in place; the dialog offers to detach it (D4).
+- Per-type record data fields (SRV, TXT, CAA and the rest) with the assembled line shown
+  underneath. An unknown type still gets one box.
+- Server-side paging with the filters as query parameters. No total row count, by design.
+- A zone can be created from a network: `192.168.0.0/16`, the classless form of RFC 2317,
+  and `2001:db8::/32` as nibbles. A bare address is refused with the network it likely meant.
+- Live query stream with source, name, type, response code and latency, over charts of
+  queries per second and latency distribution, and what the stream is leaving out on screen.
+- History with a diff per commit and revert to an earlier state.
+- Token management, and a command palette on `Ctrl+K` with `g`-prefixed shortcuts and `/`
+  to focus the current filter.
+- Overview built from the server's own metrics: answers by response code, questions by type,
+  latency against the D12 targets, recent changes and a query rate.
+- A name server the zone points at with no address for it is called out, in both clients
+  (RFC 1912 §2.8).
+- 48 browser smoke tests driving a real `weg` through Firefox. A page that logs an error
+  fails the test.
+
+### Fixed
+
+- A configured DNS port of zero could fail to start. The kernel picks the datagram port
+  without regard to the stream ports, so the number handed out could already be taken. Only
+  an unchosen port is retried; an explicit one that is taken still fails.
+- A token's "last used" is written. `TouchToken` existed with a conformance test and nothing
+  called it, so every token read "never". Writes are batched into one transaction every
+  thirty seconds rather than made per request.
+- `CreateZone` takes only the start-of-authority fields the client has an opinion about.
+  Requiring all of them meant sending five timers as zero and being refused for a refresh
+  interval nobody had mentioned.
+- TCP connections are bounded. Each costs a goroutine and buffers that grow to the largest
+  message the client sent, over the transport a datagram client is told to use when an
+  answer does not fit.
+- Faults and lifecycle events go through `log/slog` with a level and a timestamp, in logfmt
+  or JSON Lines depending on `--output`. Command results still go through the printer.
+- One delegation rule for both the whole-zone check and an ordinary write. The same zone was
+  legal or illegal depending on the order it was built in.
+- Amplification is measured and held by a test rather than assumed behind four separate
+  bounds. The worst case is 26.5× (ADR 0006).
+- Looking a record up by owner name is an index seek rather than a zone scan. SQLite
+  preferred the sort-order index because it alone satisfied `ORDER BY sort_key`. A
+  single-record commit is now 243 µs and stays there at forty thousand records, against
+  1.3 ms and climbing.
+- A database that cannot be opened fails immediately, naming what to check, instead of
+  retrying until the busy timeout expires.
+- Reverse automation is on for an applier that was never told either way. As a plain `bool`
+  its zero value switched the headline feature off; it is a `*bool` now, nil meaning on.
+
+[Unreleased]: https://github.com/wegweiserzone/wegweiser/commits/main
