@@ -32,3 +32,9 @@ updates:
     groups:
       web-dev:
         dependency-type: development
+    ignore:
+      # openapi-typescript declares a peer dependency of typescript ^5.x, and
+      # the generated client is what the interface is built against. Major
+      # bumps stay out until that peer range moves.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
