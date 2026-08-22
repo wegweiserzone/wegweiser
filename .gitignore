@@ -27,6 +27,12 @@
 /web/.svelte-kit/
 /web/build/
 
+# Playwright writes these when a browser test fails: a trace, a screenshot and
+# the page as it stood. Useful locally, never worth committing.
+/test-results/
+/web/test-results/
+/playwright-report/
+
 # Agent instructions. The project's own conventions are committed as
 # docs/conventions.md; this file is only the local working agreement.
 /CLAUDE.md
