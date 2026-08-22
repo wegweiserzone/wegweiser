@@ -22,6 +22,8 @@ export type QueryEvent = components["schemas"]["QueryEvent"];
 export type StreamStatus = components["schemas"]["StreamStatus"];
 export type Conflict = components["schemas"]["Conflict"];
 export type MissingZone = components["schemas"]["MissingZone"];
+export type Settings = components["schemas"]["Settings"];
+export type ReverseConflictPolicy = components["schemas"]["ReverseConflictPolicy"];
 
 /**
  * onUnauthenticated is what the interface does when a session has ended.

@@ -37,6 +37,9 @@
     { key: "s", label: "Query stream", href: "/stream" },
     { key: "h", label: "History", href: "/history" },
     { key: "t", label: "Tokens", href: "/tokens" },
+    // The comma rather than a letter, because that is the key every other
+    // application puts settings on and the letters that fit are taken.
+    { key: ",", label: "Settings", href: "/settings" },
   ];
 
   const sections: Command[] = places.map((place) => ({

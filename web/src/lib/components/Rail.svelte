@@ -41,6 +41,11 @@
       label: "Tokens",
       icon: "M8 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 12h9M18 12v4M15.5 12v3",
     },
+    {
+      href: "/settings",
+      label: "Settings",
+      icon: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6M12 2v3M12 19v3M4.2 4.2l2.2 2.2M17.6 17.6l2.2 2.2M2 12h3M19 12h3M4.2 19.8l2.2-2.2M17.6 6.4l2.2-2.2",
+    },
   ];
 
   const current = $derived(page.url.pathname);

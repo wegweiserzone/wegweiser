@@ -61,8 +61,15 @@ test("every section in the rail leads somewhere", async ({ page, server }) => {
   await signIn(page, server);
 
   const sections = page.getByLabel("Sections").getByRole("link");
-  await expect(sections).toHaveCount(5);
-  for (const name of ["Overview", "Zones", "Query stream", "History", "Tokens"]) {
+  await expect(sections).toHaveCount(6);
+  for (const name of [
+    "Overview",
+    "Zones",
+    "Query stream",
+    "History",
+    "Tokens",
+    "Settings",
+  ]) {
     await expect(page.getByLabel("Sections").getByRole("link", { name })).toBeVisible();
   }
   await expect(page.getByText("soon")).toHaveCount(0);
