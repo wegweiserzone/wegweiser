@@ -301,6 +301,10 @@ func (a *Applier) queueDelegation(
 		// RFC 2181 §10.1: where a CNAME is, nothing else may be. Something is
 		// already answering for this address in the parent, and taking it away
 		// to install a delegation is not this automation's call.
+		pol, perr := a.effectivePolicy(ctx, tx)
+		if perr != nil {
+			return perr
+		}
 		res.Conflicts = append(res.Conflicts, Conflict{
 			Source:      ptr.ManagedBy,
 			SourceName:  ptr.Name,
@@ -309,7 +313,7 @@ func (a *Applier) queueDelegation(
 			ReverseName: plain,
 			Existing:    held[0].Name,
 			Generated:   held[0].IsManaged(),
-			Policy:      a.policy,
+			Policy:      pol,
 		})
 		return nil
 	}
@@ -358,6 +362,11 @@ func (a *Applier) resolveConflict(
 	ctx context.Context, tx store.Tx, cs *changeSet, rev *zone.Zone, source *zone.Record,
 	addr netip.Addr, key zone.RRsetKey, existing []zone.Record, res *Result,
 ) error {
+	pol, err := a.effectivePolicy(ctx, tx)
+	if err != nil {
+		return err
+	}
+
 	held := &existing[0]
 	conflict := Conflict{
 		Source:      source.ID,
@@ -367,13 +376,13 @@ func (a *Applier) resolveConflict(
 		ReverseName: key.Name,
 		Existing:    zone.Name{},
 		Generated:   held.IsManaged(),
-		Policy:      a.policy,
+		Policy:      pol,
 	}
 	if n, err := zone.ParseName(held.RData.String()); err == nil {
 		conflict.Existing = n
 	}
 
-	switch a.policy {
+	switch pol {
 	case PolicyMulti:
 		ptr, err := a.queueGenerated(cs, rev, source, key)
 		if err != nil {

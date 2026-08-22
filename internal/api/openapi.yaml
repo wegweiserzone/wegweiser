@@ -41,6 +41,11 @@ tags:
       How a browser authenticates. It posts a token once and works from a
       cookie afterwards, so that no script running in the page can read the
       credential (docs/decisions.md D5).
+  - name: settings
+    description: |
+      What this server does when nobody has said otherwise. A zone may override
+      some of these on itself; what is here is the fallback everything else
+      starts from.
   - name: health
     description: Whether the server is fit to answer.
   - name: metrics
@@ -601,6 +606,43 @@ paths:
           description: The session is over.
         default: { $ref: "#/components/responses/Problem" }
 
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Read the server-wide settings
+      description: |
+        These are the defaults a zone that says nothing about itself inherits.
+        They live in the database, so changing one takes effect on the next
+        write without a restart (docs/decisions.md D11).
+      responses:
+        "200":
+          description: The settings in force.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    patch:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Change the server-wide settings
+      description: |
+        A field that is absent is left alone, so a client may send only what it
+        means to change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSettings" }
+      responses:
+        "200":
+          description: The settings as they now stand.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Problem" }
+
   /tokens:
     get:
       operationId: listTokens
@@ -808,6 +850,38 @@ components:
           type: array
           description: Reverse zones that would be needed and do not exist.
           items: { $ref: "#/components/schemas/MissingZone" }
+
+    ReverseConflictPolicy:
+      type: string
+      enum: [first-wins, last-wins, multi, reject]
+      description: |
+        What happens when an address already answers a reverse lookup with some
+        other name (docs/decisions.md D3).
+
+        - `first-wins` keeps the entry that is there and reports the conflict.
+          The default, and the only value that never changes an answer nobody
+          asked to change.
+        - `last-wins` replaces a generated entry with the new one, still
+          reporting the conflict. An entry somebody wrote by hand is never
+          replaced.
+        - `multi` keeps both, which is the literal reading of "generate the
+          reverse entry" and turns a routine change into a multi-record PTR set
+          that reverse-lookup checks are not built for.
+        - `reject` refuses the whole change.
+
+    Settings:
+      type: object
+      required: [reverseConflictPolicy]
+      properties:
+        reverseConflictPolicy:
+          $ref: "#/components/schemas/ReverseConflictPolicy"
+
+    UpdateSettings:
+      type: object
+      description: A field that is absent is left as it is.
+      properties:
+        reverseConflictPolicy:
+          $ref: "#/components/schemas/ReverseConflictPolicy"
 
     Health:
       type: object
@@ -1420,15 +1494,22 @@ components:
     Conflict:
       type: object
       description: |
-        An address already answers with another name, so no second PTR was
-        written (docs/decisions.md D3). It is data rather than an error: which
-        name should be canonical is a decision for a person.
-      required: [address, existingName, requestedName]
+        An address already answers with another name (docs/decisions.md D3). It
+        is data rather than an error: which name should be canonical is a
+        decision for a person.
+      required: [address, existingName, requestedName, policy]
       properties:
         address: { type: string }
         existingName: { type: string }
         requestedName: { type: string }
         existingRecordId: { type: string }
+        policy:
+          allOf:
+            - $ref: "#/components/schemas/ReverseConflictPolicy"
+          description: |
+            The policy that decided what happened here, so a client can say
+            whether the existing name was kept, replaced or joined rather than
+            leaving the reader to guess from the records.
 
     MissingZone:
       type: object

@@ -145,6 +145,7 @@ func conflictsToAPI(cs []apply.Conflict) *[]gen.Conflict {
 			Address:       cs[i].Address.String(),
 			ExistingName:  cs[i].Existing.String(),
 			RequestedName: cs[i].SourceName.String(),
+			Policy:        gen.ReverseConflictPolicy(cs[i].Policy),
 		})
 	}
 	return &out

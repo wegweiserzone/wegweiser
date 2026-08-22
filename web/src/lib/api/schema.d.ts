@@ -415,6 +415,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the server-wide settings
+         * @description These are the defaults a zone that says nothing about itself inherits.
+         *     They live in the database, so changing one takes effect on the next
+         *     write without a restart (docs/decisions.md D11).
+         */
+        get: operations["getSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change the server-wide settings
+         * @description A field that is absent is left alone, so a client may send only what it
+         *     means to change.
+         */
+        patch: operations["updateSettings"];
+        trace?: never;
+    };
     "/tokens": {
         parameters: {
             query?: never;
@@ -549,6 +576,30 @@ export interface components {
             conflicts?: components["schemas"]["Conflict"][];
             /** @description Reverse zones that would be needed and do not exist. */
             missingZones?: components["schemas"]["MissingZone"][];
+        };
+        /**
+         * @description What happens when an address already answers a reverse lookup with some
+         *     other name (docs/decisions.md D3).
+         *
+         *     - `first-wins` keeps the entry that is there and reports the conflict.
+         *       The default, and the only value that never changes an answer nobody
+         *       asked to change.
+         *     - `last-wins` replaces a generated entry with the new one, still
+         *       reporting the conflict. An entry somebody wrote by hand is never
+         *       replaced.
+         *     - `multi` keeps both, which is the literal reading of "generate the
+         *       reverse entry" and turns a routine change into a multi-record PTR set
+         *       that reverse-lookup checks are not built for.
+         *     - `reject` refuses the whole change.
+         * @enum {string}
+         */
+        ReverseConflictPolicy: "first-wins" | "last-wins" | "multi" | "reject";
+        Settings: {
+            reverseConflictPolicy: components["schemas"]["ReverseConflictPolicy"];
+        };
+        /** @description A field that is absent is left as it is. */
+        UpdateSettings: {
+            reverseConflictPolicy?: components["schemas"]["ReverseConflictPolicy"];
         };
         Health: {
             /** @enum {string} */
@@ -1029,15 +1080,21 @@ export interface components {
             secret: string;
         };
         /**
-         * @description An address already answers with another name, so no second PTR was
-         *     written (docs/decisions.md D3). It is data rather than an error: which
-         *     name should be canonical is a decision for a person.
+         * @description An address already answers with another name (docs/decisions.md D3). It
+         *     is data rather than an error: which name should be canonical is a
+         *     decision for a person.
          */
         Conflict: {
             address: string;
             existingName: string;
             requestedName: string;
             existingRecordId?: string;
+            /**
+             * @description The policy that decided what happened here, so a client can say
+             *     whether the existing name was kept, replaced or joined rather than
+             *     leaving the reader to guess from the records.
+             */
+            policy: components["schemas"]["ReverseConflictPolicy"];
         };
         /**
          * @description A reverse entry has nowhere to go, because no zone covers the address.
@@ -1651,6 +1708,52 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings in force. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSettings"];
+            };
+        };
+        responses: {
+            /** @description The settings as they now stand. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
             };
             default: components["responses"]["Problem"];
         };

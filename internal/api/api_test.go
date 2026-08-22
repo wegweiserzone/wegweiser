@@ -2204,3 +2204,81 @@ func TestCreateZoneFromANetworkRefusals(t *testing.T) {
 		})
 	}
 }
+
+// TestSettings covers the server-wide settings of docs/decisions.md D3 and
+// D11: the reverse conflict policy lives in the database, every client reaches
+// it through the API, and changing it takes effect on the next write.
+func TestSettings(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	var got gen.Settings
+	h.decode(h.do(http.MethodGet, "/settings", nil), http.StatusOK, &got)
+	if got.ReverseConflictPolicy != gen.FirstWins {
+		t.Errorf("policy = %q on a fresh server, want the default of D3",
+			got.ReverseConflictPolicy)
+	}
+
+	t.Run("a value outside the enum is refused", func(t *testing.T) {
+		resp := h.do(http.MethodPatch, "/settings",
+			map[string]string{"reverseConflictPolicy": "whatever-wins"})
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Errorf("status = %d, want 422 for a policy that does not exist",
+				resp.StatusCode)
+		}
+	})
+
+	t.Run("it changes and reads back", func(t *testing.T) {
+		var after gen.Settings
+		h.decode(h.do(http.MethodPatch, "/settings", gen.UpdateSettings{
+			ReverseConflictPolicy: ptr(gen.LastWins),
+		}), http.StatusOK, &after)
+		if after.ReverseConflictPolicy != gen.LastWins {
+			t.Errorf("policy = %q after the change, want last-wins",
+				after.ReverseConflictPolicy)
+		}
+
+		var reread gen.Settings
+		h.decode(h.do(http.MethodGet, "/settings", nil), http.StatusOK, &reread)
+		if reread.ReverseConflictPolicy != gen.LastWins {
+			t.Errorf("policy = %q on re-reading, want it to have been stored",
+				reread.ReverseConflictPolicy)
+		}
+	})
+}
+
+// TestSettingsChangeTheWritePath is the half that matters: the endpoint is
+// worth nothing unless the policy it stores is the one a write actually runs
+// under. Under last-wins the second name takes the address over, which under
+// the default it would not.
+func TestSettingsChangeTheWritePath(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	forward := h.createZone("example.com.")
+	h.createZone("2.0.192.in-addr.arpa.")
+
+	h.decode(h.do(http.MethodPatch, "/settings", gen.UpdateSettings{
+		ReverseConflictPolicy: ptr(gen.LastWins),
+	}), http.StatusOK, &gen.Settings{})
+
+	h.createRecord(forward.Id, gen.CreateRecord{
+		Name: "www.example.com.", Type: "A", Data: "192.0.2.10",
+	})
+	second := h.createRecord(forward.Id, gen.CreateRecord{
+		Name: "mail.example.com.", Type: "A", Data: "192.0.2.10",
+	})
+
+	if second.Conflicts == nil || len(*second.Conflicts) != 1 {
+		t.Fatalf("conflicts = %v, want last-wins to still report what it replaced",
+			second.Conflicts)
+	}
+	if got := (*second.Conflicts)[0].Policy; got != gen.LastWins {
+		t.Errorf("conflict policy = %q, want the one the settings hold", got)
+	}
+
+	got := h.answers("10.2.0.192.in-addr.arpa.", zone.TypePTR)
+	if len(got) != 1 || !strings.HasSuffix(got[0], "\tmail.example.com.") {
+		t.Errorf("PTR answers %v, want last-wins to have handed the address to the second name", got)
+	}
+}
