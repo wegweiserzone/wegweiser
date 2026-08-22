@@ -50,6 +50,26 @@ Nothing here has run in production, and the numbers in
 [docs/decisions.md](docs/decisions.md) D12 are targets rather than measurements of a real
 deployment.
 
+## Installing
+
+A release carries a static binary for linux/amd64 and linux/arm64, with checksums.
+
+```console
+$ curl -LO https://github.com/wegweiserzone/wegweiser/releases/latest/download/checksums.txt
+$ curl -LO https://github.com/wegweiserzone/wegweiser/releases/latest/download/weg_0.1.0_linux_amd64.tar.gz
+$ sha256sum -c --ignore-missing checksums.txt
+$ tar xzf weg_0.1.0_linux_amd64.tar.gz && ./weg version
+```
+
+Or as a container, which is `scratch` with the one binary in it:
+
+```console
+$ podman run --rm --cap-add=NET_BIND_SERVICE -p 53:53/udp -p 53:53/tcp -p 8053:8053 \
+    -v weg:/var/lib/wegweiser ghcr.io/wegweiserzone/wegweiser:latest
+```
+
+`--cap-add=NET_BIND_SERVICE` is what binding port 53 needs; the server never wants root.
+
 ## Building
 
 Requires Go 1.26.5 or newer. No cgo, no C toolchain.

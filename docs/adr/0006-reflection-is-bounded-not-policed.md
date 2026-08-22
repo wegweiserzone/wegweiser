@@ -50,9 +50,12 @@ still a usable one.
 
 Accepted knowingly: **a v0.1 node on a public address can be used to reflect traffic at a
 third party**, at up to 26.5× and only while the attacker has a large RRset to aim at. An
-operator exposing v0.1 to the internet should put a rate limiter in front of it (nftables
-`limit` on port 53 is enough to bound it), and the deployment documentation says so rather
-than leaving them to work it out.
+operator exposing v0.1 to the internet should put a rate limiter in front of it. On Linux
+that is one nftables rule:
+
+```
+nft add rule inet filter input udp dport 53 limit rate over 200/second drop
+```
 
 The number is pinned by a test. Raising `MaxUDPResponse`, loosening the additional-section
 bound or answering ANY with everything at a name are all allowed; doing any of them without

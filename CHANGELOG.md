@@ -8,6 +8,10 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] - 2026-08-22
+
 ### Added
 
 #### DNS
@@ -221,4 +225,5 @@ public API is unstable and may change without a deprecation period.
 - Reverse automation is on for an applier that was never told either way. As a plain `bool`
   its zero value switched the headline feature off; it is a `*bool` now, nil meaning on.
 
-[Unreleased]: https://github.com/wegweiserzone/wegweiser/commits/main
+[Unreleased]: https://github.com/wegweiserzone/wegweiser/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/wegweiserzone/wegweiser/releases/tag/v0.1.0
