@@ -202,15 +202,16 @@ func (r *Responder) fail(rcode int, code uint16, text string) {
 func (r *Responder) answer(snap *Snapshot) {
 	q := r.req.Question[0]
 
-	// TODO: this is where the allocation budget of D12 goes. The wire library
-	// decodes the name out of the packet into presentation form, and ParseName
-	// encodes that string straight back to the wire form it came from. Measured
-	// over a 100k-record zone, an exchange costs four allocations: two here,
-	// one for the presentation string, one for the question slice. Reading the
-	// name out of the query bytes with zone.NameFromWire would leave one, and
-	// that one is [zone.Name] holding a string. Step 4 decides whether the
-	// number justifies a narrower parser; it is not worth guessing at before
-	// the listener exists to measure against.
+	// Two of an exchange's four allocations are here: the wire library decodes
+	// the name out of the packet into presentation form, and ParseName encodes
+	// that string straight back to the wire form it came from. Reading the name
+	// out of the query bytes with a zone.NameFromWire would leave one.
+	//
+	// Measured and left alone (docs/decisions.md D12). The kernel is about 95%
+	// of what a query costs; these 128 octets are a fraction of the rest, and
+	// buying them means a hand-written name parser in the path a malformed
+	// packet reaches first. Revisit only if a benchmark on a real interface
+	// shows allocation pressure mattering.
 	name, err := zone.ParseName(q.Name)
 	if err != nil {
 		// The wire library accepted this name and we cannot read it, which

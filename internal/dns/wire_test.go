@@ -615,3 +615,44 @@ func TestAmplificationFactor(t *testing.T) {
 		})
 	}
 }
+
+// TestRespondAllocations pins the allocation budget of docs/decisions.md D12.
+//
+// It does not call t.Parallel: AllocsPerRun measures the whole process, and a
+// test running beside it would be counted here.
+//
+// Four is the number D12 settled on after measuring, not a target that happens
+// to be met. Two are the wire library decoding the query name into presentation
+// form and ParseName encoding it back, one is that string, one is the question
+// slice; the note in wire.go says what removing three would cost. A change that
+// moves this number is a change to that decision, so it fails here first.
+func TestRespondAllocations(t *testing.T) {
+	snap := resolveFixture(t)
+	r := NewResponder(DefaultLimits())
+	buf := make([]byte, wire.MaxMsgSize)
+
+	for _, tt := range []struct {
+		name  string
+		qname string
+		qtype zone.RRType
+		want  float64
+	}{
+		{"hit", "www.example.com.", zone.TypeA, 4},
+		{"a name no zone here covers", "www.example.org.", zone.TypeA, 4},
+		{"a name that is not there", "nope.example.com.", zone.TypeA, 4},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			query := packQuery(t, tt.qname, tt.qtype)
+			got := testing.AllocsPerRun(100, func() {
+				if _, err := r.Respond(snap, query, UDP, buf); err != nil {
+					t.Fatalf("respond: %v", err)
+				}
+			})
+			if got != tt.want {
+				t.Errorf("%.0f allocations per exchange, want %.0f (D12). "+
+					"Fewer is good news and still needs D12 changing to match",
+					got, tt.want)
+			}
+		})
+	}
+}
