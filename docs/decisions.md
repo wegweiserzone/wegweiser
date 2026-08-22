@@ -261,11 +261,26 @@ and it validates.
 | Cold start to serving, 1M records | < 30 s |
 | Allocations per query, steady state | 0 beyond the response buffer |
 
-These are release gates, benchmarked with `go test -bench` and `dnsperf`.
-
 The full-zone snapshot rebuild announced in the architecture document §3.4 is acceptable only
 while it meets the commit-to-visible target at 250k records in a zone. Missing it makes the
 incremental copy-on-write rebuild required rather than optional.
+
+**Status: of the seven rows, one is missed, one is part-way proven and five are estimates.**
+They were written as release gates before anything existed to measure them against. What
+`go test -bench` shows today, on a Ryzen 7 7700 over loopback:
+
+| Row | Where it stands |
+| --- | --- |
+| Query latency | `Snapshot.Resolve` takes 27–36 ns and a full UDP exchange 1853 ns in parallel. Far inside a millisecond, but these are means: no p99 under load has been taken. |
+| Allocations per query | **Missed.** An exchange costs four, not zero. `Snapshot.Resolve` itself allocates nothing; all four are in the message layer, and the TODO in `internal/dns/wire.go` names them and the parser that would remove three. |
+| Query throughput | Unmeasured. The parallel benchmark implies room far past 50,000 qps, but it is an in-process loop over loopback rather than a load test, and loopback has no NIC to run out of. |
+| Records at 1M / 250k | Unmeasured. Nothing here has been run against a database that large. |
+| Commit to visible | Unmeasured at 250k records in a zone, which is the size the rebuild question turns on. |
+| Cold start | Unmeasured. |
+
+Measuring the rest needs a seeded database of a million records and a generator that keeps
+many queries in flight, neither of which exists. Until it does, most of this table is an
+estimate and should not be quoted as anything else.
 
 ---
 
