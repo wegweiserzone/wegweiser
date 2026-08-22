@@ -54,9 +54,16 @@ checks, logging and access control. `reject` would fail a write for a reason tha
 user's problem. `first-wins` is the only option that never changes an answer the user did not
 ask to change.
 
-**Obligation.** A conflict is a first-class object, not a log line: it is returned in the API
-response, listed under the zone, and clearable. A conflict that is only visible in the server
-log is the same as no conflict detection at all.
+**Obligation.** A conflict is a first-class object rather than a log line: it is returned in
+the API response, listed under the zone, and clearable. A conflict that is only visible in
+the server log is the same as no conflict detection at all.
+
+**Status: returned, not yet listed.** Every write that hits one reports it, in the API
+response and in both clients, and it carries the policy that decided it. Listing and
+clearing are not built, because a conflict is computed during a write and nothing stores it:
+that needs a table, a migration and a rule for when a conflict stops existing. Until then an
+operator sees a conflict when they cause one and not afterwards, which is the weaker half of
+what this entry asks for.
 
 ---
 
@@ -181,8 +188,14 @@ Time travel is a headline feature; a default that quietly discards history would
 it. Operators who cannot afford the growth can bound it explicitly, and the checkpoint
 mechanism means bounding it does not cost them the ability to roll back.
 
-**Obligation.** `weg zone history` and the GUI show when history is truncated, so a missing
-older state reads as the policy it is. Journal size per zone is a Prometheus metric.
+**Status: only the default is built.** v0.1 keeps everything, because keeping everything is
+what happens when nothing truncates. The opt-in policy, the checkpoints and the metric below
+are not written, and the scope fence does not list them. They are the work this entry
+describes, not a description of the code.
+
+**Obligation, once it is built.** `weg zone history` and the GUI show when history is
+truncated, so a missing older state reads as the policy it is. Journal size per zone is a
+Prometheus metric.
 
 ---
 

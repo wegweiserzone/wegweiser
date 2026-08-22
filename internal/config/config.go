@@ -2,7 +2,7 @@
 //
 // It holds bootstrap settings and nothing else: listen addresses, where the
 // database is, and how loudly to log. Everything an operator manages (zones,
-// records, the reverse policy, tokens, retention) lives in the database and is
+// records, tokens, the reverse conflict policy) lives in the database and is
 // reachable through the API, because architecture invariant 1 says no feature
 // exists in only one client, and a setting that lives only in a file is a
 // feature that exists only for whoever can log in to the machine

@@ -1,9 +1,9 @@
 # Wegweiser configuration.
 #
-# This file holds bootstrap settings and nothing else. Zones, records, the
-# reverse policy, tokens and retention live in the database and are reachable
-# through the API — a setting that lives only in a file is a feature that
-# exists only for whoever can log in to the machine (docs/decisions.md D11).
+# This file holds bootstrap settings and nothing else. Zones, records, tokens
+# and the reverse conflict policy live in the database and are reachable
+# through the API: a setting that lives only in a file is a feature that exists
+# only for whoever can log in to the machine (docs/decisions.md D11).
 #
 # Everything here is optional; what is left out takes the built-in default.
 # A command-line flag beats an environment variable, which beats this file,

@@ -18,10 +18,10 @@ func newConfigCommand(opts *options) *cobra.Command {
 		Aliases: []string{"conf"},
 		Short:   "Show the settings a server would start with",
 		Long: "The bootstrap settings, and where each of them comes from.\n\n" +
-			"The file holds these and nothing else. Zones, records, the reverse\n" +
-			"policy, tokens and retention live in the database and are reachable\n" +
-			"through the API, because a setting that lives only in a file is a\n" +
-			"feature that exists only for whoever can log in to the machine\n" +
+			"The file holds these and nothing else. Zones, records, tokens and the\n" +
+			"reverse conflict policy live in the database and are reachable through\n" +
+			"the API, because a setting that lives only in a file is a feature that\n" +
+			"exists only for whoever can log in to the machine\n" +
 			"(docs/decisions.md D11).",
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
