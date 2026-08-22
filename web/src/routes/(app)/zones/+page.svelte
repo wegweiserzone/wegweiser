@@ -6,7 +6,7 @@
 
   import { goto } from "$app/navigation";
   import { api, ApiError, NetworkError } from "$lib/api";
-  import type { Zone } from "$lib/api";
+  import type { Zone, ZoneImported } from "$lib/api";
   import { ago, exact } from "$lib/format";
   import { session } from "$lib/session.svelte";
   import Bar from "$lib/components/Bar.svelte";
@@ -44,6 +44,71 @@
 
   let removing = $state<Zone | null>(null);
   let typed = $state("");
+
+  /* ── Import ─────────────────────────────────────────────────────────────
+   *
+   * A zonefile is how a zone arrives from anywhere else, so this is the first
+   * thing somebody moving off BIND looks for.
+   */
+  let importing = $state(false);
+  let zonefile = $state("");
+  let filename = $state("");
+  let origin = $state("");
+  let importRefused = $state<string | null>(null);
+  let imported = $state<ZoneImported | null>(null);
+
+  /**
+   * One reverse zone is usually wanted by several addresses, so the report
+   * groups by zone: an operator has one zone to create, not one line per
+   * record that noticed it was missing.
+   */
+  const wantedZones = $derived.by(() => {
+    const byName = new Map<string, string[]>();
+    for (const m of imported?.missingZones ?? []) {
+      byName.set(m.zoneName, [...(byName.get(m.zoneName) ?? []), m.address]);
+    }
+    return [...byName].map(([zoneName, addresses]) => ({ zoneName, addresses }));
+  });
+
+  /** Reading the file here keeps the request a plain body the server parses. */
+  async function pick(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    filename = file.name;
+    zonefile = await file.text();
+    importRefused = null;
+  }
+
+  function openImport() {
+    importing = true;
+    zonefile = "";
+    filename = "";
+    origin = "";
+    importRefused = null;
+    imported = null;
+  }
+
+  async function runImport(event: SubmitEvent) {
+    event.preventDefault();
+    working = true;
+    importRefused = null;
+    try {
+      // The result is shown rather than navigated past: an import that skipped
+      // records or wants a reverse zone has said so, and walking straight to
+      // the zone would throw that away (docs/decisions.md D5a, D6).
+      imported = await api.importZone(zonefile, origin.trim() || undefined);
+      await load();
+    } catch (err) {
+      importRefused =
+        err instanceof ApiError
+          ? (err.detail ?? err.title)
+          : err instanceof NetworkError
+            ? "The server could not be reached."
+            : "The zone could not be imported.";
+    } finally {
+      working = false;
+    }
+  }
 
   const columns: Column[] = [
     { label: "Name" },
@@ -237,6 +302,7 @@
     </label>
 
     {#if session.can("write")}
+      <Button onclick={openImport}>Import zonefile</Button>
       <Button weight="primary" onclick={() => ((creating = true), (refused = null))}>
         + New zone
       </Button>
@@ -409,6 +475,114 @@
     <Button weight="primary" type="submit" form="create-zone" disabled={working || !newName.trim()}>
       {working ? "Creating…" : "Create zone"}
     </Button>
+  {/snippet}
+</Dialog>
+
+<!-- Import ------------------------------------------------------------- -->
+
+<Dialog bind:open={importing} title="Import a zonefile">
+  {#if imported}
+    <div class="flex flex-col gap-4">
+      <Notice tone="signal" title="{imported.zone.name} is answering">
+        {imported.records}
+        {imported.records === 1 ? "record" : "records"} written. The zone is on the wire now; there
+        is no reload to do.
+      </Notice>
+
+      {#if imported.skipped?.length}
+        <div class="flex flex-col gap-1.5">
+          <h3 class="sign text-[11px] text-ink-faint">Left out</h3>
+          <p class="text-[12px] text-ink-mute">
+            A delegation in the file hands these names to another server, so this zone would
+            never answer with them. The rest of the file was taken.
+          </p>
+          <ul class="num flex flex-col gap-0.5 text-[12px] text-ink-mute">
+            {#each imported.skipped as row, i (i)}
+              <li>{row.record} — {row.reason}</li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
+      {#if wantedZones.length}
+        <div class="flex flex-col gap-1.5">
+          <h3 class="sign text-[11px] text-ink-faint">Reverse zones this would need</h3>
+          <p class="text-[12px] text-ink-mute">
+            Nothing was created for these: a reverse zone asserts authority over a namespace,
+            which is not something to do as a side effect (D6).
+          </p>
+          <ul class="num flex flex-col gap-0.5 text-[12px] text-ink-mute">
+            {#each wantedZones as w (w.zoneName)}
+              <li>
+                {w.zoneName} — for {w.addresses.join(", ")}
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+    </div>
+  {:else}
+    <form id="import-zone" class="flex flex-col gap-4" onsubmit={runImport}>
+      <label class="flex flex-col gap-1.5">
+        <span class="sign text-[11px] text-ink-faint">Zonefile</span>
+        <input
+          type="file"
+          accept=".zone,.db,text/plain,text/dns"
+          onchange={pick}
+          class="text-[13px] text-ink-mute file:sign file:mr-3 file:cursor-pointer
+                 file:rounded-sm file:border file:border-line file:bg-surface file:px-3
+                 file:py-1.5 file:text-[13px] file:text-ink hover:file:bg-raised"
+        />
+        <span class="text-xs text-ink-mute">
+          RFC 1035 presentation format, what BIND and every other server writes.
+          {#if filename}
+            <span class="num text-ink">{filename}</span>, {zonefile.length.toLocaleString("en")}
+            octets.
+          {/if}
+        </span>
+      </label>
+
+      <Field
+        label="Origin"
+        bind:value={origin}
+        placeholder="example.com"
+        autocomplete="off"
+        spellcheck={false}
+        hint="Only needed for a file that sets no $ORIGIN of its own. A file that names its zone needs nothing here."
+      />
+
+      {#if importRefused}
+        <p
+          class="rounded-sm border border-line border-l-2 border-l-crit bg-raised px-3 py-2
+                 text-[13px] text-ink-mute"
+          role="alert"
+        >
+          {importRefused}
+        </p>
+      {/if}
+    </form>
+  {/if}
+
+  {#snippet actions()}
+    {#if imported}
+      <Button weight="quiet" onclick={() => (importing = false)}>Close</Button>
+      <Button
+        weight="primary"
+        onclick={() => goto(`/zones/${encodeURIComponent(imported!.zone.name)}`)}
+      >
+        Open the zone
+      </Button>
+    {:else}
+      <Button weight="quiet" onclick={() => (importing = false)}>Cancel</Button>
+      <Button
+        weight="primary"
+        type="submit"
+        form="import-zone"
+        disabled={working || zonefile.trim() === ""}
+      >
+        {working ? "Importing…" : "Import"}
+      </Button>
+    {/if}
   {/snippet}
 </Dialog>
 

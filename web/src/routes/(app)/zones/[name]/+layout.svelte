@@ -4,14 +4,45 @@
    * can be doing to it.
    */
   import { page } from "$app/state";
+  import { api, ApiError } from "$lib/api";
   import { ago, exact } from "$lib/format";
   import Bar from "$lib/components/Bar.svelte";
+  import Button from "$lib/components/Button.svelte";
   import Metric from "$lib/components/Metric.svelte";
+  import Notice from "$lib/components/Notice.svelte";
 
   let { data, children } = $props();
 
   const zone = $derived(data.zone);
   const base = $derived(`/zones/${encodeURIComponent(zone.name)}`);
+
+  let exporting = $state(false);
+  let exportFailed = $state<string | null>(null);
+
+  /**
+   * Export hands the zonefile over as a download rather than showing it: a zone
+   * of any size is not something to read in a dialog, and a file is what the
+   * next tool expects anyway. The name is the apex, so a directory of exports
+   * sorts by zone.
+   */
+  async function exportZone() {
+    exporting = true;
+    exportFailed = null;
+    try {
+      const text = await api.exportZone(zone.id);
+      const url = URL.createObjectURL(new Blob([text], { type: "text/dns" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${zone.name.replace(/\.$/, "")}.zone`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      exportFailed =
+        err instanceof ApiError ? (err.detail ?? err.title) : "The zone could not be exported.";
+    } finally {
+      exporting = false;
+    }
+  }
 
   const tabs = $derived([
     { href: base, label: "Records" },
@@ -39,8 +70,17 @@
         </a>
       {/each}
     </nav>
+    <Button onclick={exportZone} disabled={exporting}>
+      {exporting ? "Exporting…" : "Export"}
+    </Button>
   {/snippet}
 </Bar>
+
+{#if exportFailed}
+  <div class="px-5 pt-4">
+    <Notice tone="crit" title="The zone could not be exported">{exportFailed}</Notice>
+  </div>
+{/if}
 
 <dl class="flex shrink-0 items-stretch overflow-x-auto border-b border-line bg-surface">
   <Metric label="Kind">{zone.kind}</Metric>
