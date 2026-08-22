@@ -10,6 +10,9 @@
 
 import type { components, paths } from "./schema";
 
+/** ZoneImported is what a zonefile import reports back. */
+type ZoneImported = components["schemas"]["ZoneImported"];
+
 /** basePath is where the API is mounted, carrying its version. */
 export const basePath = "/api/v1";
 
@@ -203,6 +206,39 @@ export class Client {
     return this.#send<P, "delete">("delete", path, args[0]);
   }
 
+  /* ── Zonefiles ───────────────────────────────────────────────────────────
+   *
+   * The one pair of endpoints that is not JSON: a zonefile goes in and comes
+   * out as RFC 1035 presentation format. They are named methods rather than a
+   * loosening of the generic calls above, because two exceptions should not
+   * cost every other call its typing.
+   */
+
+  /** exportZone writes a zone out as a zonefile. */
+  async exportZone(zoneId: string): Promise<string> {
+    const url = new URL(fill("/zones/{zoneId}/export", { zoneId }), location.origin);
+    const response = await this.#fetch("get", url, { accept: "text/dns, text/plain" });
+    return response.text();
+  }
+
+  /**
+   * importZone brings a zonefile in as a new zone.
+   *
+   * origin says which zone the file describes when the file itself does not.
+   * A file carrying $ORIGIN needs none, and giving both where they disagree is
+   * the server's error to report rather than this client's to guess at.
+   */
+  async importZone(zonefile: string, origin?: string): Promise<ZoneImported> {
+    const url = new URL(fill("/zones/import", {}), location.origin);
+    if (origin) url.searchParams.set("origin", origin);
+    const response = await this.#fetch("post", url, {
+      accept: "application/json, application/problem+json",
+      contentType: "text/dns",
+      body: zonefile,
+    });
+    return (await response.json()) as ZoneImported;
+  }
+
   async #send<P extends keyof paths, M extends Method>(
     method: M,
     path: P,
@@ -225,24 +261,47 @@ export class Client {
       if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
     }
 
-    const headers = new Headers({ Accept: "application/json, application/problem+json" });
+    const response = await this.#fetch(method, url, {
+      accept: "application/json, application/problem+json",
+      contentType: sent?.body === undefined ? undefined : "application/json",
+      body: sent?.body === undefined ? undefined : JSON.stringify(sent.body),
+      signal: sent?.signal,
+    });
+
+    if (response.status === 204 || response.headers.get("Content-Length") === "0") {
+      return undefined as ResultOf<Operation<P, M>>;
+    }
+    return (await response.json()) as ResultOf<Operation<P, M>>;
+  }
+
+  /**
+   * fetch is what every request needs whatever it carries: the CSRF header, the
+   * session cookie, and a refusal turned into an ApiError. The zonefile calls
+   * below go through it so they are not a second, weaker path to the API.
+   */
+  async #fetch(
+    method: Method,
+    url: URL,
+    opts: { accept: string; contentType?: string; body?: BodyInit; signal?: AbortSignal },
+  ): Promise<Response> {
+    const headers = new Headers({ Accept: opts.accept });
     if (changesState(method)) {
       const csrf = readCookie(csrfCookie);
       if (csrf) headers.set(csrfHeader, csrf);
     }
-    if (sent?.body !== undefined) headers.set("Content-Type", "application/json");
+    if (opts.contentType) headers.set("Content-Type", opts.contentType);
 
     let response: Response;
     try {
       response = await fetch(url, {
         method: method.toUpperCase(),
         headers,
-        body: sent?.body === undefined ? undefined : JSON.stringify(sent.body),
+        body: opts.body,
         // The session cookie is httpOnly, so it is the browser that has to
         // attach it. Same-origin is what the API is designed for, which is why
         // there is no CORS configuration anywhere in this project.
         credentials: "same-origin",
-        signal: sent?.signal,
+        signal: opts.signal,
       });
     } catch (cause) {
       // An aborted request is the caller's own doing and is not a failure to
@@ -252,11 +311,7 @@ export class Client {
     }
 
     if (!response.ok) throw await this.#fail(response);
-
-    if (response.status === 204 || response.headers.get("Content-Length") === "0") {
-      return undefined as ResultOf<Operation<P, M>>;
-    }
-    return (await response.json()) as ResultOf<Operation<P, M>>;
+    return response;
   }
 
   /** fail turns a refused response into the error the interface renders. */
