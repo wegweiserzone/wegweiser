@@ -62,7 +62,10 @@ These are not negotiable. A change that requires breaking one needs a discussion
 4. **Everything is a journal event.** No write bypasses the journal.
 5. **Zonefiles are an import/export format, not a storage format.** An RFC 1035 parser and
    writer must exist so migrating off BIND takes minutes.
-6. **Config as code.** The complete state exports to declarative YAML and imports back.
+6. **Config as code.** The complete state is to export to declarative YAML and import back.
+   Not built. `PUT /zones/{zoneId}/rrsets` is the seam it will use: it makes the named
+   RRsets exactly what the caller sent, which is what applying a desired state needs, and
+   is why that endpoint is the one with no client behind it.
 7. **No root.** Port 53 via `CAP_NET_BIND_SERVICE`.
 8. **The database is the source of truth; the snapshot is a derived cache.** A snapshot can
    always be rebuilt from the store. Never the other way around.

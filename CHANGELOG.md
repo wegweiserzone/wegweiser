@@ -88,6 +88,10 @@ public API is unstable and may change without a deprecation period.
   state-changing requests (D5). Refused over plain HTTP from another machine.
 - Zonefile import and export over HTTP, with a body limit of their own.
 - Zone lookup by exact name, because `search` also matches `notexample.com`.
+- `GET` and `PATCH /settings` for what the server does when nobody has said otherwise. The
+  reverse conflict policy of D3 lives there: it was a constant no client could reach, and is
+  now read inside the write transaction, so a change takes effect without a restart. A
+  conflict also carries the policy that decided it.
 - `GET /api/v1/metrics`; `/healthz` is the only endpoint needing no credential.
 - `GET /api/v1/queries/stream` as Server-Sent Events, with a `status` message before
   anything happens and again whenever sampling or drops change. Exempt from the request
@@ -119,6 +123,11 @@ public API is unstable and may change without a deprecation period.
   line. Deleting by name and type alone is refused where several records share them.
   A `TXT` whose quotes the shell ate is quoted again.
 - `weg history list|show`, `weg token list|create|revoke`, `weg query tail`.
+- `weg settings show|set`, with completion for the four policies.
+- `weg status`: what the server has been asked and how it answered, by response code and
+  question type, with the share inside a millisecond. It reads the same metrics the web
+  overview does, which is the only place that knows what has been *asked* rather than what
+  is *there*.
 - `--output text|json|yaml` on every command, colour off without a TTY, `NO_COLOR` honoured.
   `weg token create` puts the secret alone on stdout.
 - Shell completion for bash, zsh and fish, with zone names, owner names and record types
@@ -170,11 +179,21 @@ public API is unstable and may change without a deprecation period.
   latency against the D12 targets, recent changes and a query rate.
 - A name server the zone points at with no address for it is called out, in both clients
   (RFC 1912 §2.8).
-- 48 browser smoke tests driving a real `weg` through Firefox. A page that logs an error
+- Import and export a zonefile: export hands the file over as a download, import takes one
+  and reports what it did, including the records a delegation left out and the reverse zones
+  it would need. Both existed in the API and the CLI and in neither place here.
+- A settings screen for the reverse conflict policy, describing each choice by what the
+  server does rather than by what the value is called.
+- 52 browser smoke tests driving a real `weg` through Firefox. A page that logs an error
   fails the test.
 
 ### Fixed
 
+- CI built against the module's declared minimum rather than the newest patch release, so
+  `govulncheck` reported the standard library of the oldest permitted Go. Every job now asks
+  for the newest 1.26.x, and `go.mod` requires 1.26.5.
+- The reverse conflict message described first-wins whatever the policy was, so under
+  last-wins a write reported both what it had written and that it had written nothing.
 - A configured DNS port of zero could fail to start. The kernel picks the datagram port
   without regard to the stream ports, so the number handed out could already be taken. Only
   an unchosen port is retried; an explicit one that is taken still fails.
