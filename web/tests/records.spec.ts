@@ -238,3 +238,35 @@ test("an unknown type falls back to one box", async ({ page, server }) => {
   await page.getByRole("button", { name: "Add record" }).click();
   await expect(page.getByRole("cell", { name: "\\# 3 010203" })).toBeVisible();
 });
+
+// Picking a type has to close the list. It did not: choose() closed it and then
+// handed focus back to the input, and focus() dispatches synchronously, so the
+// onfocus handler reopened it before the click had finished. The list stayed up
+// until you clicked somewhere else.
+test("the type list closes when a type is picked", async ({ page, server }) => {
+  await signIn(page, server);
+  await page.goto(at(server.url, "example.com."));
+
+  await page.getByRole("button", { name: "+ New record" }).click();
+  const type = page.getByRole("combobox", { name: "Type", exact: true });
+  const list = page.getByRole("listbox");
+
+  await type.click();
+  await expect(list).toBeVisible();
+
+  // Scoped to the list: the page's own "filter by type" select has an option
+  // of the same name.
+  await list.getByRole("option", { name: "MX", exact: true }).click();
+
+  await expect(list).toBeHidden();
+  await expect(type).toHaveValue("MX");
+  // Focus stays on the field, which is why it was handed back in the first
+  // place: the next thing typed belongs there.
+  await expect(type).toBeFocused();
+
+  // And it opens again on the next click. Closing it broke this at first: the
+  // field still had focus, so clicking it fired no focus event, and opening
+  // hung on focus alone. The field looked dead until you clicked away and back.
+  await type.click();
+  await expect(list).toBeVisible();
+});

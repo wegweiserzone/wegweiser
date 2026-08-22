@@ -33,11 +33,34 @@
 
   const flat = $derived(groups.flatMap((g) => g.types));
 
+  /**
+   * returning marks the focus that choose() hands back, so the list does not
+   * reopen the moment it closes. input.focus() dispatches focus synchronously,
+   * and onfocus opens the list, which is what kept it open after a pick.
+   */
+  let returning = false;
+
+  /**
+   * reveal shows the whole list again.
+   *
+   * Both focus and click call it, and the click is the one that matters: after
+   * a pick the field keeps focus, so clicking it fires no focus event, and an
+   * opener hung on focus alone leaves the field looking dead until you click
+   * away and back.
+   */
+  function reveal() {
+    open = true;
+    typed = "";
+    cursor = 0;
+  }
+
   function choose(type: string) {
     value = type;
     typed = "";
     open = false;
+    returning = true;
     input?.focus();
+    returning = false;
   }
 
   function onKey(event: KeyboardEvent) {
@@ -89,7 +112,11 @@
         open = true;
         cursor = 0;
       }}
-      onfocus={() => ((open = true), (typed = ""), (cursor = 0))}
+      onfocus={() => {
+        if (returning) return;
+        reveal();
+      }}
+      onclick={reveal}
       onkeydown={onKey}
       class="num h-9 w-full rounded-sm border border-line bg-surface pr-8 pl-3 text-[13px]
              text-ink uppercase transition-colors outline-none focus:border-signal"
