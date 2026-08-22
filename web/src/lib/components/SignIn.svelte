@@ -37,23 +37,28 @@
 
 <main class="flex min-h-screen items-center justify-center px-6 py-12">
   <div class="flex w-full max-w-sm flex-col gap-7">
-    <div class="flex items-center gap-3">
-      <Mark class="size-7 text-signal" />
-      <div>
-        <p class="font-cond text-2xl leading-none font-bold tracking-[0.13em] uppercase">
-          Wegweiser
-        </p>
-        <p class="num mt-1 text-[11px] text-ink-faint">
-          {#if health}
-            {health.version} · {health.zones}
-            {health.zones === 1 ? "zone" : "zones"} · {health.records.toLocaleString("en")}
-            records
-          {:else if reachable}
-            reachable, not yet serving
-          {:else}
-            no answer from the server
-          {/if}
-        </p>
+    <!-- The status sits at the right edge, lined up with the field below. Left
+         to follow the text it trailed the wider of the two lines, which put it
+         beside the title looking like it had landed there by accident. -->
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex min-w-0 items-center gap-3">
+        <Mark class="size-7 shrink-0 text-signal" />
+        <div class="min-w-0">
+          <p class="font-cond text-2xl leading-none font-bold tracking-[0.13em] uppercase">
+            Wegweiser
+          </p>
+          <p class="num mt-1 truncate text-[11px] text-ink-faint">
+            {#if health}
+              {health.version} · {health.zones}
+              {health.zones === 1 ? "zone" : "zones"} · {health.records.toLocaleString("en")}
+              records
+            {:else if reachable}
+              reachable, not yet serving
+            {:else}
+              no answer from the server
+            {/if}
+          </p>
+        </div>
       </div>
       {#if health}
         <Chip tone="ok" dot>Serving</Chip>
