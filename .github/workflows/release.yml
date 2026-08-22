@@ -1,0 +1,154 @@
+name: Release
+
+# A tag is the trigger, so cutting a release is `git tag -s v0.1.0 && git push
+# --tags` and nothing else. The version the binary reports comes from the tag
+# through `git describe`, which is why the checkout needs the full history.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  # Publishing binaries nobody has run is worse than publishing none: the tag
+  # is permanent and a bad one has to be deleted rather than fixed. CI runs the
+  # same checks on this tag, but a release must not depend on somebody reading
+  # the other workflow's result before downloading.
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Test with race detector
+        run: go test -race -shuffle=on ./...
+
+      - name: Vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  binaries:
+    name: Binaries
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # `git describe` needs the tags, and the version stamp comes from it.
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # One archive per platform, each carrying the licence: AGPL-3.0 asks for
+      # it to travel with the binary, and a bare executable in a release does
+      # not.
+      - name: Build
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH="$arch" make build
+            file bin/weg
+            tar -czf "dist/weg_${version}_linux_${arch}.tar.gz" \
+              -C bin weg \
+              -C "$GITHUB_WORKSPACE" LICENSE README.md CHANGELOG.md
+          done
+          cd dist && sha256sum ./*.tar.gz > checksums.txt && cat checksums.txt
+
+      # The section this tag's version already has in the changelog, so the
+      # release page says the same thing the repository does rather than a
+      # generated list of commit subjects.
+      - name: Take the notes from the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="## [$version]" '
+            index($0, v) == 1 { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no section for $version"
+            exit 1
+          fi
+          head -5 notes.md
+
+      # gh rather than a release action: the organisation allows only
+      # GitHub-owned and verified actions, and the CLI is on the runner
+      # already, so this needs no exception.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --verify-tag \
+            dist/*
+
+  image:
+    name: Image
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # buildx and the docker CLI are on the runner already. Doing this in the
+      # shell rather than through the marketplace actions keeps the
+      # organisation's "GitHub-owned and verified actions only" policy intact,
+      # for the same reason the release above uses gh.
+      - name: Build and push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker buildx create --use --name wegweiser >/dev/null
+
+          # --provenance=false keeps the manifest list to the two images it
+          # says it has: an attestation manifest per platform confuses runtimes
+          # that read the list themselves, and there is nothing here to attest
+          # that the release page does not already say.
+          docker buildx build \
+            --file packaging/Containerfile \
+            --platform linux/amd64,linux/arm64 \
+            --provenance=false \
+            --build-arg "VERSION=$version" \
+            --build-arg "COMMIT=$GITHUB_SHA" \
+            --build-arg "DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --tag "$image:$version" \
+            --tag "$image:latest" \
+            --push .
+
+      # The image is scratch, so `weg health` is the only health check it can
+      # have, and the OCI image format has no field for one. This fails the
+      # release rather than shipping an image a runtime reports as healthy
+      # because it never checked.
+      - name: The health check survived the push
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker pull --platform linux/amd64 "$image:${GITHUB_REF_NAME#v}"
+          check=$(docker inspect --format '{{json .Config.Healthcheck}}' \
+            "$image:${GITHUB_REF_NAME#v}")
+          echo "$check"
+          case "$check" in
+            *weg*health*) ;;
+            *) echo "::error::the image has no health check"; exit 1 ;;
+          esac
