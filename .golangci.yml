@@ -92,6 +92,8 @@ linters:
               desc: the Prometheus client belongs in internal/metrics only
             - pkg: github.com/prometheus/common
               desc: the Prometheus exposition format belongs in internal/metrics only
+            - pkg: github.com/prometheus/client_model
+              desc: the exposition format's own types belong in internal/metrics only
 
         dns-hot-path-stays-thin:
           list-mode: lax
