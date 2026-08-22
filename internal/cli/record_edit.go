@@ -210,6 +210,7 @@ func recordWritten(out *gen.RecordWritten) recordChanged {
 	for _, c := range deref(out.Conflicts, nil) {
 		changed.Conflicts = append(changed.Conflicts, recordConflict{
 			Address: c.Address, ExistingName: c.ExistingName, RequestedName: c.RequestedName,
+			Policy: string(c.Policy),
 		})
 	}
 	for _, m := range deref(out.MissingZones, nil) {
@@ -242,9 +243,7 @@ func printRecordChange(opts *options, changed recordChanged, past string) error 
 			}
 		}
 		for _, c := range changed.Conflicts {
-			if _, werr := fmt.Fprintf(w,
-				"  %s already answers with %s, so no entry was made for %s\n",
-				c.Address, c.ExistingName, c.RequestedName); werr != nil {
+			if _, werr := fmt.Fprintf(w, "  %s\n", c); werr != nil {
 				return werr
 			}
 		}

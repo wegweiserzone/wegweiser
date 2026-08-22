@@ -212,6 +212,24 @@ type recordConflict struct {
 	Address       string `json:"address"`
 	ExistingName  string `json:"existingName"`
 	RequestedName string `json:"requestedName"`
+	Policy        string `json:"policy"`
+}
+
+// String says what the policy in force did about the conflict. The wording has
+// to follow the policy: under last-wins an entry was made, and reporting that
+// none was would describe the opposite of what happened.
+func (c recordConflict) String() string {
+	switch c.Policy {
+	case string(gen.LastWins):
+		return fmt.Sprintf("%s answered with %s and now answers with %s",
+			c.Address, c.ExistingName, c.RequestedName)
+	case string(gen.Multi):
+		return fmt.Sprintf("%s already answers with %s and now answers with %s as well",
+			c.Address, c.ExistingName, c.RequestedName)
+	default:
+		return fmt.Sprintf("%s already answers with %s, so no entry was made for %s",
+			c.Address, c.ExistingName, c.RequestedName)
+	}
 }
 
 func newRecordAddCommand(opts *options, f *clientFlags) *cobra.Command {
