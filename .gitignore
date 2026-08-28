@@ -1,0 +1,45 @@
+# Build output. The pattern is anchored: an unanchored "weg" would also match
+# the cmd/weg directory.
+/bin/
+/dist/
+/weg
+
+# Test and coverage artefacts
+*.out
+*.test
+/coverage.*
+
+# The generated fuzz corpus lives in GOCACHE and is not tracked. testdata/fuzz/
+# holds only the inputs that made a target fail, which are regression tests and
+# must be committed — so it is deliberately not ignored here.
+
+# Local runtime state
+*.db
+*.db-shm
+*.db-wal
+/wegweiser.yaml
+/etc/
+
+# GUI build. internal/api/dist is deliberately absent from this list: the
+# built interface is committed, so that `go install .../cmd/weg@latest` yields
+# a binary with an interface in it on a machine with no Node (D16).
+/web/node_modules/
+/web/.svelte-kit/
+/web/build/
+
+# Playwright writes these when a browser test fails: a trace, a screenshot and
+# the page as it stood. Useful locally, never worth committing.
+/test-results/
+/web/test-results/
+/playwright-report/
+
+# Agent instructions. The project's own conventions are committed as
+# docs/conventions.md; this file is only the local working agreement.
+/CLAUDE.md
+
+# Editors and OS
+.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json

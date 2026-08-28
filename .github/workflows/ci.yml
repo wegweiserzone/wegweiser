@@ -1,0 +1,222 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+# The default token needs nothing beyond reading the checkout.
+permissions:
+  contents: read
+
+# A newer push to the same ref supersedes an in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOTOOLCHAIN: local
+
+# Every job asks for "1.26", which resolves to the newest 1.26.x. The go
+# directive in go.mod is the minimum this module supports, so building against
+# it meant CI ran the oldest permitted patch release and govulncheck reported
+# its standard library.
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Formatting
+        run: |
+          go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest fmt --diff ./... \
+            || (echo "::error::code is not formatted; run 'make fmt'" && exit 1)
+
+      - name: go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum \
+            || (echo "::error::go.mod/go.sum not tidy; run 'make tidy'" && exit 1)
+
+      # The OpenAPI spec is the source of truth. A generated file edited by
+      # hand, or a spec changed without regenerating, is caught here rather
+      # than by whoever next wonders why the client and the server disagree.
+      - name: Generated API code is current
+        run: |
+          make generate
+          git diff --exit-code -- internal/api/gen \
+            || (echo "::error::internal/api/gen is stale; run 'make generate'" && exit 1)
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # This job builds a weg and drives it through a browser, so it wants
+          # the same version stamp a release gets. Without the tags `git
+          # describe` falls back to a bare commit, and the interface then shows
+          # something no shipped build ever shows.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # The browser tests drive a real weg, so this job builds one.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Install
+        run: npm --prefix web ci
+
+      # The generated types are committed, so a field renamed in the spec
+      # breaks the interface's build in this commit rather than in production.
+      - name: Generated API types are current
+        run: |
+          npm --prefix web run generate
+          git diff --exit-code -- web/src/lib/api/schema.d.ts \
+            || (echo "::error::web/src/lib/api/schema.d.ts is stale; run 'make web-generate'" && exit 1)
+
+      # There is nothing to run in client.types.test.ts: its @ts-expect-error
+      # directives are the test, and this fails if the client stops refusing
+      # the calls it must refuse.
+      - name: Type-check
+        run: npm --prefix web run check
+
+      # The built interface is committed so that installing the binary needs
+      # no Node (docs/decisions/ D16). This is what keeps the committed copy
+      # honest; the build is deterministic, so a difference is a real one.
+      - name: Committed build is current
+        run: |
+          npm --prefix web run build
+          git diff --exit-code -- internal/api/dist \
+            || (echo "::error::internal/api/dist is stale; run 'make web'" && exit 1)
+
+      # Keyed on the Playwright version, because that is what decides which
+      # browser build is wanted.
+      - name: Cache the test browser
+        uses: actions/cache@v6
+        id: browser
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('web/package-lock.json') }}
+
+      - name: Install the test browser
+        if: steps.browser.outputs.cache-hit != 'true'
+        run: npm --prefix web exec -- playwright install --with-deps firefox
+
+      # A blank interface is a 200 with a console message and nothing else.
+      # This is the only check in the repository that would see it.
+      - name: Browser smoke tests
+        run: make web-test
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # -shuffle=on catches tests that depend on execution order; the race
+      # detector is mandatory per docs/conventions.md, Quality gates.
+      - name: Test with race detector
+        run: go test -race -shuffle=on -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Needed so `git describe` can find tags for the version stamp.
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # CGO_ENABLED=0 is not incidental: the whole point of the cgo-free
+      # SQLite driver is that this produces a genuinely static binary.
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: make build
+
+      - name: Verify the binary is static
+        if: matrix.goarch == 'amd64'
+        run: |
+          file bin/weg
+          if file bin/weg | grep -q "dynamically linked"; then
+            echo "::error::binary is dynamically linked"; exit 1
+          fi
+          ./bin/weg version
+
+  fuzz:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # A short run on every push catches regressions against the seed corpus.
+      # Long campaigns run on a schedule once the wire parser exists.
+      - name: Fuzz targets briefly
+        run: make fuzz FUZZTIME=20s
+
+  vuln:
+    name: Vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          cache: true
+
+      # The default scan fails the build only when our code actually reaches a
+      # vulnerable symbol. -show verbose additionally prints findings for
+      # modules we merely require, which do not fail the build: they are real
+      # but not reachable, and Dependabot raises the pull request that fixes
+      # them. Blocking on those would stall merges on code we never call.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest -show verbose ./...

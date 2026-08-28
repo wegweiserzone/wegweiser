@@ -1,0 +1,241 @@
+@import "tailwindcss";
+@import "./lib/styles/fonts.css";
+
+/* The generated API types carry the OpenAPI document's prose as comments, and
+ * Tailwind scans every source file for words that look like class names. Left
+ * in, "a disabled zone is invisible on the wire" puts `.invisible` in the
+ * stylesheet, and the interface's CSS then grows with whatever the spec
+ * happens to say. Nothing in there is markup. */
+@source not "./lib/api/schema.d.ts";
+
+/* ─── Signal ──────────────────────────────────────────────────────────────
+ *
+ * The design system. Colour, type and motion are defined once here and used
+ * through Tailwind utilities everywhere else; a component that writes a hex
+ * value is a bug, because it will be wrong in one of the two themes.
+ *
+ * The palette is deliberately small. One accent, signal orange, and it is
+ * spent on exactly five things: the active section, the focus ring, the
+ * primary action, the live indicator, and a record this server generated.
+ * Everything else that carries colour carries *state*, and state colours are
+ * a separate set that never stands in for the accent.
+ */
+
+/* `inline` makes each utility emit var(--ground) rather than a copy of its
+ * value, which is what lets the theme change at runtime. */
+@theme inline {
+  /* Tailwind's own palette is cleared. With a hundred and fifty colours in
+   * scope, `bg-blue-500` is one autocomplete away from being in the product,
+   * and the rule that there is one accent stops being enforceable. */
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+
+  --color-ink: var(--ink);
+  --color-ink-mute: var(--ink-mute);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-signal: var(--signal);
+  --color-signal-hi: var(--signal-hi);
+  --color-signal-lo: var(--signal-lo);
+  --color-signal-on: var(--signal-on);
+
+  --color-ok: var(--ok);
+  --color-ok-lo: var(--ok-lo);
+  --color-warn: var(--warn);
+  --color-warn-lo: var(--warn-lo);
+  --color-crit: var(--crit);
+  --color-crit-lo: var(--crit-lo);
+  --color-info: var(--info);
+  --color-info-lo: var(--info-lo);
+
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-cond: "Barlow Condensed", "Barlow", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* State transitions only, 150–200 ms, one easing curve. */
+  --ease-signal: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --default-transition-duration: 160ms;
+  --default-transition-timing-function: var(--ease-signal);
+}
+
+/* ─── Themes ──────────────────────────────────────────────────────────────
+ *
+ * Dark first: the bare :root is the dark set, because that is what the
+ * interface is designed in. Light is defined twice: once for a viewer whose
+ * system asks for it and has expressed no preference here, and once for a
+ * viewer who chose it, so the toggle wins in both directions.
+ *
+ * Contrast is checked against WCAG AA in both. The accent moves between them:
+ * #FF6B2C carries a dark ground and fails a white one, so light mode uses a
+ * darker orange rather than the same value at a different opacity.
+ */
+:root {
+  color-scheme: dark;
+
+  --ground: #0b0e13;
+  --surface: #12171f;
+  --raised: #1a212b;
+  --sunken: #080b0f;
+  --line: #232c39;
+  --line-soft: #1a212b;
+
+  --ink: #e3e9f1;
+  --ink-mute: #8a96a8;
+  --ink-faint: #5a6577;
+
+  --signal: #ff6b2c;
+  --signal-hi: #ff834f;
+  --signal-lo: #3a1f13;
+  --signal-on: #140a05;
+
+  --ok: #37c98f;
+  --ok-lo: #0f2a21;
+  --warn: #e3ae38;
+  --warn-lo: #2c2312;
+  --crit: #f4606a;
+  --crit-lo: #2e1418;
+  --info: #5a9bff;
+  --info-lo: #121f35;
+
+  --shadow-lift: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px -8px rgb(0 0 0 / 0.6);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+
+    --ground: #f2f4f7;
+    --surface: #ffffff;
+    --raised: #f7f9fb;
+    --sunken: #e9ecf1;
+    --line: #dce1e9;
+    --line-soft: #e9ecf1;
+
+    --ink: #0f1620;
+    --ink-mute: #596475;
+    --ink-faint: #8a94a3;
+
+    --signal: #c7440f;
+    --signal-hi: #a93809;
+    --signal-lo: #fceae2;
+    --signal-on: #ffffff;
+
+    --ok: #10794f;
+    --ok-lo: #e3f5ec;
+    --warn: #8a6208;
+    --warn-lo: #fbf0d8;
+    --crit: #c22c39;
+    --crit-lo: #fce9eb;
+    --info: #1f5fcc;
+    --info-lo: #e6eefc;
+
+    --shadow-lift: 0 1px 2px rgb(15 22 32 / 0.06), 0 8px 24px -10px rgb(15 22 32 / 0.18);
+  }
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --ground: #f2f4f7;
+  --surface: #ffffff;
+  --raised: #f7f9fb;
+  --sunken: #e9ecf1;
+  --line: #dce1e9;
+  --line-soft: #e9ecf1;
+
+  --ink: #0f1620;
+  --ink-mute: #596475;
+  --ink-faint: #8a94a3;
+
+  --signal: #c7440f;
+  --signal-hi: #a93809;
+  --signal-lo: #fceae2;
+  --signal-on: #ffffff;
+
+  --ok: #10794f;
+  --ok-lo: #e3f5ec;
+  --warn: #8a6208;
+  --warn-lo: #fbf0d8;
+  --crit: #c22c39;
+  --crit-lo: #fce9eb;
+  --info: #1f5fcc;
+  --info-lo: #e6eefc;
+
+  --shadow-lift: 0 1px 2px rgb(15 22 32 / 0.06), 0 8px 24px -10px rgb(15 22 32 / 0.18);
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────── */
+
+@layer base {
+  html {
+    /* The document paints the ground itself. A transparent one borrows
+     * whatever is behind it, which in a browser tab is white. */
+    background-color: var(--ground);
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background-color: var(--signal-lo);
+    color: var(--signal);
+  }
+
+  /* Scrollbars are part of a dense interface, not an afterthought. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+}
+
+/* ─── Utilities ───────────────────────────────────────────────────────────
+ *
+ * Two voices the interface uses constantly, named so they read as decisions
+ * rather than as four repeated declarations.
+ */
+
+/* The signage voice: condensed, uppercase, tracked wide. Section titles,
+ * column headers, chips, buttons. */
+@utility sign {
+  font-family: var(--font-cond);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+/* Anything technical: addresses, TTLs, serials, latencies, names. Tabular
+ * figures so a column of numbers lines up on the digit, not on the glyph. */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

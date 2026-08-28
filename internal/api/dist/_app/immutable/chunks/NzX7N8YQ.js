@@ -1,0 +1,1 @@
+var e=[{label:`Addresses`,types:[`A`,`AAAA`]},{label:`Names`,types:[`CNAME`,`NS`,`PTR`,`DNAME`]},{label:`Mail`,types:[`MX`,`TXT`,`SPF`]},{label:`Services`,types:[`SRV`,`SVCB`,`HTTPS`,`NAPTR`,`URI`]},{label:`Security`,types:[`CAA`,`TLSA`,`SSHFP`]},{label:`Other`,types:[`LOC`,`HINFO`,`RP`]}],t=e.flatMap(e=>e.types);export{e as n,t};

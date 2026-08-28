@@ -1,0 +1,22 @@
+# Configuration for oapi-codegen. The spec beside it is the source of truth;
+# everything in this directory is derived from it and is not edited by hand.
+#
+# The server half is the strict interface: handlers take a typed request and
+# return a typed response, so a handler cannot forget to write a body or write
+# one that does not match what the spec promised. The client half is what the
+# CLI and the TUI talk to the server with, which is architecture invariant 1
+# holding by construction rather than by discipline.
+package: gen
+output: api.gen.go
+generate:
+  models: true
+  chi-server: true
+  strict-server: true
+  client: true
+  embedded-spec: true
+output-options:
+  nullable-type: true
+  # The bodies of the query stream are Server-Sent Events, so their schemas are
+  # not referenced by any response the generator can see. They are still what
+  # the spec promises and what the handler has to produce, so they are kept.
+  skip-prune: true

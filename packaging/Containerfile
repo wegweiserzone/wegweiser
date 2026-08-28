@@ -1,0 +1,111 @@
+# Wegweiser, as one static binary on nothing.
+#
+# The final stage is scratch: there is no shell, no package manager and no libc
+# in the image, so there is nothing in it to exploit that is not the server
+# itself. What that costs is a health check — scratch has no curl — which is
+# why `weg health` exists and is used below.
+#
+#   podman build --format docker -f packaging/Containerfile -t wegweiser .
+#   podman run --rm -p 5353:53/udp -p 5353:53/tcp -v weg:/var/lib/wegweiser wegweiser
+#
+# --format docker is what keeps the HEALTHCHECK: the OCI image format has no
+# field for one, and podman drops it with a warning rather than failing.
+#
+# Port 53 inside the container is bound without root, which needs the
+# capability the server would have on a host too:
+#
+#   --cap-add=NET_BIND_SERVICE
+#
+# or, on a runtime that allows it, --sysctl net.ipv4.ip_unprivileged_port_start=53.
+
+# --platform pins the build stage to the machine doing the building, so a
+# multi-architecture image cross-compiles instead of running an emulated
+# toolchain per architecture. Go needs no emulation for this; buildx supplies
+# TARGETOS and TARGETARCH.
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine AS build
+
+WORKDIR /src
+
+# The module files first, so that a change to the source does not re-download
+# the dependencies.
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# The same flags the Makefile uses, so the image and a local build are the same
+# binary. VERSION and COMMIT come from the build context because the .git
+# directory is not in it.
+ARG VERSION=dev
+ARG COMMIT=
+ARG DATE=
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
+      -ldflags "-s -w \
+        -X github.com/wegweiserzone/wegweiser/internal/buildinfo.version=${VERSION} \
+        -X github.com/wegweiserzone/wegweiser/internal/buildinfo.commit=${COMMIT} \
+        -X github.com/wegweiserzone/wegweiser/internal/buildinfo.date=${DATE}" \
+      -o /weg ./cmd/weg
+
+# What the image is configured with, as a file rather than as environment
+# variables. The environment is the stronger of the two sources, so variables
+# baked into the image would be variables a mounted file could not override —
+# and "mount your configuration, and also unset ours" is not a thing to ask of
+# anybody. A file at this path is simply replaced by one mounted over it.
+#
+# The directories are created here because scratch has no mkdir and the server
+# does not create them itself: a database appearing in a path nobody meant is
+# worse than a refusal that names it.
+RUN mkdir -p /out/etc/wegweiser /out/var/lib/wegweiser \
+ && printf '%s\n' \
+      '# What this image is configured with. Mount your own file over this' \
+      '# path to replace it; weg config show says what is in force.' \
+      'api:' \
+      '  # Every address, because loopback inside a container is reachable by' \
+      '  # nothing. What keeps it private is the published port.' \
+      '  listen: "0.0.0.0:8053"' \
+      'database:' \
+      '  path: "/var/lib/wegweiser/wegweiser.db"' \
+      > /out/etc/wegweiser/config.yaml \
+ && chown -R 65532:65532 /out/var/lib/wegweiser
+
+FROM scratch
+
+# image.source is what links the package to the repository on GitHub: without
+# it the package page stands on its own, with no readme, no licence and no way
+# back to the source. The rest is what a registry browser shows.
+ARG VERSION=dev
+ARG COMMIT=
+ARG DATE=
+LABEL org.opencontainers.image.source="https://github.com/wegweiserzone/wegweiser" \
+      org.opencontainers.image.description="An authoritative DNS server with a web interface you don't need a manual for" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.title="wegweiser" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${DATE}"
+
+# The certificates a client in this image needs to reach an API over TLS. The
+# server itself makes no outbound connections.
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+COPY --from=build --chown=65532:65532 /out/ /
+COPY --from=build /weg /usr/bin/weg
+
+# 65532 is the conventional "nonroot" identity of the distroless images. There
+# is no /etc/passwd here to name it in, and a number is what the kernel checks
+# anyway.
+USER 65532:65532
+
+VOLUME /var/lib/wegweiser
+EXPOSE 53/udp 53/tcp 8053/tcp
+
+# Serving means a snapshot has been published, not merely that the process is
+# up: a container reporting healthy while answering REFUSED for its own zones
+# is worse than one that reports nothing.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["/usr/bin/weg", "health"]
+
+ENTRYPOINT ["/usr/bin/weg"]
+CMD ["serve"]

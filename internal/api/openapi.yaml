@@ -1,0 +1,1713 @@
+openapi: 3.1.0
+
+info:
+  title: Wegweiser API
+  version: 0.1.0
+  description: |
+    The API every Wegweiser client speaks. The web interface and the `weg`
+    command line are both clients of it, and neither of them reaches the
+    database any other way (architecture invariant 1).
+
+    This document is the source of truth. Clients are generated from it, so an
+    endpoint that is not written down here does not exist.
+  license:
+    name: AGPL-3.0-or-later
+    identifier: AGPL-3.0-or-later
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerToken: []
+
+tags:
+  - name: zones
+    description: The namespaces this server is authoritative for.
+  - name: records
+    description: The resource records inside a zone.
+  - name: history
+    description: |
+      What was changed, by whom and when. Every write is a commit, so this is
+      the audit log, the diff view and the source an earlier state is restored
+      from, all reading from the one structure.
+  - name: tokens
+    description: |
+      The credentials that may use this API. Managing them needs the `admin`
+      scope, which is the one place the method does not decide what a request
+      needs: a `write` token that could mint an `admin` token would not be a
+      `write` token.
+  - name: tsig
+    description: |
+      The keys a secondary signs a zone transfer with (RFC 8945). Managing them
+      needs the `admin` scope, for the same reason tokens do: a key is a
+      credential, and one that may transfer may take every zone.
+  - name: auth
+    description: |
+      How a browser authenticates. It posts a token once and works from a
+      cookie afterwards, so that no script running in the page can read the
+      credential (docs/decisions/ D5).
+  - name: settings
+    description: |
+      What this server does when nobody has said otherwise. A zone may override
+      some of these on itself; what is here is the fallback everything else
+      starts from.
+  - name: health
+    description: Whether the server is fit to answer.
+  - name: metrics
+    description: What the server has been doing, for a monitoring system.
+  - name: queries
+    description: What the server is being asked, as it is being asked.
+
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Report whether the server is fit to answer queries
+      description: |
+        Unauthenticated on purpose: a health check that needs a credential is
+        one more thing that can fail for a reason unrelated to health.
+      security: []
+      responses:
+        "200":
+          description: The server is serving.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: The server is not ready to answer.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+
+  /metrics:
+    get:
+      operationId: getMetrics
+      tags: [metrics]
+      summary: Export the current metrics
+      description: |
+        The Prometheus text exposition format: queries by transport, type and
+        response code, latency, response sizes, drops, truncations, what the
+        snapshot being answered from holds, and the Go runtime and process
+        collectors that come with any Go exporter.
+
+        Authenticated like everything else here. What a server is asked, how
+        often and by how many zones is operational detail, and a scraper can
+        carry a bearer token: Prometheus has had `authorization` in its scrape
+        configuration for years. `/healthz` is the one endpoint that needs no
+        credential, because a load balancer cannot be given one.
+
+        The response carries the exposition format's version in its
+        `Content-Type`, which is where a scraper reads it.
+      responses:
+        "200":
+          description: The current values.
+          content:
+            text/plain:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /queries/stream:
+    get:
+      operationId: streamQueries
+      tags: [queries]
+      summary: Watch queries as they are answered
+      description: |
+        A live tail of the exchanges matching the filter, as Server-Sent
+        Events. Two kinds of message arrive:
+
+        - `query`, one per exchange, carrying a `QueryEvent`.
+        - `status`, whenever what the stream is leaving out changes and every
+          few seconds regardless, carrying a `StreamStatus`. It says what the
+          stream is sampling at and how much it has dropped, because a stream
+          that quietly leaves things out while looking complete is worse than
+          one that admits to showing every fiftieth query
+          (docs/decisions/ D9).
+
+        The filter is applied before anything is buffered, so watching one zone
+        stays complete however busy the rest of the server is. A watcher that
+        stops reading loses its oldest exchanges, never its newest: this is a
+        live view, and it is never allowed to slow a query down.
+
+        How many watchers may be open at once is bounded, because each one
+        costs the query path a filter evaluation per query. A request past the
+        bound is refused with 503.
+      parameters:
+        - name: name
+          in: query
+          description: |
+            Watch a name and everything below it. Matching is
+            case-insensitive (RFC 4343), so it finds a query however 0x20
+            encoding wrote it.
+          schema: { type: string }
+        - name: type
+          in: query
+          description: Watch only these question types. Repeat for more than one.
+          schema:
+            type: array
+            items: { type: string }
+        - name: rcode
+          in: query
+          description: |
+            Watch only these response codes, by mnemonic, `NXDOMAIN`,
+            `REFUSED`. Repeat for more than one.
+          schema:
+            type: array
+            items: { type: string }
+        - name: client
+          in: query
+          description: |
+            Watch only this address or network, in CIDR notation. A bare
+            address is taken as a single host.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The stream, until the client goes away.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /zones:
+    get:
+      operationId: listZones
+      tags: [zones]
+      summary: List zones
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: kind
+          in: query
+          description: Restrict the listing to forward or to reverse zones.
+          schema: { $ref: "#/components/schemas/ZoneKind" }
+        - name: name
+          in: query
+          description: |
+            Match one apex exactly. This is how a client turns a name a person
+            typed into the zone it belongs to; `search` cannot, because
+            `example.com` also matches `notexample.com`.
+          schema: { type: string }
+        - name: search
+          in: query
+          description: Match anywhere in the zone name, case-insensitively.
+          schema: { type: string }
+        - name: disabled
+          in: query
+          description: Select only disabled or only enabled zones.
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: One page of zones.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ZonePage" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    post:
+      operationId: createZone
+      tags: [zones]
+      summary: Create a zone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateZone" }
+      responses:
+        "201":
+          description: The zone was created.
+          headers:
+            Location:
+              description: Where the new zone can be read.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /zones/{zoneId}:
+    parameters:
+      - $ref: "#/components/parameters/ZoneID"
+    get:
+      operationId: getZone
+      tags: [zones]
+      summary: Read one zone
+      responses:
+        "200":
+          description: The zone.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: updateZone
+      tags: [zones]
+      summary: Change a zone's own settings
+      description: |
+        Only the fields that are present are changed. The zone's records are
+        not touched, and the zone cannot be renamed: every owner name, every
+        sort key and the whole journal belong to the name it has.
+
+        Changing anything that is served advances the serial, like any other
+        change. Changing nothing writes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateZone" }
+      responses:
+        "200":
+          description: The zone as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Zone" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      operationId: deleteZone
+      tags: [zones]
+      summary: Delete a zone and everything in it
+      responses:
+        "204":
+          description: The zone is gone.
+        default: { $ref: "#/components/responses/Problem" }
+
+  /zones/{zoneId}/records:
+    parameters:
+      - $ref: "#/components/parameters/ZoneID"
+    get:
+      operationId: listRecords
+      tags: [records]
+      summary: List the records of a zone
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: name
+          in: query
+          description: Match one owner name exactly.
+          schema: { type: string }
+        - name: type
+          in: query
+          description: Match one record type.
+          schema: { type: string }
+        - name: search
+          in: query
+          description: |
+            Match anywhere in the owner name or the record data,
+            case-insensitively. It is what backs the filter above a record
+            listing, the same way it does above the zone listing: `name` and
+            `type` answer "which record is this", and this answers "where does
+            192.0.2.10 appear".
+          schema: { type: string }
+      responses:
+        "200":
+          description: One page of records.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordPage" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    post:
+      operationId: createRecord
+      tags: [records]
+      summary: Add a record to a zone
+      description: |
+        An address record may generate a PTR in the reverse zone answering for
+        it. What that produced, and what it could not produce, comes back in
+        the response rather than in a log line (docs/decisions/ D3 and D6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRecord" }
+      responses:
+        "201":
+          description: The record was added.
+          headers:
+            Location:
+              description: Where the new record can be read.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordWritten" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /zones/import:
+    post:
+      operationId: importZone
+      tags: [zones]
+      summary: Bring a whole zone in from a zonefile
+      description: |
+        The body is the file itself, in the presentation format of RFC 1035 §5.
+        The zone it describes is wherever its SOA sits, so the name is not sent
+        separately and cannot be sent inconsistently.
+
+        The serial in the file is the serial the zone starts at. A migrated
+        zone that restarted at 1 would look older than itself to every
+        secondary that has already seen it (RFC 1982 §3.2), which is the single
+        most common way to break a migration (docs/decisions/ D2).
+
+        `$INCLUDE` is refused: a file arriving here that could pull in a path
+        would read this server's filesystem out loud.
+
+        Records that a delegation in the same file makes unanswerable are left
+        out rather than failing the whole file, and come back in `skipped`.
+        Real zones carry them, and a migration that stops on one is a migration
+        nobody finishes.
+
+        The zone must not already exist. A file is the complete contents of a
+        zone, so bringing one into a zone that holds records is a replacement
+        rather than an import.
+      parameters:
+        - name: origin
+          in: query
+          description: |
+            Where relative names are resolved from, for a file that sets no
+            `$ORIGIN` of its own. Not needed otherwise.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          text/dns:
+            schema: { type: string }
+      responses:
+        "201":
+          description: The zone was created from the file.
+          headers:
+            Location:
+              description: Where the new zone can be read.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ZoneImported" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /zones/{zoneId}/export:
+    parameters:
+      - $ref: "#/components/parameters/ZoneID"
+    get:
+      operationId: exportZone
+      tags: [zones]
+      summary: Write a zone out as a zonefile
+      description: |
+        The presentation format of RFC 1035 §5, which any other authoritative
+        server reads. Every name is absolute and every record carries its own
+        TTL and class, so no line means something different when it is copied
+        out; records come out in the canonical order of RFC 4034 §6.1, so
+        exporting the same zone twice is the same bytes and a diff of two
+        exports is a diff of two zones.
+
+        A disabled record is left out. It is not part of the zone as it
+        answers, and a file has nowhere to say "present but switched off".
+      responses:
+        "200":
+          description: The zone.
+          content:
+            text/dns:
+              schema: { type: string }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /zones/{zoneId}/rollback:
+    parameters:
+      - $ref: "#/components/parameters/ZoneID"
+    post:
+      operationId: rollbackZone
+      tags: [history]
+      summary: Restore a zone to the state it had at a serial
+      description: |
+        The difference between the zone as it stands and the zone as it stood
+        is written as a **new** commit that moves forward to that state. It is
+        not a rewind: a secondary that has already seen serial 90 will never
+        accept a jump back to 42, because RFC 1982 arithmetic makes 42 older
+        and RFC 1995 has no way to express going backwards.
+
+        Records that did not change in between are not touched, so they keep
+        their identity, their comments and the history pointing at them.
+        Records the server generated are not restored directly: they follow
+        from the records they were generated from, so restoring those is what
+        moves them.
+
+        A rollback to the serial the zone is already at changes nothing and
+        answers with no commit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RollbackZone" }
+      responses:
+        "200":
+          description: The zone is back at that state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RollbackResult" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /zones/{zoneId}/rrsets:
+    parameters:
+      - $ref: "#/components/parameters/ZoneID"
+    put:
+      operationId: replaceRRsets
+      tags: [records]
+      summary: Make the named RRsets exactly what is given
+      description: |
+        An RRset (everything sharing an owner name, class and type) is the
+        unit DNS answers with (RFC 2181 §5), and therefore the unit a record
+        editor edits. Sending the set rather than a list of additions and
+        removals means the client says what it wants to be true, and the server
+        works out the difference; a record whose data did not change keeps its
+        identity, and with it its comment, its provenance and the history
+        pointing at it.
+
+        Only the RRsets named here are touched. An empty `records` removes one.
+
+        Everything in one request becomes one commit, so a page of edits saved
+        together is one line in the history and one point to roll back to.
+
+        The RRsets are named in the body rather than in the path because a DNS
+        label may hold any octet, `/` among them, so there is no path form that
+        is safe for every name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReplaceRRsets" }
+      responses:
+        "200":
+          description: The named RRsets as they now stand.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RRsetsWritten" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /records/{recordId}:
+    parameters:
+      - $ref: "#/components/parameters/RecordID"
+    get:
+      operationId: getRecord
+      tags: [records]
+      summary: Read one record
+      responses:
+        "200":
+          description: The record.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Record" }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: updateRecord
+      tags: [records]
+      summary: Change a record
+      description: |
+        Only the fields that are present are changed. The record keeps its
+        identity, and with it its comment, its provenance and the history
+        pointing at it, which is what tells an edit apart from a delete and an
+        add.
+
+        A record the server generated is refused, naming the record it came
+        from; detach it first to take it over (docs/decisions/ D4).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateRecord" }
+      responses:
+        "200":
+          description: The record as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordWritten" }
+        default: { $ref: "#/components/responses/Problem" }
+    delete:
+      operationId: deleteRecord
+      tags: [records]
+      summary: Delete a record
+      responses:
+        "204":
+          description: The record is gone.
+        default: { $ref: "#/components/responses/Problem" }
+
+  /records/{recordId}/detach:
+    parameters:
+      - $ref: "#/components/parameters/RecordID"
+    post:
+      operationId: detachRecord
+      tags: [records]
+      summary: Take over a generated record
+      description: |
+        The record keeps its data and its identity, loses its link to the
+        record it was generated from, and the automation stops maintaining it
+        (docs/decisions/ D4). A record that was already authored is returned
+        unchanged: asking for it to be nobody's derivative has got what it
+        asked for.
+      responses:
+        "200":
+          description: The record, now authored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordWritten" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/session:
+    post:
+      operationId: createSession
+      tags: [auth]
+      summary: Exchange a token for a browser session
+      description: |
+        The web interface does not hold a long-lived token. It posts one here
+        once and receives an `httpOnly` session cookie, which no script that
+        gets injected into the page can read, which is the whole point.
+
+        A second, readable cookie carries a CSRF value. Every state-changing
+        request authenticated by the session cookie has to repeat it in the
+        `X-Wegweiser-CSRF` header. `SameSite=Strict` already blocks a
+        cross-site form post; this is the second layer. A request that
+        authenticates with a bearer token skips the check, because CSRF needs
+        ambient credentials and a bearer token is not ambient.
+
+        Unauthenticated, because a request that could authenticate would not
+        need this. The token inside is checked the same way and is rate-limited
+        the same way.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSession" }
+      responses:
+        "201":
+          description: The session was opened. The cookies are in the headers.
+          headers:
+            Set-Cookie:
+              description: The session cookie and the CSRF cookie.
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    get:
+      operationId: getSession
+      tags: [auth]
+      summary: Report who this request is authenticated as
+      description: |
+        What an interface asks when it loads, to find out whether it has to
+        show a login at all, and what to grey out if it does not.
+      responses:
+        "200":
+          description: The caller.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    delete:
+      operationId: deleteSession
+      tags: [auth]
+      summary: End the session
+      description: |
+        The cookies are cleared and the session is forgotten here, so a copy of
+        the cookie taken beforehand stops working too. The token it was opened
+        with is untouched.
+      responses:
+        "204":
+          description: The session is over.
+        default: { $ref: "#/components/responses/Problem" }
+
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Read the server-wide settings
+      description: |
+        These are the defaults a zone that says nothing about itself inherits.
+        They live in the database, so changing one takes effect on the next
+        write without a restart (docs/decisions/ D11).
+      responses:
+        "200":
+          description: The settings in force.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    patch:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Change the server-wide settings
+      description: |
+        A field that is absent is left alone, so a client may send only what it
+        means to change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSettings" }
+      responses:
+        "200":
+          description: The settings as they now stand.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /tokens:
+    get:
+      operationId: listTokens
+      tags: [tokens]
+      summary: List the tokens that may use this API
+      description: |
+        Revoked and expired tokens are listed too, so that a name in the
+        history can still be looked up. No response ever carries a secret: what
+        is stored is its SHA-256, and the leading characters kept in the clear
+        are there to tell two tokens apart, not to authenticate with.
+      responses:
+        "200":
+          description: Every token.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Token" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    post:
+      operationId: createToken
+      tags: [tokens]
+      summary: Mint a token
+      description: |
+        The secret comes back in this response and never again. It is 256 bits
+        from a cryptographic source; what the server keeps is its SHA-256, so a
+        copy of the database is not a copy of the credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateToken" }
+      responses:
+        "201":
+          description: The token, with its secret shown for the only time.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenCreated" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /tokens/{tokenId}:
+    parameters:
+      - name: tokenId
+        in: path
+        required: true
+        description: The ULID of a token.
+        schema: { type: string }
+    delete:
+      operationId: revokeToken
+      tags: [tokens]
+      summary: Withdraw a token
+      description: |
+        The token is marked unusable rather than removed, so that the history
+        it appears in still names something. Revoking a token that is already
+        revoked changes nothing and is not an error.
+
+        The last token that can still administer the server is refused: a
+        server nobody can reach is not a state this API will put itself in.
+      responses:
+        "204":
+          description: The token can no longer be used.
+        default: { $ref: "#/components/responses/Problem" }
+
+  /tsig-keys:
+    get:
+      operationId: listTSIGKeys
+      tags: [tsig]
+      summary: List the keys a secondary may sign a transfer with
+      description: |
+        Revoked keys are listed too, so that a name a secondary still has
+        configured can be looked up. No listing carries a secret; reading one
+        back is a request of its own.
+      responses:
+        "200":
+          description: Every key.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TSIGKey" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    post:
+      operationId: createTSIGKey
+      tags: [tsig]
+      summary: Create a key
+      description: |
+        The secret comes back in this response. Unlike an API token it can be
+        read again, because verifying a signature means recomputing the MAC and
+        this server therefore has to keep it.
+
+        Leave the secret out and one is generated, at least as long as the hash
+        output of the algorithm (RFC 8945 section 8). Send one to match a
+        secondary that already has a key, base64 as every other implementation
+        writes it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTSIGKey" }
+      responses:
+        "201":
+          description: The key, with its secret.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TSIGKeySecret" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /tsig-keys/{keyId}:
+    parameters:
+      - name: keyId
+        in: path
+        required: true
+        description: The ULID of a key.
+        schema: { type: string }
+    delete:
+      operationId: revokeTSIGKey
+      tags: [tsig]
+      summary: Withdraw a key
+      description: |
+        The key stops signing and its secret is cleared, which is the one thing
+        revoking a token does not do: a token leaves only a hash behind, and a
+        key would leave material nothing will read again. The row stays so the
+        name and the dates still read, and the name is then free for a
+        replacement.
+
+        Revoking a key that is already revoked changes nothing and is not an
+        error.
+      responses:
+        "204":
+          description: The key no longer signs.
+        default: { $ref: "#/components/responses/Problem" }
+
+  /tsig-keys/{keyId}/secret:
+    parameters:
+      - name: keyId
+        in: path
+        required: true
+        description: The ULID of a key.
+        schema: { type: string }
+    get:
+      operationId: readTSIGKeySecret
+      tags: [tsig]
+      summary: Read a key's secret
+      description: |
+        Separate from the listing so that a secret is shown when somebody asked
+        for it and not when they were looking at something else. It is not a
+        boundary: the database holds the secret either way.
+
+        A revoked key has none, and this is then a refusal rather than an empty
+        answer.
+      responses:
+        "200":
+          description: The key and its secret.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TSIGKeySecret" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /commits:
+    get:
+      operationId: listCommits
+      tags: [history]
+      summary: List commits, newest first
+      description: |
+        Every write is a commit, so this is the whole history of the server.
+        Commits are listed without their events, which is what makes a page of
+        history cheap on a zone that has been edited for years; read one commit
+        to get the changes it made.
+
+        A commit outlives the zone it describes, so the history of a deleted
+        zone is still here, under the name it had.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: zoneId
+          in: query
+          description: Restrict the history to one zone.
+          schema: { type: string }
+        - name: kind
+          in: query
+          description: Restrict to commits of these kinds.
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/CommitKind" }
+        - name: actor
+          in: query
+          description: Match the recorded actor exactly.
+          schema: { type: string }
+        - name: since
+          in: query
+          description: Only commits at or after this time.
+          schema: { type: string, format: date-time }
+        - name: until
+          in: query
+          description: Only commits before this time.
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: One page of history.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CommitPage" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /commits/{commitId}:
+    parameters:
+      - name: commitId
+        in: path
+        required: true
+        description: The ULID of a commit.
+        schema: { type: string }
+    get:
+      operationId: getCommit
+      tags: [history]
+      summary: Read one commit and everything it changed
+      description: |
+        The events are the diff: every record that was removed and every record
+        that was added, both carrying their full data. That is what RFC 1995 §2
+        asks of an incremental transfer, and it is also what an interface needs
+        to render the change and what restoring an earlier state needs to undo
+        it.
+      responses:
+        "200":
+          description: The commit, with its events in order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Commit" }
+        default: { $ref: "#/components/responses/Problem" }
+
+components:
+  securitySchemes:
+    bearerToken:
+      type: http
+      scheme: bearer
+      description: |
+        A named API token. Tokens carry the scopes `read`, `write` and `admin`;
+        an endpoint that changes anything needs `write`.
+
+  parameters:
+    ZoneID:
+      name: zoneId
+      in: path
+      required: true
+      description: The ULID of a zone.
+      schema: { type: string }
+    RecordID:
+      name: recordId
+      in: path
+      required: true
+      description: The ULID of a record.
+      schema: { type: string }
+    Cursor:
+      name: cursor
+      in: query
+      description: Continue a listing where the last page ended.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      description: How many items to return at most.
+      schema: { type: integer, minimum: 1, maximum: 1000 }
+
+  responses:
+    Problem:
+      description: The request could not be carried out.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    Problem:
+      type: object
+      description: |
+        A failure, in the shape of RFC 9457. Anything a client has to act on
+        travels as a field rather than as prose in `detail`, because no client
+        should be parsing English.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          description: A URI reference naming the kind of failure.
+        title:
+          type: string
+          description: A short, stable summary of the kind of failure.
+        status:
+          type: integer
+          description: The HTTP status code, repeated for clients that lost it.
+        detail:
+          type: string
+          description: What went wrong with this particular request.
+        instance:
+          type: string
+          description: The request this failure belongs to.
+        conflicts:
+          type: array
+          description: Reverse entries that were not written because another name already claims the address.
+          items: { $ref: "#/components/schemas/Conflict" }
+        missingZones:
+          type: array
+          description: Reverse zones that would be needed and do not exist.
+          items: { $ref: "#/components/schemas/MissingZone" }
+
+    ReverseConflictPolicy:
+      type: string
+      enum: [first-wins, last-wins, multi, reject]
+      description: |
+        What happens when an address already answers a reverse lookup with some
+        other name (docs/decisions/ D3).
+
+        - `first-wins` keeps the entry that is there and reports the conflict.
+          The default, and the only value that never changes an answer nobody
+          asked to change.
+        - `last-wins` replaces a generated entry with the new one, still
+          reporting the conflict. An entry somebody wrote by hand is never
+          replaced.
+        - `multi` keeps both, which is the literal reading of "generate the
+          reverse entry" and turns a routine change into a multi-record PTR set
+          that reverse-lookup checks are not built for.
+        - `reject` refuses the whole change.
+
+    Settings:
+      type: object
+      required: [reverseConflictPolicy, transferAllow, notifyTargets]
+      properties:
+        reverseConflictPolicy:
+          $ref: "#/components/schemas/ReverseConflictPolicy"
+        transferAllow:
+          $ref: "#/components/schemas/TransferAllow"
+        notifyTargets:
+          $ref: "#/components/schemas/NotifyTargets"
+
+    UpdateSettings:
+      type: object
+      description: A field that is absent is left as it is.
+      properties:
+        reverseConflictPolicy:
+          $ref: "#/components/schemas/ReverseConflictPolicy"
+        transferAllow:
+          $ref: "#/components/schemas/TransferAllow"
+        notifyTargets:
+          $ref: "#/components/schemas/NotifyTargets"
+
+    NotifyTargets:
+      type: array
+      description: |
+        Who is told when a zone changes, as addresses with an optional port.
+        An empty list tells nobody, and then a secondary finds out when its
+        own refresh timer fires. This is a separate list from transferAllow:
+        that one decides who may take a copy, this one names where a
+        notification can arrive, so it holds addresses rather than prefixes.
+
+        A `key:<name>` after the address signs the notification with that TSIG
+        key, for a secondary that insists on one.
+      items:
+        type: string
+        example: "192.0.2.53 key:secondary.example.com."
+
+    TransferAllow:
+      type: array
+      description: |
+        Who may transfer a zone off this server, whole or as what has changed
+        since their copy, as addresses or CIDR prefixes. An empty list is
+        nobody, which is where a server starts: a zone is an inventory of a
+        network, and a copy handed out cannot be taken back. A bare address is
+        stored as the single-host prefix it means.
+      items:
+        type: string
+        example: "192.0.2.0/24"
+
+    Health:
+      type: object
+      required: [status, version, zones, records]
+      properties:
+        status: { type: string, enum: [serving, starting] }
+        version: { type: string }
+        zones:
+          type: integer
+          description: Zones the query path currently answers for.
+        records:
+          type: integer
+          description: Records the query path currently answers from.
+
+    QueryEvent:
+      type: object
+      description: One exchange, as a watcher sees it.
+      required: [at, client, transport, name, type, class, rcode, size, latencyUs, truncated, dropped]
+      properties:
+        at:
+          type: string
+          format: date-time
+          description: When the query was read.
+        latencyUs:
+          type: integer
+          description: |
+            How long the exchange took, in microseconds, from reading the
+            query to having written the response.
+        client:
+          type: string
+          description: The address the query came from.
+        port:
+          type: integer
+          description: The port it came from.
+        transport: { type: string, enum: [udp, tcp] }
+        name:
+          type: string
+          description: |
+            The question name, in the casing the client sent it, not the
+            casing this server stores, which is always lowercase.
+        type: { type: string }
+        class: { type: string }
+        rcode:
+          type: string
+          description: The response code sent, by mnemonic. Meaningless when `dropped` is set.
+        size:
+          type: integer
+          description: The response, in octets on the wire. Zero when nothing was sent.
+        truncated:
+          type: boolean
+          description: Whether the response was cut to fit the transport and marked TC (RFC 1035 §4.1.1).
+        dropped:
+          type: boolean
+          description: |
+            Whether nothing was sent at all. Two messages have no safe reply,
+            and a query that got silence is exactly what somebody debugging is
+            looking for.
+
+    StreamStatus:
+      type: object
+      description: |
+        What this stream is leaving out. Part of the interface rather than a
+        debug detail: a stream that is sampling has to say so, or what it shows
+        reads as everything that happened.
+      required: [matched, sent, sampled, dropped, ratio]
+      properties:
+        matched:
+          type: integer
+          description: Exchanges that passed the filter.
+        sent:
+          type: integer
+          description: How many of those reached this watcher.
+        sampled:
+          type: integer
+          description: How many were left out because the filtered stream was faster than the cap.
+        dropped:
+          type: integer
+          description: How many were thrown away because this watcher was not reading fast enough.
+        ratio:
+          type: integer
+          description: |
+            What the stream is sampling at now. 1 is everything; 50 means one
+            exchange in fifty is being sent.
+
+    ZoneKind:
+      type: string
+      enum: [forward, reverse]
+
+    SOA:
+      type: object
+      description: The start-of-authority parameters of a zone (RFC 1035 §3.3.13).
+      required: [primaryNs, mailbox, serial, refresh, retry, expire, minimum, ttl]
+      properties:
+        primaryNs:
+          type: string
+          description: The MNAME field, fully qualified.
+        mailbox:
+          type: string
+          description: The RNAME field, as a domain name.
+        serial:
+          type: integer
+          format: int64
+          description: Advanced by exactly one per commit (docs/decisions/ D2).
+          readOnly: true
+        refresh: { type: integer, format: int64 }
+        retry: { type: integer, format: int64 }
+        expire: { type: integer, format: int64 }
+        minimum:
+          type: integer
+          format: int64
+          description: The negative-caching TTL of RFC 2308 §4, not a floor on record TTLs.
+        ttl:
+          type: integer
+          format: int64
+          description: The time to live of the SOA record itself.
+
+    Zone:
+      type: object
+      required: [id, name, kind, soa, defaultTtl, disabled, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name:
+          type: string
+          description: The apex, fully qualified.
+        kind: { $ref: "#/components/schemas/ZoneKind" }
+        prefix:
+          type: string
+          description: The network a reverse zone answers for, in CIDR form.
+        soa: { $ref: "#/components/schemas/SOA" }
+        defaultTtl:
+          type: integer
+          format: int64
+          description: Applied to a record added without one.
+        autoReverse:
+          type: boolean
+          description: Whether address records in this zone generate PTRs. Absent inherits the global setting.
+        disabled:
+          type: boolean
+          description: A disabled zone is invisible on the wire, not merely marked.
+        comment: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateZone:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: |
+            The apex. A trailing dot is optional; the name is absolute either
+            way.
+
+            A network in CIDR notation is accepted here instead, and becomes
+            the reverse zone that answers for it: `192.168.0.0/16` is
+            `168.192.in-addr.arpa.`, `192.0.2.0/25` is the classless
+            `0/25.2.0.192.in-addr.arpa.` of RFC 2317, and `2001:db8::/32` is
+            eight nibbles written backwards. Working that out by hand is the
+            first thing that sends somebody to a manual.
+
+            A prefix and a name cannot be confused for one another, so nothing
+            is guessed. A bare address is refused with the network it probably
+            meant.
+        soa:
+          $ref: "#/components/schemas/SOAInput"
+        defaultTtl: { type: integer, format: int64 }
+        comment: { type: string }
+
+    UpdateZone:
+      type: object
+      description: |
+        The zone settings that may be changed. A field that is absent is left
+        as it is, which is what makes this a partial edit rather than a
+        replacement that a client has to read the whole zone to send.
+      properties:
+        soa: { $ref: "#/components/schemas/SOAInput" }
+        defaultTtl: { type: integer, format: int64 }
+        autoReverse:
+          type: [boolean, "null"]
+          description: |
+            Whether address records in this zone generate PTRs. Null puts the
+            zone back on the server-wide setting, which is a third state and
+            not the same as false.
+        disabled:
+          type: boolean
+          description: A disabled zone stops answering entirely.
+        comment: { type: string }
+
+    SOAInput:
+      type: object
+      description: |
+        The start-of-authority fields a client may set, on a zone it is
+        creating and on one it is changing. Every field is optional in both
+        cases: creating a zone fills what is not given from this server's
+        defaults, and changing one leaves it as it was. A client that only
+        cares about the name server should not have to send five timers it has
+        no opinion about.
+
+        The serial is not among them: one commit advances it by exactly one,
+        and that is what lets the journal be replayed (docs/decisions/ D2).
+      properties:
+        primaryNs: { type: string }
+        mailbox: { type: string }
+        refresh: { type: integer, format: int64 }
+        retry: { type: integer, format: int64 }
+        expire: { type: integer, format: int64 }
+        minimum: { type: integer, format: int64 }
+        ttl: { type: integer, format: int64 }
+
+    ZonePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Zone" }
+        nextCursor:
+          type: string
+          description: Absent once the listing is exhausted.
+
+    Record:
+      type: object
+      required: [id, zoneId, name, type, class, ttl, data, disabled, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        zoneId: { type: string }
+        name:
+          type: string
+          description: The owner name, fully qualified.
+        type: { type: string }
+        class: { type: string }
+        ttl: { type: integer, format: int64 }
+        data:
+          type: string
+          description: The record data in presentation format, canonicalised.
+        managedBy:
+          type: string
+          description: The record this one was generated from, for a generated record.
+        managedKind:
+          type: string
+          description: Why this record was generated.
+        comment: { type: string }
+        disabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateRecord:
+      type: object
+      required: [name, type, data]
+      properties:
+        name:
+          type: string
+          description: |
+            The owner name, absolute. A trailing dot is optional and changes
+            nothing: `www.example.com` and `www.example.com.` are the same
+            name. A name is never completed with the zone apex; that is what
+            turns `www.example.com` into `www.example.com.example.com.` in a
+            zonefile, and an interface that offers a relative field completes
+            it before it gets here.
+        type: { type: string }
+        class:
+          type: string
+          description: Defaults to IN, which is the only class this server answers.
+        ttl:
+          type: integer
+          format: int64
+          description: Defaults to the zone's own default TTL.
+        data: { type: string }
+        comment: { type: string }
+
+    UpdateRecord:
+      type: object
+      description: |
+        The parts of a record that may be changed. A field that is absent is
+        left as it is. The class is not among them, because IN is the only
+        class this server answers.
+      properties:
+        name: { type: string }
+        type: { type: string }
+        ttl: { type: integer, format: int64 }
+        data: { type: string }
+        comment: { type: string }
+        disabled:
+          type: boolean
+          description: A disabled record is kept but not answered with.
+
+    RecordWritten:
+      type: object
+      description: The record as it now stands, together with what writing it caused.
+      required: [record]
+      properties:
+        record: { $ref: "#/components/schemas/Record" }
+        generated:
+          type: array
+          description: Records written automatically, such as the PTR for an address.
+          items: { $ref: "#/components/schemas/Record" }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/Conflict" }
+        missingZones:
+          type: array
+          items: { $ref: "#/components/schemas/MissingZone" }
+
+    RecordPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Record" }
+        nextCursor: { type: string }
+
+    ZoneImported:
+      type: object
+      description: The zone a file produced, and what reading it ran into.
+      required: [zone, records]
+      properties:
+        zone: { $ref: "#/components/schemas/Zone" }
+        records:
+          type: integer
+          description: How many records were written.
+        skipped:
+          type: array
+          description: |
+            Records the file carried that the zone could never answer with, so
+            they were left out. Data rather than an error: whether the source
+            zone meant them is a question for a person.
+          items: { $ref: "#/components/schemas/SkippedRecord" }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/Conflict" }
+        missingZones:
+          type: array
+          items: { $ref: "#/components/schemas/MissingZone" }
+
+    SkippedRecord:
+      type: object
+      required: [record, reason]
+      properties:
+        record:
+          type: string
+          description: The record as the file had it, in presentation format.
+        reason:
+          type: string
+          description: Why the zone could never answer with it.
+
+    RRset:
+      type: object
+      description: |
+        Every record sharing an owner name, class and type. The TTL belongs to
+        the set rather than to each record: RFC 2181 §5.2 requires them to be
+        equal, and a field that can be set inconsistently is one that will be.
+      required: [name, type, records]
+      properties:
+        name:
+          type: string
+          description: The owner name, absolute, as for a single record.
+        type: { type: string }
+        class:
+          type: string
+          description: Defaults to IN, which is the only class this server answers.
+        ttl:
+          type: integer
+          format: int64
+          description: Defaults to the zone's own default TTL.
+        records:
+          type: array
+          description: What the set should hold. Empty removes it.
+          items: { $ref: "#/components/schemas/RRsetMember" }
+
+    RRsetMember:
+      type: object
+      required: [data]
+      properties:
+        data: { type: string }
+        comment: { type: string }
+        disabled:
+          type: boolean
+          description: A disabled record is kept but not answered with.
+
+    ReplaceRRsets:
+      type: object
+      required: [rrsets]
+      properties:
+        rrsets:
+          type: array
+          items: { $ref: "#/components/schemas/RRset" }
+        comment:
+          type: string
+          description: Why, for the history.
+
+    RRsetsWritten:
+      type: object
+      description: The named RRsets as they now stand, and what writing them caused.
+      required: [records]
+      properties:
+        records:
+          type: array
+          description: Every record now in the named RRsets, in the order the sets were given.
+          items: { $ref: "#/components/schemas/Record" }
+        generated:
+          type: array
+          description: Records written automatically, such as the PTR for an address.
+          items: { $ref: "#/components/schemas/Record" }
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/Conflict" }
+        missingZones:
+          type: array
+          items: { $ref: "#/components/schemas/MissingZone" }
+
+    CommitKind:
+      type: string
+      description: What a commit did, for an interface that would rather say it than recite the events.
+      enum: [zone_create, zone_update, zone_delete, edit, import, rollback]
+
+    CommitSource:
+      type: string
+      description: The interface a change arrived through.
+      enum: [api, cli, import, system]
+
+    Commit:
+      type: object
+      description: One atomic change to one zone.
+      required: [id, zoneId, zoneName, serialFrom, serialTo, kind, source, createdAt]
+      properties:
+        id: { type: string }
+        zoneId: { type: string }
+        zoneName:
+          type: string
+          description: |
+            Carried on the commit rather than joined from the zone, because a
+            commit outlives the zone: the last thing that happens to a zone is
+            that someone deletes it.
+        serialFrom:
+          type: integer
+          format: int64
+          description: The serial this commit was applied to.
+        serialTo:
+          type: integer
+          format: int64
+          description: The serial it produced. Exactly one step on (docs/decisions/ D2).
+        kind: { $ref: "#/components/schemas/CommitKind" }
+        source: { $ref: "#/components/schemas/CommitSource" }
+        revertsTo:
+          type: integer
+          format: int64
+          description: |
+            The serial a rollback restored the zone to. Absent on every other
+            kind of commit, which is what the schema enforces.
+        actor:
+          type: string
+          description: Who caused it, as far as the interface it arrived through could tell.
+        comment: { type: string }
+        createdAt: { type: string, format: date-time }
+        events:
+          type: array
+          description: |
+            The records this commit removed and added, in order. Absent in a
+            listing, which is what keeps a page of history cheap.
+          items: { $ref: "#/components/schemas/Event" }
+
+    RollbackZone:
+      type: object
+      required: [serial]
+      properties:
+        serial:
+          type: integer
+          format: int64
+          description: The serial to restore the zone to. It has to be one the zone actually had.
+        comment:
+          type: string
+          description: Why, for the history.
+
+    RollbackResult:
+      type: object
+      description: What restoring the state produced.
+      properties:
+        commit:
+          allOf:
+            - $ref: "#/components/schemas/Commit"
+          description: |
+            The commit that moved the zone to that state, with its events.
+            Absent when the zone was already there and nothing was written.
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/Conflict" }
+        missingZones:
+          type: array
+          items: { $ref: "#/components/schemas/MissingZone" }
+
+    Event:
+      type: object
+      description: |
+        One resource-record change. There is no "modify": a modification is a
+        removal and an addition, which is how RFC 1995 §2 expresses it too.
+        Both directions carry the full record data, so a removal can be undone
+        as well as replayed.
+      required: [seq, op, name, class, type, ttl, data]
+      properties:
+        seq:
+          type: integer
+          description: Orders the events within the commit, counting from zero.
+        op:
+          type: string
+          enum: [add, del]
+        name: { type: string }
+        class: { type: string }
+        type: { type: string }
+        ttl: { type: integer, format: int64 }
+        data: { type: string }
+
+    CommitPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Commit" }
+        nextCursor: { type: string }
+
+    CreateSession:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: The API token to open the session with.
+
+    Session:
+      type: object
+      description: Who a request is authenticated as, and what it may do.
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+          description: The name of the token this authenticates as.
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/Scope" }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the session ends. Absent when the request authenticated with a bearer token.
+
+    Scope:
+      type: string
+      description: |
+        What a token may do. The scopes are ordered (admin allows everything
+        write allows, and write everything read allows) so a token carries the
+        strongest one it needs rather than a list.
+      enum: [read, write, admin]
+
+    Token:
+      type: object
+      description: A credential, without the secret it authenticates with.
+      required: [id, name, prefix, scopes, createdAt]
+      properties:
+        id: { type: string }
+        name:
+          type: string
+          description: What this token is for, as a person would say it.
+        prefix:
+          type: string
+          description: |
+            The leading characters of the secret, kept in the clear so that two
+            tokens can be told apart in a list and in the history.
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/Scope" }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt:
+          type: string
+          format: date-time
+          description: Absent for a token that has never authenticated a request. Advisory, and may lag.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Absent for a token that does not expire.
+        revokedAt:
+          type: string
+          format: date-time
+          description: Absent for a token that is still usable.
+
+    CreateToken:
+      type: object
+      required: [name, scopes]
+      properties:
+        name: { type: string }
+        scopes:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/Scope" }
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the token stops working. Absent means it does not.
+
+    TokenCreated:
+      type: object
+      required: [token, secret]
+      properties:
+        token: { $ref: "#/components/schemas/Token" }
+        secret:
+          type: string
+          description: |
+            The credential itself, shown here and nowhere else. There is no way
+            to read it again, because the server does not have it.
+
+    TSIGKey:
+      type: object
+      description: A key a secondary signs its transfer requests with, without its secret.
+      required: [id, name, algorithm, createdAt]
+      properties:
+        id: { type: string }
+        name:
+          type: string
+          description: |
+            The key name both ends agree on, in domain name syntax
+            (RFC 8945 section 4.2). Compared case-insensitively.
+          example: secondary.example.com.
+        algorithm: { $ref: "#/components/schemas/TSIGAlgorithm" }
+        createdAt: { type: string, format: date-time }
+        revokedAt:
+          type: string
+          format: date-time
+          description: Absent for a key that still signs.
+
+    TSIGAlgorithm:
+      type: string
+      description: |
+        The keyed hash the key signs with. This server does not offer hmac-sha1
+        or HMAC-MD5, which RFC 8945 section 6 calls NOT RECOMMENDED and MUST NOT
+        use respectively; docs/decisions/ D28 argues the departure from its
+        MUST-implement.
+      enum: [hmac-sha256., hmac-sha384., hmac-sha512.]
+
+    CreateTSIGKey:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: The key name, in domain name syntax.
+          example: secondary.example.com.
+        algorithm: { $ref: "#/components/schemas/TSIGAlgorithm" }
+        secret:
+          type: string
+          description: |
+            The shared secret, base64. Absent means generate one, which is what
+            an operator who is configuring both ends wants.
+
+    TSIGKeySecret:
+      type: object
+      required: [key, secret]
+      properties:
+        key: { $ref: "#/components/schemas/TSIGKey" }
+        secret:
+          type: string
+          description: The shared secret, base64, as every implementation writes it.
+
+    Conflict:
+      type: object
+      description: |
+        An address already answers with another name (docs/decisions/ D3). It
+        is data rather than an error: which name should be canonical is a
+        decision for a person.
+      required: [address, existingName, requestedName, policy]
+      properties:
+        address: { type: string }
+        existingName: { type: string }
+        requestedName: { type: string }
+        existingRecordId: { type: string }
+        policy:
+          allOf:
+            - $ref: "#/components/schemas/ReverseConflictPolicy"
+          description: |
+            The policy that decided what happened here, so a client can say
+            whether the existing name was kept, replaced or joined rather than
+            leaving the reader to guess from the records.
+
+    MissingZone:
+      type: object
+      description: |
+        A reverse entry has nowhere to go, because no zone covers the address.
+        Creating one is an assertion of authority, so it is offered rather than
+        done (docs/decisions/ D6).
+      required: [address, zoneName]
+      properties:
+        address: { type: string }
+        zoneName:
+          type: string
+          description: The reverse zone that would be needed.

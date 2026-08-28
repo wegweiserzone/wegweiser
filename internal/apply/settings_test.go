@@ -1,0 +1,266 @@
+package apply_test
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/wegweiserzone/wegweiser/internal/apply"
+	"github.com/wegweiserzone/wegweiser/internal/store"
+)
+
+func TestParseTransferAllow(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+		// bad is what the refusal has to mention, or empty if it is accepted.
+		bad string
+	}{
+		{name: "nothing at all", in: nil, want: []string{}},
+		{name: "blank entries are dropped", in: []string{"", "  "}, want: []string{}},
+		{
+			name: "prefixes come back as they went in",
+			in:   []string{"192.0.2.0/24", "2001:db8::/32"},
+			want: []string{"192.0.2.0/24", "2001:db8::/32"},
+		},
+		{
+			// Naming one secondary should not require knowing that a host is a
+			// /32.
+			name: "a bare address is the host it means",
+			in:   []string{"192.0.2.7", "2001:db8::1"},
+			want: []string{"192.0.2.7/32", "2001:db8::1/128"},
+		},
+		{
+			name: "a v4 address written as v6 is stored as v4",
+			in:   []string{"::ffff:192.0.2.7"},
+			want: []string{"192.0.2.7/32"},
+		},
+		{
+			// Masking it would sometimes hand a zone to a whole network
+			// nobody meant to name.
+			name: "a prefix with host bits set is refused, and says what was meant",
+			in:   []string{"192.0.2.7/24"},
+			bad:  "192.0.2.0/24",
+		},
+		{
+			// A key grants a transfer from anywhere, which is what it is for
+			// (D28).
+			name: "a key is named as such",
+			in:   []string{"key:secondary.example.com."},
+			want: []string{"key:secondary.example.com."},
+		},
+		{
+			name: "addresses come first, whatever order they were sent in",
+			in:   []string{"key:secondary.example.com.", "192.0.2.0/24"},
+			want: []string{"192.0.2.0/24", "key:secondary.example.com."},
+		},
+		{name: "a key with no name", in: []string{"key:"}, bad: "does not name a TSIG key"},
+		{name: "a name is not an address", in: []string{"ns1.example.com."}, bad: "not an address"},
+		{name: "nonsense", in: []string{"192.0.2.0/33"}, bad: "not an address"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := apply.ParseTransferAllow(tt.in)
+			if tt.bad != "" {
+				if err == nil {
+					t.Fatalf("%v was accepted as %v", tt.in, got)
+				}
+				if !strings.Contains(err.Error(), tt.bad) {
+					t.Errorf("error is %q, want it to mention %q", err, tt.bad)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseTransferAllow(%v): %v", tt.in, err)
+			}
+			if text := apply.TransferAllowText(got); !slices.Equal(text, tt.want) {
+				t.Errorf("got %v, want %v", text, tt.want)
+			}
+		})
+	}
+}
+
+func TestTransferAllowRoundTripsThroughTheStore(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+
+	// Nothing set is nobody, which is where a server starts (D26).
+	var got apply.TransferAllow
+	read := func() {
+		t.Helper()
+		if err := f.s.View(t.Context(), func(r store.Reader) error {
+			var verr error
+			got, verr = apply.StoredTransferAllow(t.Context(), r)
+			return verr
+		}); err != nil {
+			t.Fatalf("StoredTransferAllow: %v", err)
+		}
+	}
+
+	read()
+	if !got.Empty() {
+		t.Fatalf("a fresh server allows %v", apply.TransferAllowText(got))
+	}
+
+	want, err := apply.ParseTransferAllow(
+		[]string{"192.0.2.0/24", "2001:db8::1", "key:secondary.example.com."})
+	if err != nil {
+		t.Fatalf("ParseTransferAllow: %v", err)
+	}
+	if uerr := f.s.Update(t.Context(), func(tx store.Tx) error {
+		return apply.SetStoredTransferAllow(t.Context(), tx, want)
+	}); uerr != nil {
+		t.Fatalf("SetStoredTransferAllow: %v", uerr)
+	}
+
+	read()
+	if !slices.Equal(apply.TransferAllowText(got), apply.TransferAllowText(want)) {
+		t.Errorf("read back %v, want %v",
+			apply.TransferAllowText(got), apply.TransferAllowText(want))
+	}
+
+	// And back to nobody, which has to be expressible or a list can never be
+	// taken away again.
+	if uerr := f.s.Update(t.Context(), func(tx store.Tx) error {
+		return apply.SetStoredTransferAllow(t.Context(), tx, apply.TransferAllow{})
+	}); uerr != nil {
+		t.Fatalf("SetStoredTransferAllow: %v", uerr)
+	}
+	read()
+	if !got.Empty() {
+		t.Errorf("after clearing it, %v may still transfer", apply.TransferAllowText(got))
+	}
+}
+
+func TestParseNotifyTargets(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+		// bad is what the refusal has to mention, or empty if it is accepted.
+		bad string
+	}{
+		{name: "nothing at all", in: nil, want: []string{}},
+		{name: "blank entries are dropped", in: []string{"", "  "}, want: []string{}},
+		{
+			// The port every resolver would have assumed is left off again, so
+			// what an operator typed is what they read back.
+			name: "an address alone means the port RFC 1035 §4.2 assigns",
+			in:   []string{"192.0.2.53", "2001:db8::53"},
+			want: []string{"192.0.2.53", "2001:db8::53"},
+		},
+		{
+			name: "a secondary somewhere else keeps its port",
+			in:   []string{"192.0.2.53:5353", "[2001:db8::53]:5353"},
+			want: []string{"192.0.2.53:5353", "[2001:db8::53]:5353"},
+		},
+		{
+			name: "a port that is the assigned one is still written without it",
+			in:   []string{"192.0.2.53:53"},
+			want: []string{"192.0.2.53"},
+		},
+		{
+			name: "a v4 address written as v6 is stored as v4",
+			in:   []string{"::ffff:192.0.2.53"},
+			want: []string{"192.0.2.53"},
+		},
+		{
+			// A secondary that insists on TSIG has to be able to trust the
+			// news too (D28). Written the way BIND writes an also-notify.
+			name: "a target can name the key its notification is signed with",
+			in:   []string{"192.0.2.53 key:secondary.example.com."},
+			want: []string{"192.0.2.53 key:secondary.example.com."},
+		},
+		{
+			name: "with a port as well",
+			in:   []string{"[2001:db8::53]:5353 key:secondary.example.com."},
+			want: []string{"[2001:db8::53]:5353 key:secondary.example.com."},
+		},
+		{
+			name: "something after the address that is not a key",
+			in:   []string{"192.0.2.53 secondary.example.com."},
+			bad:  "is not a key",
+		},
+		{
+			// The transfer list takes prefixes and this one cannot: a
+			// notification has to arrive somewhere.
+			name: "a prefix is not somewhere a datagram can arrive",
+			in:   []string{"192.0.2.0/24"},
+			bad:  "a prefix cannot be notified",
+		},
+		{name: "a name is not an address", in: []string{"ns1.example.com."}, bad: "not an address"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := apply.ParseNotifyTargets(tt.in)
+			if tt.bad != "" {
+				if err == nil {
+					t.Fatalf("%v was accepted as %v", tt.in, got)
+				}
+				if !strings.Contains(err.Error(), tt.bad) {
+					t.Errorf("error is %q, want it to mention %q", err, tt.bad)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseNotifyTargets(%v): %v", tt.in, err)
+			}
+			if text := apply.NotifyTargetsText(got); !slices.Equal(text, tt.want) {
+				t.Errorf("got %v, want %v", text, tt.want)
+			}
+		})
+	}
+}
+
+func TestNotifyTargetsRoundTripThroughTheStore(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+
+	// Nothing set tells nobody, which is where a server starts (D27).
+	var got []apply.NotifyTarget
+	read := func() {
+		t.Helper()
+		if err := f.s.View(t.Context(), func(r store.Reader) error {
+			var verr error
+			got, verr = apply.StoredNotifyTargets(t.Context(), r)
+			return verr
+		}); err != nil {
+			t.Fatalf("StoredNotifyTargets: %v", err)
+		}
+	}
+
+	read()
+	if len(got) != 0 {
+		t.Fatalf("a fresh server tells %v", apply.NotifyTargetsText(got))
+	}
+
+	want, err := apply.ParseNotifyTargets(
+		[]string{"192.0.2.53", "[2001:db8::53]:5353 key:secondary.example.com."})
+	if err != nil {
+		t.Fatalf("ParseNotifyTargets: %v", err)
+	}
+	if uerr := f.s.Update(t.Context(), func(tx store.Tx) error {
+		return apply.SetStoredNotifyTargets(t.Context(), tx, want)
+	}); uerr != nil {
+		t.Fatalf("SetStoredNotifyTargets: %v", uerr)
+	}
+
+	read()
+	if !slices.Equal(apply.NotifyTargetsText(got), apply.NotifyTargetsText(want)) {
+		t.Errorf("stored %v, read back %v",
+			apply.NotifyTargetsText(want), apply.NotifyTargetsText(got))
+	}
+}

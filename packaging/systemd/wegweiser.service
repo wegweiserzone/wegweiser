@@ -1,0 +1,89 @@
+[Unit]
+Description=Wegweiser authoritative DNS server
+Documentation=https://github.com/wegweiserzone/wegweiser
+# Answering with a zone whose records were never loaded is worse than not
+# answering, so the network has to be up before this starts rather than after.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/weg serve
+
+# No ExecReload on purpose. There is nothing here to reload: the file holds
+# bootstrap settings only (docs/decisions/ D11), and everything an operator
+# changes — zones, records, tokens — is in the database and takes effect on the
+# wire without a restart, let alone a signal. weg does not handle SIGHUP, so a
+# reload that sent one would terminate the server rather than reload it.
+
+# The process runs as nobody in particular. DynamicUser gives it a user for the
+# lifetime of the unit and takes it away again, so there is no account left on
+# the system for anything else to be run as.
+DynamicUser=yes
+
+# StateDirectory creates and owns /var/lib/wegweiser, which is where the
+# example configuration puts the database. ConfigurationDirectory is
+# /etc/wegweiser, which weg reads by default.
+StateDirectory=wegweiser
+StateDirectoryMode=0700
+ConfigurationDirectory=wegweiser
+
+# Port 53 without root (architecture invariant 7). AmbientCapabilities grants
+# it to the process; CapabilityBoundingSet is what stops it acquiring anything
+# else, including through a program it might exec.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+
+# A DNS server parses whatever the network sends it. The wire parser is fuzzed
+# and a malformed packet must never panic — and this is the second wall, for
+# the day the first one has a hole in it. What is left is: read the
+# configuration, write the database, answer on two sockets.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+# No PrivateUsers: in a private user namespace the ambient capability above
+# means nothing to the host's network namespace, and binding port 53 fails.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+UMask=0077
+
+# The syscalls a Go program answering on sockets needs, and nothing else. The
+# two subtractions are checked by running the server under this filter, not
+# reasoned about: @privileged is what a service that never changes identity has
+# no use for, and @resources holds the ones Go's runtime is closest to needing
+# — it raises RLIMIT_NOFILE at startup, which is inside the tested path.
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+# A signal drains the queries in flight and exits successfully, so a restart
+# does not read as a crash. Long enough for that to finish, short enough that a
+# stuck process does not hold up a reboot.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5s
+
+# The sockets cost a file descriptor each and a connection costs one more; the
+# bound on connections is in the configuration, and this is the ceiling above
+# it rather than the policy.
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

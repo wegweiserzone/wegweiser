@@ -1,0 +1,213 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - durationcheck
+    - errname
+    - errorlint
+    - exhaustive
+    - gocritic
+    - gosec
+    - makezero
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
+    - predeclared
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+
+  settings:
+    # depguard enforces the architecture invariants mechanically, so that a
+    # violation is a failed build rather than a review comment. See
+    # architecture section 5.
+    depguard:
+      rules:
+        sql-confined-to-store:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/internal/store/**"
+          deny:
+            - pkg: database/sql
+              desc: SQL belongs in internal/store only (architecture invariant 3)
+            - pkg: modernc.org/sqlite
+              desc: the SQLite driver belongs in internal/store/sqlite only
+            - pkg: github.com/jackc/pgx
+              desc: the Postgres driver belongs in internal/store/postgres only
+
+        # internal/api is a leaf everywhere except where a process is
+        # assembled. architecture section 5 puts that in cmd/weg and in
+        # internal/cli, which is where `weg serve` runs the API in the same
+        # process; commands live there rather than in package main so that they
+        # can be tested without building a binary.
+        api-is-a-leaf:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/cmd/**"
+            - "!**/internal/api/**"
+            - "!**/internal/cli/**"
+          deny:
+            - pkg: github.com/wegweiserzone/wegweiser/internal/api
+              desc: only the wiring imports internal/api, cmd/weg and internal/cli
+
+        zone-stays-pure:
+          list-mode: lax
+          files:
+            - "**/internal/zone/**"
+          deny:
+            - pkg: net/http
+              desc: internal/zone is model and pure functions, with no transport
+            - pkg: github.com/wegweiserzone/wegweiser/internal/store
+              desc: internal/zone must not depend on persistence
+            - pkg: github.com/wegweiserzone/wegweiser/internal/journal
+              desc: internal/zone must not depend on the journal
+            - pkg: github.com/wegweiserzone/wegweiser/internal/api
+              desc: internal/zone must not depend on transport
+
+        # Everything is fed from dns.Config.Observe rather than by reaching for
+        # a counter where the work happens, so the client library has one
+        # importer. A second one would be a metric nobody can find and a
+        # collector registered on a registry nobody serves.
+        metrics-have-one-home:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/internal/metrics/**"
+          deny:
+            - pkg: github.com/prometheus/client_golang
+              desc: the Prometheus client belongs in internal/metrics only
+            - pkg: github.com/prometheus/common
+              desc: the Prometheus exposition format belongs in internal/metrics only
+            - pkg: github.com/prometheus/client_model
+              desc: the exposition format's own types belong in internal/metrics only
+
+        dns-hot-path-stays-thin:
+          list-mode: lax
+          files:
+            - "**/internal/dns/**"
+          deny:
+            - pkg: github.com/wegweiserzone/wegweiser/internal/store
+              desc: the query path reads snapshots, never the database (invariant 2)
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    exhaustive:
+      # A switch with a default is exhaustive enough; requiring every case
+      # spelled out would fight the "unknown enum value" guard clauses.
+      default-signifies-exhaustive: true
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - hugeParam # measured decisions belong in benchmarks, not in a linter
+        - whyNoLint
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # readability wins until a profile says otherwise
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported # every exported symbol carries a doc comment
+          arguments:
+            - checkPrivateReceivers
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: var-declaration
+        - name: var-naming
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Tests may take shortcuts that production code may not.
+      - path: _test\.go
+        linters:
+          - gosec
+          - noctx
+          - unparam
+          # A test that reads a response body and hands it back closes it
+          # through t.Cleanup, which this linter cannot follow.
+          - bodyclose
+      # The session cookies of docs/decisions/ D5 deviate from the rule on
+      # purpose, and the deviations are the design. The CSRF cookie has to be
+      # readable, or the page cannot put its value in a header; and Secure
+      # follows the connection, because a Secure cookie is never sent back over
+      # plain HTTP — internal/api/session.go refuses to open a session over an
+      # untrustworthy transport instead of downgrading silently.
+      - path: internal/api/session\.go
+        linters:
+          - gosec
+        text: G124
+      # The configuration file is named by the operator running the process,
+      # through --config or $WEG_CONFIG. Reading a path somebody typed is what
+      # the flag is for; there is no boundary here for a traversal to cross,
+      # and constraining it to a directory would break --config ./weg.yaml,
+      # which is how anybody tries the server out.
+      - path: internal/config/config\.go
+        linters:
+          - gosec
+        text: G703
+      # Generated API clients and embedded assets are not ours to lint.
+      - path: (^|/)(gen|dist)/
+        linters:
+          - revive
+          - gocritic
+          - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/wegweiserzone/wegweiser
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
