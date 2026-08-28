@@ -325,3 +325,4 @@ public API is unstable and may change without a deprecation period.
   its zero value switched the headline feature off; it is a `*bool` now, nil meaning on.
 
 [Unreleased]: https://github.com/wegweiserzone/wegweiser/commits/main
+[0.1.0]: https://github.com/wegweiserzone/wegweiser/releases/tag/v0.1.0
