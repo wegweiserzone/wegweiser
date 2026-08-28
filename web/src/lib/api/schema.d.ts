@@ -239,6 +239,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/zones/{zoneId}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a zone. */
+                zoneId: components["parameters"]["ZoneID"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Report what is wrong with a zone as it stands
+         * @description Every rule the write path enforces, applied to the zone as it is
+         *     stored.
+         *
+         *     A write is checked against the names it touches, which is not the same
+         *     thing as the zone being sound afterwards: delegating a name that
+         *     already has records beneath it leaves those records occluded, and no
+         *     single write is in a position to see that. An import, a version older
+         *     than a rule, and a hand on the database file are the other ways a zone
+         *     arrives at a state nothing refused.
+         *
+         *     It reports rather than refuses. A name with more than one problem
+         *     yields the first of them, and the list stops at a thousand findings:
+         *     a zone past that has one systematic fault rather than a thousand
+         *     separate ones.
+         *
+         *     Nothing is written. Repairing what this names is ordinary editing.
+         */
+        get: operations["checkZone"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/zones/{zoneId}/rollback": {
         parameters: {
             query?: never;
@@ -996,6 +1034,41 @@ export interface components {
             /** @description Why the zone could never answer with it. */
             reason: string;
         };
+        /** @description What checking a zone found. */
+        ZoneCheck: {
+            /** @description How many records were read. */
+            records: number;
+            /**
+             * @description What is wrong, in the order the names were read. An empty list
+             *     means the zone satisfies every rule the write path enforces.
+             */
+            findings: components["schemas"]["Finding"][];
+            /**
+             * @description True when the check stopped collecting findings. What is listed is
+             *     still true; it is not all of it.
+             */
+            truncated: boolean;
+        };
+        /**
+         * @description Which rule produced a finding, so that a client can group or filter
+         *     without reading the sentence.
+         * @enum {string}
+         */
+        FindingScope: "owner" | "delegation" | "zone";
+        /** @description One thing wrong with a zone. Data rather than an error. */
+        Finding: {
+            scope: components["schemas"]["FindingScope"];
+            /**
+             * @description The owner name it is about, absolute. For a finding about the zone
+             *     as a whole this is the apex.
+             */
+            name: string;
+            /**
+             * @description What is wrong, worded as the write path words its refusal, so that
+             *     a zone repaired until the check is quiet is one it would accept.
+             */
+            detail: string;
+        };
         /**
          * @description Every record sharing an owner name, class and type. The TTL belongs to
          *     the set rather than to each record: RFC 2181 §5.2 requires them to be
@@ -1644,6 +1717,30 @@ export interface operations {
                 };
                 content: {
                     "text/dns": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    checkZone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a zone. */
+                zoneId: components["parameters"]["ZoneID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the check found. No findings is a sound zone. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ZoneCheck"];
                 };
             };
             default: components["responses"]["Problem"];

@@ -76,6 +76,11 @@ public API is unstable and may change without a deprecation period.
 - Settings gained `transferAllow` and `notifyTargets`. By D11 that is where they belong: in
   the database and reachable from every client, rather than in a file only whoever can log
   in to the machine can edit.
+- `GET /zones/{zoneId}/check` says what is wrong with a zone as it stands, as a list rather
+  than as a refusal. It applies the rules the write path enforces to what is already stored,
+  which is how it finds what no single write can: delegating a name that already has records
+  beneath it leaves them occluded, and neither write touches the record that ends up
+  unanswerable.
 
 #### CLI
 

@@ -270,3 +270,45 @@ func (s *Server) meta(ctx context.Context, comment string) apply.Meta {
 	}
 	return m
 }
+
+// CheckZone reports what is wrong with a zone as it stands.
+func (s *Server) CheckZone(
+	ctx context.Context, req gen.CheckZoneRequestObject,
+) (gen.CheckZoneResponseObject, error) {
+	z, err := s.zoneByID(ctx, zone.ZoneID(req.ZoneId))
+	if err != nil {
+		return nil, err
+	}
+
+	// Streamed rather than read whole, which is the difference between this and
+	// the export beside it: a check is the one read that has to work on a zone
+	// too large to hold, because that is where hand-repaired data lives.
+	var report zone.Report
+	if verr := s.store.View(ctx, func(r store.Reader) error {
+		check := zone.NewCheck(*z)
+		for rec, ierr := range r.IterZoneRecords(ctx, z.ID) {
+			if ierr != nil {
+				return ierr
+			}
+			check.Add(rec)
+		}
+		report = check.Done()
+		return nil
+	}); verr != nil {
+		return nil, verr
+	}
+
+	out := gen.ZoneCheck{
+		Records:   report.Records,
+		Truncated: report.Truncated,
+		Findings:  make([]gen.Finding, len(report.Findings)),
+	}
+	for i, f := range report.Findings {
+		out.Findings[i] = gen.Finding{
+			Scope:  gen.FindingScope(f.Scope),
+			Name:   f.Name.String(),
+			Detail: f.Detail,
+		}
+	}
+	return gen.CheckZone200JSONResponse(out), nil
+}
