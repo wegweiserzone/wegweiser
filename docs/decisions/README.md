@@ -59,8 +59,8 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they
-carried. D5a is a late addition to D5 rather than a record of its own, and keeps the number it
-was cited by.
+carried. D5a carries a letter rather than a number of its own, and that is all the letter means: it
+is not an extension of D5, whose subject is unrelated to it.
 
 ## Open, not decided
 
