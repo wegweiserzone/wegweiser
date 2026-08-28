@@ -1,0 +1,193 @@
+package zone
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// MaxFindings is how many problems a [Check] collects before it stops
+// collecting. A zone past this many broken names has something systematically
+// wrong with it, and a list that long has stopped being something a person
+// reads through.
+const MaxFindings = 1000
+
+// FindingScope says which rule a finding came from, so that a client can group
+// or filter without reading the sentence.
+type FindingScope string
+
+const (
+	// ScopeOwner covers the records sharing one name: a CNAME beside other
+	// data, a TTL that differs across an RRset, a duplicate, a PTR outside the
+	// network its zone answers for.
+	ScopeOwner FindingScope = "owner"
+
+	// ScopeDelegation covers where a name sits relative to the zone's
+	// delegations: what may live at one, and what may remain below it.
+	ScopeDelegation FindingScope = "delegation"
+
+	// ScopeZone covers the zone as a whole, such as the NS records at its apex.
+	ScopeZone FindingScope = "zone"
+)
+
+// Finding is one thing wrong with a zone as it is stored.
+//
+// It is not an error, because a check reports rather than refuses: an operator
+// wants the list, and stopping at the first problem turns a report into a game
+// of twenty questions.
+type Finding struct {
+	// Scope is the rule that produced it.
+	Scope FindingScope
+
+	// Name is the owner the finding is about, or the apex where the finding is
+	// about the zone.
+	Name Name
+
+	// Detail is the sentence a person reads. It is the same text the write path
+	// refuses with, so a zone repaired until the check is quiet is a zone the
+	// write path would accept.
+	Detail string
+}
+
+// Report is what a check found.
+type Report struct {
+	// Findings are the problems, in the order the names were read.
+	Findings []Finding
+
+	// Truncated is true when [MaxFindings] was reached and the check stopped
+	// collecting. What is in the report is still true; it is not everything.
+	Truncated bool
+
+	// Records is how many records were read, whether or not they were sound.
+	Records int
+}
+
+// Sound reports whether the check found nothing.
+func (r Report) Sound() bool { return len(r.Findings) == 0 }
+
+// Check reports everything wrong with a zone, rather than the first thing.
+//
+// Records are added in canonical order, which is the order the store keeps
+// them in, so the whole zone is never held: a check carries the records at one
+// name and the delegation points above it. That is what lets it run against a
+// zone of the size D12 aims at.
+//
+// It reuses the rules the write path refuses with rather than restating them,
+// which is what D5a asks for: one rule in one function, so that a zone cannot
+// pass the check and be refused a moment later. A name with more than one
+// problem yields the first of them, because that is the granularity those
+// functions answer at.
+type Check struct {
+	zone Zone
+	rep  Report
+
+	// name is the owner being collected, and owned its records.
+	name  Name
+	owned []Record
+	open  bool
+
+	// delegations are the delegation points seen so far that still lie above
+	// the name being read, outermost first. Canonical order puts a name before
+	// everything beneath it, so a delegation is always known by the time the
+	// names it covers arrive.
+	delegations []Name
+
+	apexNS bool
+}
+
+// NewCheck starts a check of z.
+func NewCheck(z Zone) *Check { return &Check{zone: z} }
+
+// Add takes the next record.
+//
+// Records must arrive in canonical name order, grouped by name, which is what
+// the store's own record order already produces. Out of order, the delegation
+// rules are checked against whatever was known at the time and the report is
+// not to be trusted.
+func (c *Check) Add(r *Record) {
+	c.rep.Records++
+
+	if c.open && !r.Name.Equal(c.name) {
+		c.flush()
+	}
+	if !c.open {
+		c.name, c.owned, c.open = r.Name, c.owned[:0], true
+	}
+	c.owned = append(c.owned, *r)
+
+	if r.Type == TypeNS && c.zone.IsApex(r.Name) {
+		c.apexNS = true
+	}
+}
+
+// Done finishes the last name and returns what the check found.
+func (c *Check) Done() Report {
+	if c.open {
+		c.flush()
+	}
+
+	// RFC 1034 §4.2.1, checked here rather than per name because it is the
+	// absence of a record that is wrong and no name carries an absence.
+	if !c.apexNS {
+		c.record(Finding{
+			Scope: ScopeZone,
+			Name:  c.zone.Name,
+			Detail: fmt.Sprintf(
+				"the zone %q has no NS record at its apex; a zone must name at least one "+
+					"authoritative server (RFC 1034 §4.2.1)", c.zone.Name),
+		})
+	}
+	return c.rep
+}
+
+// flush checks the name that has just finished.
+func (c *Check) flush() {
+	defer func() { c.open = false }()
+
+	c.popPast(c.name)
+	if !c.zone.IsApex(c.name) && hasType(c.owned, TypeNS) {
+		c.delegations = append(c.delegations, c.name)
+	}
+
+	if err := ValidateOwner(c.zone, c.name, c.owned); err != nil {
+		c.record(finding(ScopeOwner, c.name, err))
+	}
+
+	var point Name
+	if n := len(c.delegations); n > 0 {
+		point = c.delegations[n-1]
+	}
+	if err := ValidateUnderDelegation(c.name, c.owned, point); err != nil {
+		c.record(finding(ScopeDelegation, c.name, err))
+	}
+}
+
+// popPast drops the delegation points that name does not lie under.
+func (c *Check) popPast(name Name) {
+	for len(c.delegations) > 0 {
+		if name.IsSubDomainOf(c.delegations[len(c.delegations)-1]) {
+			return
+		}
+		c.delegations = c.delegations[:len(c.delegations)-1]
+	}
+}
+
+// record adds a finding, up to the point where the list stops being readable.
+func (c *Check) record(f Finding) {
+	if len(c.rep.Findings) >= MaxFindings {
+		c.rep.Truncated = true
+		return
+	}
+	c.rep.Findings = append(c.rep.Findings, f)
+}
+
+// finding turns what a validator refused with into something a client can
+// render. The sentence is kept exactly as the write path words it; only the
+// "invalid" prefix that made it an error goes.
+func finding(scope FindingScope, name Name, err error) Finding {
+	detail := err.Error()
+	if errors.Is(err, ErrInvalid) {
+		detail = strings.TrimPrefix(detail, ErrInvalid.Error()+": ")
+	}
+	return Finding{Scope: scope, Name: name, Detail: detail}
+}
