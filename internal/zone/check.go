@@ -3,6 +3,7 @@ package zone
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -46,7 +47,16 @@ const (
 
 	// ScopeZone covers the zone as a whole, such as the NS records at its apex.
 	ScopeZone FindingScope = "zone"
+
+	// ScopeNameServer covers the name servers this zone points at, and whether
+	// it answers for the ones that live inside it.
+	ScopeNameServer FindingScope = "nameserver"
 )
+
+// Addressed answers whether a name has an address record in this zone. The
+// check asks it about the name servers the zone points at, which is a question
+// for whatever holds the records rather than for a walk over them.
+type Addressed func(Name) (bool, error)
 
 // Finding is one thing wrong with a zone as it is stored.
 //
@@ -126,6 +136,11 @@ type Check struct {
 	delegations []Name
 
 	apexNS bool
+
+	// nameServers are the name servers this zone points at that live inside
+	// it, each mapped to the owner of the first NS record naming it. One
+	// outside the zone is somebody else's to answer for.
+	nameServers map[Name]Name
 }
 
 // NewCheck starts a check of z.
@@ -148,13 +163,37 @@ func (c *Check) Add(r *Record) {
 	}
 	c.owned = append(c.owned, *r)
 
-	if r.Type == TypeNS && c.zone.IsApex(r.Name) {
-		c.apexNS = true
+	if r.Type == TypeNS {
+		if c.zone.IsApex(r.Name) {
+			c.apexNS = true
+		}
+		c.noteNameServer(r)
+	}
+}
+
+// noteNameServer remembers a name server this zone would have to answer for.
+func (c *Check) noteNameServer(r *Record) {
+	target, err := ParseName(r.RData.String())
+	if err != nil || !c.zone.Contains(target) {
+		// Not a name, or not one this zone answers for. Either way it is not
+		// this zone's business to have an address for it.
+		return
+	}
+	if c.nameServers == nil {
+		c.nameServers = make(map[Name]Name, 2)
+	}
+	if _, seen := c.nameServers[target]; !seen {
+		c.nameServers[target] = r.Name
 	}
 }
 
 // Done finishes the last name and returns what the check found.
-func (c *Check) Done() Report {
+//
+// addressed is asked, once per name server this zone points at that lives
+// inside it, whether the zone answers for it with an address. That cannot be
+// settled while walking, because a name server is named anywhere in the zone
+// and its address record may already have gone past.
+func (c *Check) Done(addressed Addressed) (Report, error) {
 	if c.open {
 		c.flush()
 	}
@@ -171,7 +210,46 @@ func (c *Check) Done() Report {
 					"authoritative server (RFC 1034 §4.2.1)", c.zone.Name),
 		})
 	}
-	return c.rep
+
+	if err := c.lame(addressed); err != nil {
+		return Report{}, err
+	}
+	return c.rep, nil
+}
+
+// lame reports the name servers this zone points at and has no address for. A
+// resolver referred to one is told, authoritatively, that the name does not
+// exist, and the delegation is lame (RFC 1912 §2.8).
+//
+// A warning rather than an error: the write path accepts this and would accept
+// it again, because the address record may simply not have been written yet
+// (D31).
+func (c *Check) lame(addressed Addressed) error {
+	targets := make([]Name, 0, len(c.nameServers))
+	for target := range c.nameServers {
+		targets = append(targets, target)
+	}
+	slices.SortFunc(targets, func(a, b Name) int { return a.Compare(b) })
+
+	for _, target := range targets {
+		ok, err := addressed(target)
+		if err != nil {
+			return err
+		}
+		if ok {
+			continue
+		}
+		c.record(Finding{
+			Severity: SeverityWarning,
+			Scope:    ScopeNameServer,
+			Name:     c.nameServers[target],
+			Detail: fmt.Sprintf(
+				"%s has no address in this zone, so a resolver referred to it is told the "+
+					"name does not exist. Add %s A <address>, or point the delegation "+
+					"somewhere off-site (RFC 1912 §2.8).", target, target),
+		})
+	}
+	return nil
 }
 
 // flush checks the name that has just finished.

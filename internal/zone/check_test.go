@@ -11,10 +11,16 @@ import (
 
 // checkZone runs a check over records given in any order, sorting them the way
 // the store already keeps them so that a test reads as a zone rather than as a
-// sequence.
+// sequence. Every name server counts as addressed, so that the table below is
+// about the rules; the diagnosis has tests of its own.
 func checkZone(t *testing.T, records []zone.Record) zone.Report {
 	t.Helper()
 
+	return runCheck(t, sortRecords(records), func(zone.Name) (bool, error) { return true, nil })
+}
+
+// sortRecords puts records into the order the store keeps them in.
+func sortRecords(records []zone.Record) []zone.Record {
 	sorted := slices.Clone(records)
 	slices.SortStableFunc(sorted, func(a, b zone.Record) int {
 		if c := a.Name.Compare(b.Name); c != 0 {
@@ -22,12 +28,37 @@ func checkZone(t *testing.T, records []zone.Record) zone.Report {
 		}
 		return int(a.Type) - int(b.Type)
 	})
+	return sorted
+}
+
+// runCheck feeds records that are already in order, with the answer the check
+// cannot work out on its own.
+func runCheck(t *testing.T, sorted []zone.Record, addressed zone.Addressed) zone.Report {
+	t.Helper()
 
 	c := zone.NewCheck(newTestZone(t, "example.com."))
 	for i := range sorted {
 		c.Add(&sorted[i])
 	}
-	return c.Done()
+	rep, err := c.Done(addressed)
+	if err != nil {
+		t.Fatalf("Done: %v", err)
+	}
+	return rep
+}
+
+// addressedFrom answers from the records themselves, which is what the store
+// answers from for real.
+func addressedFrom(records []zone.Record) zone.Addressed {
+	return func(name zone.Name) (bool, error) {
+		for i := range records {
+			r := &records[i]
+			if r.Name.Equal(name) && (r.Type == zone.TypeA || r.Type == zone.TypeAAAA) {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
 }
 
 func TestCheckReportsWhatIsWrong(t *testing.T) {
@@ -218,5 +249,98 @@ func TestCheckStopsCollectingAtTheLimit(t *testing.T) {
 	}
 	if rep.Records != len(records) {
 		t.Errorf("Records = %d, want %d", rep.Records, len(records))
+	}
+}
+
+// A name server inside the zone with no address there is a lame delegation
+// (RFC 1912 §2.8). It is correct DNS, so it is a warning rather than an error.
+func TestCheckReportsALameDelegation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		records func(*testing.T) []zone.Record
+		want    int
+	}{
+		{
+			// The apex NS points at ns1.example.com., and nothing addresses it.
+			name:    "a name server here with no address here",
+			records: apexNS,
+			want:    1,
+		},
+		{
+			name: "the same name server, addressed",
+			records: func(t *testing.T) []zone.Record {
+				return append(apexNS(t),
+					rec(t, "ns1.example.com.", 300, zone.TypeA, "192.0.2.53"))
+			},
+		},
+		{
+			name: "a name server somebody else answers for",
+			records: func(t *testing.T) []zone.Record {
+				return []zone.Record{
+					rec(t, "example.com.", 3600, zone.TypeNS, "ns1.other.example."),
+				}
+			},
+		},
+		{
+			// Two records naming one server is one question, so one answer.
+			name: "one name server named twice",
+			records: func(t *testing.T) []zone.Record {
+				return append(apexNS(t),
+					rec(t, "sub.example.com.", 3600, zone.TypeNS, "ns1.example.com."))
+			},
+			want: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			records := tc.records(t)
+			rep := runCheck(t, sortRecords(records), addressedFrom(records))
+
+			if len(rep.Findings) != tc.want {
+				t.Fatalf("got %d findings, want %d: %+v", len(rep.Findings), tc.want, rep.Findings)
+			}
+			for _, f := range rep.Findings {
+				if f.Severity != zone.SeverityWarning {
+					t.Errorf("%q is %q, want a warning", f.Name, f.Severity)
+				}
+				if f.Scope != zone.ScopeNameServer {
+					t.Errorf("scope is %q, want %q", f.Scope, zone.ScopeNameServer)
+				}
+			}
+			if rep.Errors() != 0 {
+				t.Errorf("Errors() = %d, want 0: a lame delegation is not a refusal", rep.Errors())
+			}
+		})
+	}
+}
+
+// The two kinds sit in one report and stay countable apart.
+func TestCheckSeparatesRefusalsFromDiagnoses(t *testing.T) {
+	t.Parallel()
+
+	records := append(apexNS(t),
+		rec(t, "www.example.com.", 300, zone.TypeA, "192.0.2.1"),
+		rec(t, "www.example.com.", 600, zone.TypeA, "192.0.2.2"))
+
+	rep := runCheck(t, sortRecords(records), addressedFrom(records))
+
+	if len(rep.Findings) != 2 {
+		t.Fatalf("got %d findings, want 2: %+v", len(rep.Findings), rep.Findings)
+	}
+	if rep.Errors() != 1 {
+		t.Errorf("Errors() = %d, want 1", rep.Errors())
+	}
+	// The refusal first: it is read in the order the names were walked, and the
+	// diagnosis needs an answer the walk could not give.
+	if rep.Findings[0].Severity != zone.SeverityError {
+		t.Errorf("the first finding is %q, want the error", rep.Findings[0].Severity)
+	}
+	if rep.Findings[1].Severity != zone.SeverityWarning {
+		t.Errorf("the second finding is %q, want the warning", rep.Findings[1].Severity)
 	}
 }

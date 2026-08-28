@@ -81,7 +81,9 @@ public API is unstable and may change without a deprecation period.
   which is how it reaches data the write path never saw: written before a rule existed, or
   put there by a hand on the database file. Each finding says whether the write path would
   refuse it or merely thinks it is a mistake, because a zone missing a glue record is not in
-  the same condition as one holding a record nothing can answer.
+  the same condition as one holding a record nothing can answer. A name server this zone
+  points at and has no address for is the first of the second kind: correct DNS, and a
+  resolver sent to it is told the name does not exist (RFC 1912 §2.8).
 
 #### CLI
 

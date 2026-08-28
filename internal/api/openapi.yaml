@@ -1435,11 +1435,14 @@ components:
       description: |
         Which rule produced a finding, so that a client can group or filter
         without reading the sentence.
-      enum: [owner, delegation, zone]
+      enum: [owner, delegation, zone, nameserver]
       x-enum-descriptions:
         owner: The records sharing one name, and whether they can coexist.
         delegation: Where a name sits relative to the zone's delegations.
         zone: The zone as a whole, such as the NS records at its apex.
+        nameserver: |
+          The name servers this zone points at, and whether it answers for the
+          ones that live inside it.
 
     Finding:
       type: object

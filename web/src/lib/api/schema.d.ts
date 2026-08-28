@@ -1058,7 +1058,7 @@ export interface components {
          *     without reading the sentence.
          * @enum {string}
          */
-        FindingScope: "owner" | "delegation" | "zone";
+        FindingScope: "owner" | "delegation" | "zone" | "nameserver";
         /** @description One thing wrong with a zone. Data rather than an error. */
         Finding: {
             severity: components["schemas"]["FindingSeverity"];

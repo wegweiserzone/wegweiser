@@ -15,6 +15,9 @@ func TestZoneCheck(t *testing.T) {
 	srv := newServer(t)
 
 	mustRun(t, srv, "zone", "create", "example.com")
+	// A new zone points at ns1 and has no address for it, which the check
+	// reports until somebody adds one.
+	mustRun(t, srv, "record", "add", "example.com", "ns1", "A", "192.0.2.53")
 	mustRun(t, srv, "record", "add", "example.com", "www", "A", "192.0.2.10")
 
 	t.Run("a sound zone says so, and how much it looked at", func(t *testing.T) {
@@ -66,6 +69,7 @@ func TestZoneCheckReportsFindingsAndStillSucceeds(t *testing.T) {
 	srv := newServer(t)
 
 	mustRun(t, srv, "zone", "create", "example.com")
+	mustRun(t, srv, "record", "add", "example.com", "ns1", "A", "192.0.2.53")
 	mustRun(t, srv, "record", "add", "example.com", "sub", "NS", "ns1.other.example.")
 
 	// Past the write path, which refuses exactly this, so that the check has

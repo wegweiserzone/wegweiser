@@ -292,8 +292,13 @@ func (s *Server) CheckZone(
 			}
 			check.Add(rec)
 		}
-		report = check.Done()
-		return nil
+		// After the walk, not during it: the iterator above holds a cursor on
+		// this same transaction.
+		var derr error
+		report, derr = check.Done(func(name zone.Name) (bool, error) {
+			return hasAddress(ctx, r, z.ID, name)
+		})
+		return derr
 	}); verr != nil {
 		return nil, verr
 	}
@@ -312,4 +317,20 @@ func (s *Server) CheckZone(
 		}
 	}
 	return gen.CheckZone200JSONResponse(out), nil
+}
+
+// hasAddress reports whether a zone answers for a name with an address.
+func hasAddress(
+	ctx context.Context, r store.Reader, zid zone.ZoneID, name zone.Name,
+) (bool, error) {
+	page, err := r.ListRecords(ctx, store.RecordFilter{
+		ZoneID: zid,
+		Name:   name,
+		Types:  []zone.RRType{zone.TypeA, zone.TypeAAAA},
+		Paging: store.Paging{Limit: 1},
+	})
+	if err != nil {
+		return false, err
+	}
+	return len(page.Items) > 0, nil
 }

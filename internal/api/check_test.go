@@ -25,6 +25,9 @@ func TestCheckZoneOnASoundZone(t *testing.T) {
 
 	h := newHarness(t)
 	z := h.createZone("example.com.")
+	// A new zone names ns1 as its own name server and has no address for it,
+	// which is a lame delegation until somebody adds one.
+	h.createRecord(z.Id, gen.CreateRecord{Name: "ns1.example.com.", Type: "A", Data: "192.0.2.53"})
 	h.createRecord(z.Id, gen.CreateRecord{Name: "www.example.com.", Type: "A", Data: "192.0.2.1"})
 
 	got := h.checkZone(z.Id)
@@ -47,6 +50,7 @@ func TestCheckZoneFindsWhatTheWritePathNeverSaw(t *testing.T) {
 
 	h := newHarness(t)
 	z := h.createZone("example.com.")
+	h.createRecord(z.Id, gen.CreateRecord{Name: "ns1.example.com.", Type: "A", Data: "192.0.2.53"})
 	h.createRecord(z.Id, gen.CreateRecord{
 		Name: "sub.example.com.", Type: "NS", Data: "ns1.other.example.",
 	})
@@ -89,4 +93,30 @@ func TestCheckZoneNeedsAZoneThatExists(t *testing.T) {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 	_ = resp.Body.Close()
+}
+
+// A zone nobody has finished setting up says so without being asked twice: its
+// own name server has no address here, so a resolver sent to it is told the
+// name does not exist (RFC 1912 §2.8).
+func TestCheckZoneWarnsAboutAZoneNobodyFinished(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	z := h.createZone("example.com.")
+
+	got := h.checkZone(z.Id)
+
+	if len(got.Findings) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(got.Findings), got.Findings)
+	}
+	f := got.Findings[0]
+	if f.Severity != gen.Warning {
+		t.Errorf("severity is %q, want a warning: this is correct DNS, just unfinished", f.Severity)
+	}
+	if f.Scope != gen.FindingScopeNameserver {
+		t.Errorf("scope is %q, want %q", f.Scope, gen.FindingScopeNameserver)
+	}
+	if !strings.Contains(f.Detail, "ns1.example.com.") {
+		t.Errorf("detail is %q, want it to name the server with no address", f.Detail)
+	}
 }
