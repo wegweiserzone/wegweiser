@@ -56,6 +56,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D26** | [Outbound zone transfer: who may ask, and what is answered](d26-outbound-zone-transfer.md) |
 | **D27** | [NOTIFY: who gets told, and when](d27-notify.md) |
 | **D28** | [TSIG: a transfer is granted to a key, not to an address](d28-tsig.md) |
+| **D31** | [A zone check reports refusals and diagnoses, and says which is which](d31-what-a-zone-check-reports.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they
