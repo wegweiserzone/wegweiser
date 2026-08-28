@@ -37,6 +37,7 @@ func newZoneCommand(opts *options) *cobra.Command {
 	cmd.AddCommand(newZoneRollbackCommand(opts, &f))
 	cmd.AddCommand(newZoneImportCommand(opts, &f))
 	cmd.AddCommand(newZoneExportCommand(opts, &f))
+	cmd.AddCommand(newZoneCheckCommand(opts, &f))
 	return cmd
 }
 

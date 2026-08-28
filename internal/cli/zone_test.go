@@ -39,6 +39,10 @@ type server struct {
 	addr   string
 	token  string
 	stream *stream.Hub
+
+	// store is the database behind it, for the one test that has to reach
+	// past the API to produce a state the API refuses to produce.
+	store store.Store
 }
 
 func newServer(t *testing.T) server {
@@ -109,7 +113,7 @@ func newServer(t *testing.T) server {
 		}
 	})
 
-	return server{addr: "http://" + l.Addr().String(), token: token, stream: hub}
+	return server{addr: "http://" + l.Addr().String(), token: token, stream: hub, store: st}
 }
 
 type snapshots struct{ current *dns.Snapshot }

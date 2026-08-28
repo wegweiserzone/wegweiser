@@ -86,6 +86,9 @@ public API is unstable and may change without a deprecation period.
 - `weg tsig create|list|show|revoke`.
 - `weg settings set --transfer-allow` and `--notify`, the second taking an optional
   `key:<name>` after an address.
+- `weg zone check` lists what is wrong with a zone as it stands, one block per finding, and
+  exits zero either way: the findings are the answer rather than a failure of the command.
+  `--output json` is what a script reads.
 
 #### Web interface
 

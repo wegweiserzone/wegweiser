@@ -53,3 +53,18 @@ because the expensive one to get wrong, duplicate RRs, is still a database index
   replace operation, because "set the A records for www to exactly these three" is the
   operation a GitOps import wants and cannot express as a sequence of adds and deletes
   without a read-modify-write race.
+
+## Where this stands
+
+`weg zone check` exists, over `GET /zones/{zoneId}/check`. It reports every name it finds a
+problem at rather than the first one, and it runs the same functions the write path refuses
+with, so a zone it calls sound is a zone the write path would accept.
+
+A name carrying more than one problem yields the first of them. That is the granularity
+`ValidateOwner` answers at, and going finer would mean the rules reporting instead of
+refusing, which is a second shape for one set of rules and the drift D5a is about.
+
+**The startup consistency check named beside it is not built, and deliberately.** A full
+check at boot works against D12's cold start of under thirty seconds at a million records,
+and it turns a repairable data problem into a server that will not start. The command
+answers the same question, when somebody asks it.
