@@ -12,6 +12,24 @@ import (
 // reads through.
 const MaxFindings = 1000
 
+// Severity says whether the write path would refuse a finding. It is the only
+// distinction a check draws, and it is not a scale: anything wanting finer
+// grading is asking for a different report (D31).
+type Severity string
+
+const (
+	// SeverityError is a finding the write path refuses. A zone holding one
+	// holds data that is unanswerable or contradictory, and this server would
+	// not have let anybody build it, so something reached the database another
+	// way.
+	SeverityError Severity = "error"
+
+	// SeverityWarning is a finding the write path accepts and would accept
+	// again: correct DNS that is probably not what somebody meant, and may be
+	// exactly what they meant.
+	SeverityWarning Severity = "warning"
+)
+
 // FindingScope says which rule a finding came from, so that a client can group
 // or filter without reading the sentence.
 type FindingScope string
@@ -36,6 +54,9 @@ const (
 // wants the list, and stopping at the first problem turns a report into a game
 // of twenty questions.
 type Finding struct {
+	// Severity is whether the write path would have refused it.
+	Severity Severity
+
 	// Scope is the rule that produced it.
 	Scope FindingScope
 
@@ -62,8 +83,20 @@ type Report struct {
 	Records int
 }
 
-// Sound reports whether the check found nothing.
+// Sound reports whether the check found nothing at all.
 func (r Report) Sound() bool { return len(r.Findings) == 0 }
+
+// Errors counts the findings the write path would refuse. It is the number to
+// act on: a warning may be exactly what somebody meant.
+func (r Report) Errors() int {
+	n := 0
+	for _, f := range r.Findings {
+		if f.Severity == SeverityError {
+			n++
+		}
+	}
+	return n
+}
 
 // Check reports everything wrong with a zone, rather than the first thing.
 //
@@ -130,8 +163,9 @@ func (c *Check) Done() Report {
 	// absence of a record that is wrong and no name carries an absence.
 	if !c.apexNS {
 		c.record(Finding{
-			Scope: ScopeZone,
-			Name:  c.zone.Name,
+			Severity: SeverityError,
+			Scope:    ScopeZone,
+			Name:     c.zone.Name,
 			Detail: fmt.Sprintf(
 				"the zone %q has no NS record at its apex; a zone must name at least one "+
 					"authoritative server (RFC 1034 §4.2.1)", c.zone.Name),
@@ -189,5 +223,5 @@ func finding(scope FindingScope, name Name, err error) Finding {
 	if errors.Is(err, ErrInvalid) {
 		detail = strings.TrimPrefix(detail, ErrInvalid.Error()+": ")
 	}
-	return Finding{Scope: scope, Name: name, Detail: detail}
+	return Finding{Severity: SeverityError, Scope: scope, Name: name, Detail: detail}
 }

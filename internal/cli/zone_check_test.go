@@ -43,6 +43,9 @@ func TestZoneCheck(t *testing.T) {
 		if got.Records == 0 {
 			t.Error("records = 0, want what the check read")
 		}
+		if got.Errors != 0 || got.Warnings != 0 {
+			t.Errorf("a sound zone counted %d errors and %d warnings", got.Errors, got.Warnings)
+		}
 	})
 
 	t.Run("a zone that is not here says so", func(t *testing.T) {
@@ -74,8 +77,8 @@ func TestZoneCheckReportsFindingsAndStillSucceeds(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit code %d, want %d; stderr: %s", code, ExitOK, errOut)
 	}
-	if !strings.Contains(out, "1 finding") {
-		t.Errorf("output = %q, want it to count the finding", out)
+	if !strings.Contains(out, "1 error") {
+		t.Errorf("output = %q, want it to count the error", out)
 	}
 	if !strings.Contains(out, "delegation") || !strings.Contains(out, "buried.sub.example.com.") {
 		t.Errorf("output = %q, want the scope and the name", out)
@@ -114,5 +117,43 @@ func occlude(t *testing.T, srv server, apex, name string) {
 		return tx.InsertRecord(t.Context(), &rec)
 	}); uerr != nil {
 		t.Fatalf("insert behind the API's back: %v", uerr)
+	}
+}
+
+// The summary line is the one place a warning and an error have to read
+// differently, and no server produces a warning yet.
+func TestCheckSummaryCountsBySeverity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		errors   int
+		warnings int
+		want     string
+	}{
+		{"only errors", 2, 0, "2 errors in"},
+		{"one error", 1, 0, "1 error in"},
+		{"one warning", 0, 1, "1 warning in"},
+		{"both", 1, 2, "1 error and 2 warnings in"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			report := zoneChecked{Zone: "example.com.", Records: 9,
+				Errors: tc.errors, Warnings: tc.warnings}
+			for range tc.errors + tc.warnings {
+				report.Findings = append(report.Findings, zoneFinding{})
+			}
+
+			var buf strings.Builder
+			if err := writeCheck(&buf, report); err != nil {
+				t.Fatalf("writeCheck: %v", err)
+			}
+			if !strings.Contains(buf.String(), tc.want) {
+				t.Errorf("output = %q, want it to contain %q", buf.String(), tc.want)
+			}
+		})
 	}
 }

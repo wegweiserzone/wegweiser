@@ -6,21 +6,31 @@ import (
 	"io"
 
 	"github.com/spf13/cobra"
+
+	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 )
 
 // zoneChecked is what a check reports.
 type zoneChecked struct {
-	Zone      string        `json:"zone"`
-	Records   int           `json:"records"`
+	Zone    string `json:"zone"`
+	Records int    `json:"records"`
+
+	// Errors and Warnings are counted here so that a caller reading the JSON
+	// does not have to tally the list to learn whether anything is actually
+	// wrong. What each means is D31.
+	Errors   int `json:"errors"`
+	Warnings int `json:"warnings"`
+
 	Findings  []zoneFinding `json:"findings"`
 	Truncated bool          `json:"truncated,omitempty"`
 }
 
 // zoneFinding is one thing wrong with the zone.
 type zoneFinding struct {
-	Scope  string `json:"scope"`
-	Name   string `json:"name"`
-	Detail string `json:"detail"`
+	Severity string `json:"severity"`
+	Scope    string `json:"scope"`
+	Name     string `json:"name"`
+	Detail   string `json:"detail"`
 }
 
 func newZoneCheckCommand(opts *options, f *clientFlags) *cobra.Command {
@@ -72,8 +82,14 @@ func runZoneCheck(ctx context.Context, opts *options, f *clientFlags, name strin
 		Findings:  make([]zoneFinding, 0, len(resp.JSON200.Findings)),
 	}
 	for _, got := range resp.JSON200.Findings {
+		if got.Severity == gen.Error {
+			report.Errors++
+		} else {
+			report.Warnings++
+		}
 		report.Findings = append(report.Findings, zoneFinding{
-			Scope: string(got.Scope), Name: got.Name, Detail: got.Detail,
+			Severity: string(got.Severity), Scope: string(got.Scope),
+			Name: got.Name, Detail: got.Detail,
 		})
 	}
 
@@ -92,7 +108,7 @@ func writeCheck(w io.Writer, report zoneChecked) error {
 	}
 
 	if _, err := fmt.Fprintf(w, "%s: %s in %s.\n\n",
-		report.Zone, counted(len(report.Findings), "finding"),
+		report.Zone, summarise(report),
 		counted(report.Records, "record")); err != nil {
 		return err
 	}
@@ -102,8 +118,8 @@ func writeCheck(w io.Writer, report zoneChecked) error {
 				return err
 			}
 		}
-		if _, err := fmt.Fprintf(w, "  %s  %s\n    %s\n",
-			got.Scope, got.Name, got.Detail); err != nil {
+		if _, err := fmt.Fprintf(w, "  %s  %s  %s\n    %s\n",
+			got.Severity, got.Scope, got.Name, got.Detail); err != nil {
 			return err
 		}
 	}
@@ -121,4 +137,18 @@ func writeCheck(w io.Writer, report zoneChecked) error {
 // counted writes a number with its noun, so a report does not say "1 findings".
 func counted(n int, word string) string {
 	return fmt.Sprintf("%d %s", n, plural(n, word))
+}
+
+// summarise says what was found, so a zone missing a glue record does not read
+// like one holding a record nothing can answer (D31).
+func summarise(report zoneChecked) string {
+	switch {
+	case report.Warnings == 0:
+		return counted(report.Errors, "error")
+	case report.Errors == 0:
+		return counted(report.Warnings, "warning")
+	default:
+		return counted(report.Errors, "error") + " and " +
+			counted(report.Warnings, "warning")
+	}
 }

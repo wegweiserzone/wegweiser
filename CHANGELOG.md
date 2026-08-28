@@ -79,16 +79,19 @@ public API is unstable and may change without a deprecation period.
 - `GET /zones/{zoneId}/check` says what is wrong with a zone as it stands, as a list rather
   than as a refusal. It applies the rules the write path enforces to what is already stored,
   which is how it reaches data the write path never saw: written before a rule existed, or
-  put there by a hand on the database file.
+  put there by a hand on the database file. Each finding says whether the write path would
+  refuse it or merely thinks it is a mistake, because a zone missing a glue record is not in
+  the same condition as one holding a record nothing can answer.
 
 #### CLI
 
 - `weg tsig create|list|show|revoke`.
 - `weg settings set --transfer-allow` and `--notify`, the second taking an optional
   `key:<name>` after an address.
-- `weg zone check` lists what is wrong with a zone as it stands, one block per finding, and
-  exits zero either way: the findings are the answer rather than a failure of the command.
-  `--output json` is what a script reads.
+- `weg zone check` lists what is wrong with a zone as it stands, one block per finding,
+  each headed by whether the server would have refused it. It exits zero either way: the
+  findings are the answer rather than a failure of the command. `--output json` carries the
+  list and the counts a script would otherwise tally itself.
 
 #### Web interface
 

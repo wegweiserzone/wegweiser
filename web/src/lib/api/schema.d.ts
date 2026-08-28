@@ -1048,6 +1048,12 @@ export interface components {
             truncated: boolean;
         };
         /**
+         * @description Whether the write path would refuse the finding. The only distinction a
+         *     check draws, and not a scale.
+         * @enum {string}
+         */
+        FindingSeverity: "error" | "warning";
+        /**
          * @description Which rule produced a finding, so that a client can group or filter
          *     without reading the sentence.
          * @enum {string}
@@ -1055,6 +1061,7 @@ export interface components {
         FindingScope: "owner" | "delegation" | "zone";
         /** @description One thing wrong with a zone. Data rather than an error. */
         Finding: {
+            severity: components["schemas"]["FindingSeverity"];
             scope: components["schemas"]["FindingScope"];
             /**
              * @description The owner name it is about, absolute. For a finding about the zone

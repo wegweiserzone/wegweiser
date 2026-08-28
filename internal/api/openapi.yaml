@@ -1414,6 +1414,22 @@ components:
             True when the check stopped collecting findings. What is listed is
             still true; it is not all of it.
 
+    FindingSeverity:
+      type: string
+      description: |
+        Whether the write path would refuse the finding. The only distinction a
+        check draws, and not a scale.
+      enum: [error, warning]
+      x-enum-descriptions:
+        error: |
+          Refused by the write path. The zone holds data that is unanswerable
+          or contradictory, and this server would not have let anybody build
+          it, so something reached the database another way.
+        warning: |
+          Accepted by the write path, and it would accept it again. Correct
+          DNS that is probably not what somebody meant, and may be exactly
+          what they meant.
+
     FindingScope:
       type: string
       description: |
@@ -1428,8 +1444,9 @@ components:
     Finding:
       type: object
       description: One thing wrong with a zone. Data rather than an error.
-      required: [scope, name, detail]
+      required: [severity, scope, name, detail]
       properties:
+        severity: { $ref: "#/components/schemas/FindingSeverity" }
         scope: { $ref: "#/components/schemas/FindingScope" }
         name:
           type: string

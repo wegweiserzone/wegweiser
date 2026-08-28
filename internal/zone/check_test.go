@@ -134,6 +134,16 @@ func TestCheckReportsWhatIsWrong(t *testing.T) {
 			if tc.phrase != "" && !strings.Contains(rep.Findings[0].Detail, tc.phrase) {
 				t.Errorf("detail is %q, want it to contain %q", rep.Findings[0].Detail, tc.phrase)
 			}
+			// Everything a check knows about today is refused by the write
+			// path, so everything it reports is an error (D31).
+			for _, f := range rep.Findings {
+				if f.Severity != zone.SeverityError {
+					t.Errorf("%q is %q, want %q", f.Name, f.Severity, zone.SeverityError)
+				}
+			}
+			if rep.Errors() != len(rep.Findings) {
+				t.Errorf("Errors() = %d with %d findings", rep.Errors(), len(rep.Findings))
+			}
 		})
 	}
 }

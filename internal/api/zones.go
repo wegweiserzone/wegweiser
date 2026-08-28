@@ -305,9 +305,10 @@ func (s *Server) CheckZone(
 	}
 	for i, f := range report.Findings {
 		out.Findings[i] = gen.Finding{
-			Scope:  gen.FindingScope(f.Scope),
-			Name:   f.Name.String(),
-			Detail: f.Detail,
+			Severity: gen.FindingSeverity(f.Severity),
+			Scope:    gen.FindingScope(f.Scope),
+			Name:     f.Name.String(),
+			Detail:   f.Detail,
 		}
 	}
 	return gen.CheckZone200JSONResponse(out), nil
