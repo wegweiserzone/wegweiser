@@ -99,6 +99,11 @@ public API is unstable and may change without a deprecation period.
   carries the plan out and makes no decisions. Applying one batch twice changes things once.
   Zone creation, update, deletion, rollback and reconciliation all plan first. This is the
   shape D24 asks for, and the batch is what a cluster would replicate.
+- A batch that arrives from a replicated log records the position it arrived from, in the
+  same transaction that carries it out (migration `0003_applied_index`). A node replays its
+  log after a restart, and this is what lets it tell the entries it has already applied from
+  the ones it has not, without asking the journal. Nothing writes an index yet: on a single
+  node no batch travels, and the table stays empty.
 - The decisions and the architecture decision records are now one numbered series in
   `docs/decisions/`. `docs/adr/` and `docs/decisions.md` are gone and links into them break:
   the twelve ADRs are D18 to D28, and ADR 0007 merged into D17, which was a summary of it.

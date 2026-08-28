@@ -415,3 +415,77 @@ func testCursors(t *testing.T, open Open) {
 		}
 	})
 }
+
+// The index is what keeps a node from carrying out a batch it has already
+// carried out, so it has to survive on its own and read back exactly.
+func testAppliedIndex(t *testing.T, open Open) {
+	t.Run("a node that has replayed nothing is at zero", func(t *testing.T) {
+		t.Parallel()
+		s := open(t)
+
+		got, err := s.AppliedIndex(ctxOf(t))
+		if err != nil {
+			t.Fatalf("AppliedIndex: %v", err)
+		}
+		if got != 0 {
+			t.Errorf("AppliedIndex = %d on an untouched store, want 0", got)
+		}
+	})
+
+	t.Run("it reads back and moves on", func(t *testing.T) {
+		t.Parallel()
+		s := open(t)
+
+		for _, want := range []uint64{1, 7, 1 << 40} {
+			mustUpdate(t, s, func(tx store.Tx) error {
+				return tx.SetAppliedIndex(ctxOf(t), want)
+			})
+			got, err := s.AppliedIndex(ctxOf(t))
+			if err != nil {
+				t.Fatalf("AppliedIndex: %v", err)
+			}
+			if got != want {
+				t.Errorf("AppliedIndex = %d, want %d", got, want)
+			}
+		}
+	})
+
+	// It is written beside the batch it belongs to, so a transaction that rolls
+	// back has to take the index with it. Otherwise a node would claim to have
+	// applied an entry whose writes it threw away.
+	t.Run("a rolled back transaction leaves it where it was", func(t *testing.T) {
+		t.Parallel()
+		s := open(t)
+
+		mustUpdate(t, s, func(tx store.Tx) error { return tx.SetAppliedIndex(ctxOf(t), 4) })
+
+		wanted := errors.New("no")
+		if err := s.Update(ctxOf(t), func(tx store.Tx) error {
+			if err := tx.SetAppliedIndex(ctxOf(t), 5); err != nil {
+				return err
+			}
+			return wanted
+		}); !errors.Is(err, wanted) {
+			t.Fatalf("Update = %v, want the error the function returned", err)
+		}
+
+		got, err := s.AppliedIndex(ctxOf(t))
+		if err != nil {
+			t.Fatalf("AppliedIndex: %v", err)
+		}
+		if got != 4 {
+			t.Errorf("AppliedIndex = %d after a rollback, want 4", got)
+		}
+	})
+
+	t.Run("zero is not a position and is refused", func(t *testing.T) {
+		t.Parallel()
+		s := open(t)
+
+		if err := updateErr(t, s, func(tx store.Tx) error {
+			return tx.SetAppliedIndex(ctxOf(t), 0)
+		}); err == nil {
+			t.Error("SetAppliedIndex(0) succeeded, want an error")
+		}
+	})
+}

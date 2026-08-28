@@ -358,3 +358,127 @@ func TestDeletingAZoneIsOneBatch(t *testing.T) {
 		t.Errorf("the reverse zone still holds %v", got)
 	}
 }
+
+// index is how far into the replicated log this node has got.
+func (f *fixture) index() uint64 {
+	f.t.Helper()
+
+	got, err := f.s.AppliedIndex(f.t.Context())
+	if err != nil {
+		f.t.Fatalf("AppliedIndex: %v", err)
+	}
+	return got
+}
+
+func TestAReplicatedBatchRecordsWhereItCameFrom(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	if got := f.index(); got != 0 {
+		t.Fatalf("a store nothing has reached is at index %d, want 0", got)
+	}
+
+	b, _, err := f.a.Plan(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("www.example.com.", zone.TypeA, 300, "10.0.0.1"),
+	}))
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if err = f.a.ApplyBatchAt(t.Context(), b, 7); err != nil {
+		t.Fatalf("ApplyBatchAt: %v", err)
+	}
+	if got := f.index(); got != 7 {
+		t.Errorf("index = %d, want 7", got)
+	}
+
+	// A batch this node planned for itself travelled nowhere, so there is no
+	// position to remember and the one already recorded stays where it is.
+	local, _, err := f.a.Plan(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("mail.example.com.", zone.TypeA, 300, "10.0.0.2"),
+	}))
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if err = f.a.ApplyBatch(t.Context(), local); err != nil {
+		t.Fatalf("ApplyBatch: %v", err)
+	}
+	if got := f.index(); got != 7 {
+		t.Errorf("index = %d after a batch that was never replicated, want 7", got)
+	}
+}
+
+func TestTheIndexDecidesWhetherAnEntryHasBeenSeen(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+
+	first, _, err := f.a.Plan(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("www.example.com.", zone.TypeA, 300, "10.0.0.1"),
+	}))
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if err = f.a.ApplyBatchAt(t.Context(), first, 5); err != nil {
+		t.Fatalf("ApplyBatchAt: %v", err)
+	}
+
+	second, _, err := f.a.Plan(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("mail.example.com.", zone.TypeA, 300, "10.0.0.2"),
+	}))
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	before := f.everything()
+
+	// Nothing in the journal says this batch has been carried out, and it is
+	// still not carried out: the index says the log is already past position
+	// five, and the index is what a replaying node has to be able to trust.
+	if err = f.a.ApplyBatchAt(t.Context(), second, 5); err != nil {
+		t.Fatalf("ApplyBatchAt: %v", err)
+	}
+	if got := f.everything(); !slices.Equal(got, before) {
+		t.Errorf("an entry behind the index was carried out\n got: %v\nwant: %v", got, before)
+	}
+	if got := f.index(); got != 5 {
+		t.Errorf("index = %d, want it left at 5", got)
+	}
+}
+
+func TestARefusedBatchLeavesTheIndexWhereItWas(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+
+	first, _, err := f.a.Plan(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("www.example.com.", zone.TypeA, 300, "10.0.0.1"),
+	}))
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if err = f.a.ApplyBatchAt(t.Context(), first, 2); err != nil {
+		t.Fatalf("ApplyBatchAt: %v", err)
+	}
+
+	second, _, err := f.a.Plan(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("mail.example.com.", zone.TypeA, 300, "10.0.0.2"),
+	}))
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	second.Commits = append(first.Commits, second.Commits...)
+
+	// The index and the batch are one write. A batch that does not land must
+	// not leave a node claiming to have applied the entry that carried it.
+	if err = f.a.ApplyBatchAt(t.Context(), second, 3); err == nil {
+		t.Fatal("the batch was accepted")
+	}
+	if got := f.index(); got != 2 {
+		t.Errorf("index = %d after a batch that was refused, want 2", got)
+	}
+}

@@ -172,20 +172,65 @@ func (a *Applier) Plan(ctx context.Context, cmd Command) (*Batch, *Result, error
 	return b, res, nil
 }
 
-// ApplyBatch carries out a batch, and does nothing if the journal already
-// holds it: a node replays its log after a restart and cannot otherwise tell.
+// Index is a position in the replicated log. Zero is no position at all: a
+// batch this node planned and carried out on its own never travelled, so there
+// is nothing about it to remember.
+type Index uint64
+
+// ApplyBatch carries out a batch this node planned itself, which is every
+// batch until there is a cluster.
 //
 // It does not take the zone's write lock; see [Applier.Plan].
 func (a *Applier) ApplyBatch(ctx context.Context, b *Batch) error {
-	if b.Empty() {
+	return a.ApplyBatchAt(ctx, b, 0)
+}
+
+// ApplyBatchAt carries out a batch that arrived from the replicated log and
+// records the position it arrived from, both in the same transaction. A node
+// that wrote the index separately would come back from a power cut having
+// applied an entry it does not remember, or remembering one it never applied
+// (D24).
+//
+// It does nothing if that entry has already been carried out here. Replaying
+// the log is what a node does after a restart, and every entry it replays is
+// one it may well have applied before.
+//
+// It does not take the zone's write lock; see [Applier.Plan].
+func (a *Applier) ApplyBatchAt(ctx context.Context, b *Batch, at Index) error {
+	if b.Empty() && at == 0 {
 		return nil
 	}
 	return a.store.Update(ctx, func(tx store.Tx) error {
-		done, err := b.applied(ctx, tx)
-		if err != nil || done {
-			return err
+		if at != 0 {
+			seen, err := tx.AppliedIndex(ctx)
+			if err != nil {
+				return err
+			}
+			if uint64(at) <= seen {
+				return nil
+			}
 		}
-		return b.write(ctx, tx)
+		if !b.Empty() {
+			// The journal answers the same question a second time. It is the
+			// only answer on a node applying its own plans, and it covers the
+			// entry an older build carried out before there was an index. It
+			// is not the answer to rest on: D8's retention policy would let a
+			// commit be pruned, and a pruned commit reads as one that never
+			// happened.
+			done, err := b.applied(ctx, tx)
+			if err != nil {
+				return err
+			}
+			if !done {
+				if werr := b.write(ctx, tx); werr != nil {
+					return werr
+				}
+			}
+		}
+		if at == 0 {
+			return nil
+		}
+		return tx.SetAppliedIndex(ctx, uint64(at))
 	})
 }
 

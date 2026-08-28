@@ -120,6 +120,11 @@ type Reader interface {
 
 	// Setting returns one JSON-encoded setting value.
 	Setting(ctx context.Context, key string) ([]byte, error)
+
+	// AppliedIndex returns how far into the replicated log this node has got,
+	// and zero when nothing replicated has reached it. Zero is not a position a
+	// log entry can occupy, so it needs no error of its own.
+	AppliedIndex(ctx context.Context) (uint64, error)
 }
 
 // Writer is the mutating surface, reachable only through [Store.Update], so
@@ -184,6 +189,14 @@ type Writer interface {
 	// PutSetting stores a JSON-encoded setting value, replacing any previous
 	// one.
 	PutSetting(ctx context.Context, key string, value []byte) error
+
+	// SetAppliedIndex records how far into the replicated log this node has
+	// got. It belongs in the same transaction as the batch that log entry
+	// carried, and means nothing written on its own.
+	//
+	// The index only moves forward, and whoever applies the log is what keeps
+	// it that way: the store records what it is told.
+	SetAppliedIndex(ctx context.Context, index uint64) error
 }
 
 // Tx is a read-write transaction. Reads inside it see its own uncommitted

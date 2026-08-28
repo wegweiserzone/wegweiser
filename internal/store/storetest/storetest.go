@@ -33,6 +33,7 @@ func Run(t *testing.T, open Open) {
 		"Tokens":          testTokens,
 		"TSIGKeys":        testTSIGKeys,
 		"Settings":        testSettings,
+		"AppliedIndex":    testAppliedIndex,
 		"Transactions":    testTransactions,
 		"Cursors":         testCursors,
 	}
