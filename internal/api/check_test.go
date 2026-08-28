@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/id"
+	"github.com/wegweiserzone/wegweiser/internal/store"
+	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
 // checkZone asks what is wrong with a zone.
@@ -37,20 +40,28 @@ func TestCheckZoneOnASoundZone(t *testing.T) {
 	}
 }
 
-// The case the check exists for. Each write is checked against the names it
-// touches, and neither of these two touches the record the pair occludes.
-func TestCheckZoneFindsWhatNoSingleWriteCould(t *testing.T) {
+// The case the check exists for: state the write path never saw. Written
+// straight into the database, because that is now the only way to reach it.
+func TestCheckZoneFindsWhatTheWritePathNeverSaw(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t)
 	z := h.createZone("example.com.")
-
-	h.createRecord(z.Id, gen.CreateRecord{
-		Name: "host.sub.example.com.", Type: "TXT", Data: `"hello"`,
-	})
 	h.createRecord(z.Id, gen.CreateRecord{
 		Name: "sub.example.com.", Type: "NS", Data: "ns1.other.example.",
 	})
+
+	occluded, err := zone.NewRecord(zone.ZoneID(z.Id),
+		zone.MustParseName("host.sub.example.com."), zone.ClassIN, zone.TypeTXT, 300, `"hello"`)
+	if err != nil {
+		t.Fatalf("NewRecord: %v", err)
+	}
+	occluded.ID = zone.RecordID(id.New())
+	if uerr := h.store.Update(t.Context(), func(tx store.Tx) error {
+		return tx.InsertRecord(t.Context(), &occluded)
+	}); uerr != nil {
+		t.Fatalf("insert the record behind the API's back: %v", uerr)
+	}
 
 	got := h.checkZone(z.Id)
 

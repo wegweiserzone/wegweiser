@@ -416,12 +416,10 @@ paths:
         Every rule the write path enforces, applied to the zone as it is
         stored.
 
-        A write is checked against the names it touches, which is not the same
-        thing as the zone being sound afterwards: delegating a name that
-        already has records beneath it leaves those records occluded, and no
-        single write is in a position to see that. An import, a version older
-        than a rule, and a hand on the database file are the other ways a zone
-        arrives at a state nothing refused.
+        A write is checked against the names it touches, and against the names
+        a new delegation would put out of reach, so a zone edited only through
+        this API stays sound. What this finds is what did not arrive that way:
+        data written before a rule existed, or a hand on the database file.
 
         It reports rather than refuses. A name with more than one problem
         yields the first of them, and the list stops at a thousand findings:

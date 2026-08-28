@@ -78,9 +78,8 @@ public API is unstable and may change without a deprecation period.
   in to the machine can edit.
 - `GET /zones/{zoneId}/check` says what is wrong with a zone as it stands, as a list rather
   than as a refusal. It applies the rules the write path enforces to what is already stored,
-  which is how it finds what no single write can: delegating a name that already has records
-  beneath it leaves them occluded, and neither write touches the record that ends up
-  unanswerable.
+  which is how it reaches data the write path never saw: written before a rule existed, or
+  put there by a hand on the database file.
 
 #### CLI
 
@@ -115,6 +114,10 @@ public API is unstable and may change without a deprecation period.
 
 ### Fixed
 
+- Delegating a name that already had records beneath it was accepted, and left those records
+  in the zone with nothing ever answering them. A write is now checked against the names a
+  new delegation puts out of reach as well as against the names it touches, so the rule holds
+  whichever order the two records are written in.
 - A rollback read its range of commits in the order they were recorded, and an identifier is
   random below the millisecond, so two commits inside one millisecond had no order at all.
   The range follows the serials now.

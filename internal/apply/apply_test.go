@@ -771,3 +771,69 @@ func mustRecord(
 // ref takes the address of a value, for options that distinguish "unset" from
 // the zero value.
 func ref[T any](v T) *T { return &v }
+
+// D5a's rule has to hold whichever order the end state is reached in. The
+// record below was written first and is not touched by the write that
+// delegates over it, so nothing would have looked at it.
+func TestDelegatingOverExistingRecordsIsRefused(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	f.mustApply(f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("host.sub.example.com.", zone.TypeTXT, 300, `"hello"`),
+	}))
+
+	_, err := f.a.Apply(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("sub.example.com.", zone.TypeNS, 3600, "ns1.other.example."),
+	}))
+	if err == nil {
+		t.Fatal("the delegation was accepted and the TXT below it is now unanswerable")
+	}
+	if !errors.Is(err, zone.ErrInvalid) {
+		t.Errorf("error = %v, want one wrapping zone.ErrInvalid", err)
+	}
+	if !strings.Contains(err.Error(), "only A and AAAA glue") {
+		t.Errorf("error is %q, want it to say what may remain below a delegation", err)
+	}
+}
+
+// Glue is what may remain, so delegating over it is the ordinary case and has
+// to keep working.
+func TestDelegatingOverGlueIsAllowed(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	f.mustApply(f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("ns1.sub.example.com.", zone.TypeA, 300, "192.0.2.53"),
+	}))
+
+	if _, err := f.a.Apply(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("sub.example.com.", zone.TypeNS, 3600, "ns1.sub.example.com."),
+	})); err != nil {
+		t.Fatalf("delegating over glue was refused: %v", err)
+	}
+}
+
+// A deeper delegation is what the closest-delegation rule is for: the name
+// below carries NS, and its own delegation is the one that judges it. The
+// whole-zone check accepts this, so the write path has to as well.
+func TestDelegatingOverADeeperDelegationIsAllowed(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	f.mustApply(f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("deep.sub.example.com.", zone.TypeNS, 3600, "ns1.other.example."),
+	}))
+
+	if _, err := f.a.Apply(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("sub.example.com.", zone.TypeNS, 3600, "ns1.other.example."),
+	})); err != nil {
+		t.Fatalf("delegating above another delegation was refused: %v", err)
+	}
+}

@@ -642,40 +642,110 @@ func validateTouched(ctx context.Context, tx store.Tx, z *zone.Zone, touched map
 	// time; a map would report whichever came up first.
 	slices.SortFunc(names, func(a, b zone.Name) int { return a.Compare(b) })
 
+	seen := make(map[zone.Name]struct{}, len(names))
 	for _, name := range names {
-		records, err := ownerRecords(ctx, tx, z.ID, name)
+		delegates, err := validateName(ctx, tx, z, name, seen)
 		if err != nil {
 			return err
 		}
-		if err := zone.ValidateOwner(*z, name, records); err != nil {
-			return err
-		}
-
-		// Where a delegation sits above this name, or at it, most types are
-		// invisible: a query there is referred to the child and never answered
-		// from here. The whole-zone check has always refused that and an
-		// incremental write used not to, so the same end state was accepted or
-		// refused depending on the order it was reached in.
-		point, derr := closestDelegation(ctx, tx, z, name)
-		if derr != nil {
-			return derr
-		}
-		if verr := zone.ValidateUnderDelegation(name, records, point); verr != nil {
-			return verr
-		}
-		if !z.IsApex(name) {
+		if !delegates {
 			continue
 		}
-		// RFC 1034 §4.2.1: a zone names its own authoritative servers. Losing
-		// the last one leaves a zone no parent can delegate to, which no single
-		// record can notice on its own.
-		if !slices.ContainsFunc(records, func(r zone.Record) bool { return r.Type == zone.TypeNS }) {
-			return fmt.Errorf(
-				"%w: this would remove the last NS record at the apex of %q, and a zone must name "+
-					"at least one authoritative server (RFC 1034 §4.2.1)", zone.ErrInvalid, z.Name)
+
+		// A name that has become a delegation point occludes everything under
+		// it, and the command that did it touched none of that. Checking only
+		// what was touched would accept or refuse the same end state depending
+		// on which record was written first, which is the fault D5a exists to
+		// prevent, reached from the other side.
+		below, berr := namesUnder(ctx, tx, z.ID, name)
+		if berr != nil {
+			return berr
+		}
+		for _, under := range below {
+			if _, verr := validateName(ctx, tx, z, under, seen); verr != nil {
+				return verr
+			}
 		}
 	}
 	return nil
+}
+
+// validateName checks the records at one owner name and reports whether that
+// name delegates to another zone. A name already checked is not checked again.
+func validateName(
+	ctx context.Context, tx store.Tx, z *zone.Zone, name zone.Name, seen map[zone.Name]struct{},
+) (bool, error) {
+	if _, done := seen[name]; done {
+		return false, nil
+	}
+	seen[name] = struct{}{}
+
+	records, err := ownerRecords(ctx, tx, z.ID, name)
+	if err != nil {
+		return false, err
+	}
+	if verr := zone.ValidateOwner(*z, name, records); verr != nil {
+		return false, verr
+	}
+
+	// Where a delegation sits above this name, or at it, most types are
+	// invisible: a query there is referred to the child and never answered
+	// from here. The whole-zone check has always refused that and an
+	// incremental write used not to, so the same end state was accepted or
+	// refused depending on the order it was reached in.
+	point, derr := closestDelegation(ctx, tx, z, name)
+	if derr != nil {
+		return false, derr
+	}
+	if verr := zone.ValidateUnderDelegation(name, records, point); verr != nil {
+		return false, verr
+	}
+
+	hasNS := slices.ContainsFunc(records, func(r zone.Record) bool { return r.Type == zone.TypeNS })
+	if !z.IsApex(name) {
+		return hasNS, nil
+	}
+	// RFC 1034 §4.2.1: a zone names its own authoritative servers. Losing
+	// the last one leaves a zone no parent can delegate to, which no single
+	// record can notice on its own.
+	if !hasNS {
+		return false, fmt.Errorf(
+			"%w: this would remove the last NS record at the apex of %q, and a zone must name "+
+				"at least one authoritative server (RFC 1034 §4.2.1)", zone.ErrInvalid, z.Name)
+	}
+	return false, nil
+}
+
+// namesUnder returns the owner names strictly below name, in canonical order
+// and each once. Records arrive grouped by name, so the last one appended is
+// the only one a repeat can equal.
+func namesUnder(
+	ctx context.Context, r store.Reader, zid zone.ZoneID, name zone.Name,
+) ([]zone.Name, error) {
+	f := store.RecordFilter{
+		ZoneID: zid,
+		Under:  name,
+		Paging: store.Paging{Limit: store.MaxLimit},
+	}
+	var out []zone.Name
+	for {
+		page, err := r.ListRecords(ctx, f)
+		if err != nil {
+			return nil, err
+		}
+		for _, rec := range page.Items {
+			if rec.Name.Equal(name) {
+				continue
+			}
+			if len(out) == 0 || !out[len(out)-1].Equal(rec.Name) {
+				out = append(out, rec.Name)
+			}
+		}
+		if page.NextCursor == "" {
+			return out, nil
+		}
+		f.Cursor = page.NextCursor
+	}
 }
 
 // closestDelegation returns the nearest name at or above name that this zone
