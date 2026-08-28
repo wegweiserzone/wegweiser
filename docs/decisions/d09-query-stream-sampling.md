@@ -11,3 +11,10 @@ The data plane never waits on observability.
 
 A stream that drops events while looking complete misleads whoever is reading it, so the
 ratio is shown in the interface rather than buried in a debug field.
+
+## Where this stands
+
+Built, and one word above overstates it. The cap is `Options.MaxRate` in `internal/stream`,
+two hundred matched exchanges a second by default. Nothing puts it in the configuration file
+or in the API, so an operator cannot change it and "the configured cap" means whatever the
+process was wired with.

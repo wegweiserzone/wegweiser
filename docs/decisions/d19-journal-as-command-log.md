@@ -78,3 +78,19 @@ side of the trade.
   when a direct `INSERT` would work. This is deliberate and is the only place where the MVP
   builds for a deferred feature: justified because retrofitting it is a rewrite of every
   write path, not an addition.
+
+## Where this stands
+
+**This record contradicts itself, and D24 is what settled the argument.** The decision above
+calls `Command` "the unit Raft will replicate"; the rationale below it rejects replicating
+`Command`. Neither is what happens. [D24](d24-what-the-cluster-replicates.md) made the unit
+the resolved batch, which is neither the intent nor the events, and the write path is split
+into `Plan` and `ApplyBatch` to produce one.
+
+**Checkpoints do not exist.** The consequence above says `zone_checkpoints` is already there
+and gives that as the reason it was built early. There is no such table and no code for it.
+[D8](d08-journal-retention.md) has it right: retention, checkpoints and the metric beside
+them are unwritten, and rollback manages without them because nothing truncates.
+
+The sentence this record was written for survived both. There is one log, the journal is it,
+and the write path was shaped as a state machine before anything replicated.
