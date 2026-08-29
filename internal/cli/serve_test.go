@@ -151,8 +151,9 @@ func TestServe(t *testing.T) {
 	})
 
 	t.Run("the first start shows an administrator token once", func(t *testing.T) {
-		if got := stderr.String(); !strings.Contains(got, "weg_") {
-			t.Errorf("stderr = %q, want the bootstrap token in it", got)
+		got := awaitStderr(t, &stderr, api.TokenPrefix)
+		if n := strings.Count(got, api.TokenPrefix); n != 1 {
+			t.Errorf("the token is shown %d times, want once:\n%s", n, got)
 		}
 	})
 
@@ -167,7 +168,8 @@ func TestServe(t *testing.T) {
 	// this is where a wire left unattached shows. It runs after the queries
 	// above, so both an answer and a denial have been counted by now.
 	t.Run("it exports what it has been doing", func(t *testing.T) {
-		out := scrape(t, status.APIAddress, bootstrapToken(t, stderr.String()))
+		out := scrape(t, status.APIAddress,
+			bootstrapToken(t, awaitStderr(t, &stderr, api.TokenPrefix)))
 
 		for _, want := range []string{
 			`weg_dns_queries_total{rcode="NOERROR",transport="udp",type="A"} 1`,
@@ -296,6 +298,29 @@ func (b *syncBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+// awaitStderr waits for text a running command has yet to write.
+//
+// weg serve prints its status to standard output and the bootstrap token to
+// standard error after it, and a test reading the status is released by the
+// first of the two. Asserting on the second without waiting asks one goroutine
+// about work another has not necessarily done, and CI has seen it come back
+// empty while the server was already answering queries.
+func awaitStderr(t *testing.T, stderr *syncBuffer, want string) string {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		got := stderr.String()
+		if strings.Contains(got, want) {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("waited for %q on standard error; it held:\n%s", want, got)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // TestServeLogsAreStructured checks that the fault stream follows --output.
