@@ -181,7 +181,7 @@ func TestTSIGKeysNeedTheAdminScope(t *testing.T) {
 	// a token and not a setting like the others.
 	var minted gen.TokenCreated
 	h.decode(h.do(http.MethodPost, "/tokens", gen.CreateToken{
-		Name: "writer", Scopes: []gen.Scope{gen.Write},
+		Name: "writer", Scopes: []gen.Scope{gen.ScopeWrite},
 	}), http.StatusCreated, &minted)
 	as := func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+minted.Secret) }
 

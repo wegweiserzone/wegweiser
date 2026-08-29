@@ -221,10 +221,10 @@ type recordConflict struct {
 // none was would describe the opposite of what happened.
 func (c recordConflict) String() string {
 	switch c.Policy {
-	case string(gen.LastWins):
+	case string(gen.ReverseConflictPolicyLastWins):
 		return fmt.Sprintf("%s answered with %s and now answers with %s",
 			c.Address, c.ExistingName, c.RequestedName)
-	case string(gen.Multi):
+	case string(gen.ReverseConflictPolicyMulti):
 		return fmt.Sprintf("%s already answers with %s and now answers with %s as well",
 			c.Address, c.ExistingName, c.RequestedName)
 	default:

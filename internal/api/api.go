@@ -346,7 +346,7 @@ func (s *Server) GetHealth(_ context.Context, _ gen.GetHealthRequestObject) (gen
 	}
 
 	return gen.GetHealth200JSONResponse{
-		Status:  gen.Serving,
+		Status:  gen.HealthStatusServing,
 		Version: info.Version,
 		Zones:   snap.Zones(),
 		Records: snap.Records(),

@@ -110,7 +110,7 @@ func TestCheckZoneWarnsAboutAZoneNobodyFinished(t *testing.T) {
 		t.Fatalf("got %d findings, want 1: %+v", len(got.Findings), got.Findings)
 	}
 	f := got.Findings[0]
-	if f.Severity != gen.Warning {
+	if f.Severity != gen.FindingSeverityWarning {
 		t.Errorf("severity is %q, want a warning: this is correct DNS, just unfinished", f.Severity)
 	}
 	if f.Scope != gen.FindingScopeNameserver {

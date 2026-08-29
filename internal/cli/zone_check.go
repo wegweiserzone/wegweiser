@@ -92,7 +92,7 @@ func runZoneCheck(
 		Findings:  make([]zoneFinding, 0, len(resp.JSON200.Findings)),
 	}
 	for _, got := range resp.JSON200.Findings {
-		if got.Severity == gen.Error {
+		if got.Severity == gen.FindingSeverityError {
 			report.Errors++
 		} else {
 			report.Warnings++

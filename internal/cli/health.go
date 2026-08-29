@@ -83,7 +83,7 @@ func runHealth(ctx context.Context, opts *options, f *clientFlags) error {
 	p := opts.Printer()
 	return p.Print(got, func(w io.Writer) error {
 		colour := output.ColorGreen
-		if got.Status != string(gen.Serving) {
+		if got.Status != string(gen.HealthStatusServing) {
 			colour = output.ColorYellow
 		}
 		_, werr := fmt.Fprintf(w, "%s — %d zones, %d records, %s\n",

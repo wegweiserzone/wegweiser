@@ -17,7 +17,7 @@ import (
 // reversePolicies are the values the reverse conflict policy accepts, in the
 // order docs/decisions/ D3 argues them.
 var reversePolicies = []string{
-	string(gen.FirstWins), string(gen.LastWins), string(gen.Multi), string(gen.Reject),
+	string(gen.ReverseConflictPolicyFirstWins), string(gen.ReverseConflictPolicyLastWins), string(gen.ReverseConflictPolicyMulti), string(gen.ReverseConflictPolicyReject),
 }
 
 // serverSettings is what the commands here report.

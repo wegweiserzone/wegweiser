@@ -339,7 +339,7 @@ func runHistoryShow(ctx context.Context, opts *options, f *clientFlags, id strin
 		// §2 requires of the journal itself.
 		for _, e := range shown.Events {
 			sign, colour := "+", output.ColorGreen
-			if e.Op == string(gen.Del) {
+			if e.Op == string(gen.EventOpDel) {
 				sign, colour = "-", output.ColorRed
 			}
 			line := fmt.Sprintf("%s%s %d %s %s %s", sign, e.Name, e.TTL, e.Class, e.Type, e.Data)

@@ -14,6 +14,13 @@ generate:
   strict-server: true
   client: true
   embedded-spec: true
+# Enum constants are prefixed with the type they belong to, always. Without
+# this the generator prefixes only where two enums would collide, so the same
+# spec produces `ZoneKindForward` beside a bare `Error`, and adding an enum
+# value renames constants in an unrelated type.
+compatibility:
+  always-prefix-enum-values: true
+
 output-options:
   nullable-type: true
   # The bodies of the query stream are Server-Sent Events, so their schemas are

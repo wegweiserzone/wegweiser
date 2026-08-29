@@ -80,16 +80,16 @@ func (e CommitSource) Valid() bool {
 
 // Defines values for EventOp.
 const (
-	Add EventOp = "add"
-	Del EventOp = "del"
+	EventOpAdd EventOp = "add"
+	EventOpDel EventOp = "del"
 )
 
 // Valid indicates whether the value is a known member of the EventOp enum.
 func (e EventOp) Valid() bool {
 	switch e {
-	case Add:
+	case EventOpAdd:
 		return true
-	case Del:
+	case EventOpDel:
 		return true
 	default:
 		return false
@@ -125,16 +125,16 @@ func (e FindingScope) Valid() bool {
 
 // Defines values for FindingSeverity.
 const (
-	Error   FindingSeverity = "error"
-	Warning FindingSeverity = "warning"
+	FindingSeverityError   FindingSeverity = "error"
+	FindingSeverityWarning FindingSeverity = "warning"
 )
 
 // Valid indicates whether the value is a known member of the FindingSeverity enum.
 func (e FindingSeverity) Valid() bool {
 	switch e {
-	case Error:
+	case FindingSeverityError:
 		return true
-	case Warning:
+	case FindingSeverityWarning:
 		return true
 	default:
 		return false
@@ -143,16 +143,16 @@ func (e FindingSeverity) Valid() bool {
 
 // Defines values for HealthStatus.
 const (
-	Serving  HealthStatus = "serving"
-	Starting HealthStatus = "starting"
+	HealthStatusServing  HealthStatus = "serving"
+	HealthStatusStarting HealthStatus = "starting"
 )
 
 // Valid indicates whether the value is a known member of the HealthStatus enum.
 func (e HealthStatus) Valid() bool {
 	switch e {
-	case Serving:
+	case HealthStatusServing:
 		return true
-	case Starting:
+	case HealthStatusStarting:
 		return true
 	default:
 		return false
@@ -161,16 +161,16 @@ func (e HealthStatus) Valid() bool {
 
 // Defines values for QueryEventTransport.
 const (
-	Tcp QueryEventTransport = "tcp"
-	Udp QueryEventTransport = "udp"
+	QueryEventTransportTcp QueryEventTransport = "tcp"
+	QueryEventTransportUdp QueryEventTransport = "udp"
 )
 
 // Valid indicates whether the value is a known member of the QueryEventTransport enum.
 func (e QueryEventTransport) Valid() bool {
 	switch e {
-	case Tcp:
+	case QueryEventTransportTcp:
 		return true
-	case Udp:
+	case QueryEventTransportUdp:
 		return true
 	default:
 		return false
@@ -179,22 +179,22 @@ func (e QueryEventTransport) Valid() bool {
 
 // Defines values for ReverseConflictPolicy.
 const (
-	FirstWins ReverseConflictPolicy = "first-wins"
-	LastWins  ReverseConflictPolicy = "last-wins"
-	Multi     ReverseConflictPolicy = "multi"
-	Reject    ReverseConflictPolicy = "reject"
+	ReverseConflictPolicyFirstWins ReverseConflictPolicy = "first-wins"
+	ReverseConflictPolicyLastWins  ReverseConflictPolicy = "last-wins"
+	ReverseConflictPolicyMulti     ReverseConflictPolicy = "multi"
+	ReverseConflictPolicyReject    ReverseConflictPolicy = "reject"
 )
 
 // Valid indicates whether the value is a known member of the ReverseConflictPolicy enum.
 func (e ReverseConflictPolicy) Valid() bool {
 	switch e {
-	case FirstWins:
+	case ReverseConflictPolicyFirstWins:
 		return true
-	case LastWins:
+	case ReverseConflictPolicyLastWins:
 		return true
-	case Multi:
+	case ReverseConflictPolicyMulti:
 		return true
-	case Reject:
+	case ReverseConflictPolicyReject:
 		return true
 	default:
 		return false
@@ -203,19 +203,19 @@ func (e ReverseConflictPolicy) Valid() bool {
 
 // Defines values for Scope.
 const (
-	Admin Scope = "admin"
-	Read  Scope = "read"
-	Write Scope = "write"
+	ScopeAdmin Scope = "admin"
+	ScopeRead  Scope = "read"
+	ScopeWrite Scope = "write"
 )
 
 // Valid indicates whether the value is a known member of the Scope enum.
 func (e Scope) Valid() bool {
 	switch e {
-	case Admin:
+	case ScopeAdmin:
 		return true
-	case Read:
+	case ScopeRead:
 		return true
-	case Write:
+	case ScopeWrite:
 		return true
 	default:
 		return false
@@ -224,19 +224,19 @@ func (e Scope) Valid() bool {
 
 // Defines values for TSIGAlgorithm.
 const (
-	HmacSha256 TSIGAlgorithm = "hmac-sha256."
-	HmacSha384 TSIGAlgorithm = "hmac-sha384."
-	HmacSha512 TSIGAlgorithm = "hmac-sha512."
+	TSIGAlgorithmHmacSha256 TSIGAlgorithm = "hmac-sha256."
+	TSIGAlgorithmHmacSha384 TSIGAlgorithm = "hmac-sha384."
+	TSIGAlgorithmHmacSha512 TSIGAlgorithm = "hmac-sha512."
 )
 
 // Valid indicates whether the value is a known member of the TSIGAlgorithm enum.
 func (e TSIGAlgorithm) Valid() bool {
 	switch e {
-	case HmacSha256:
+	case TSIGAlgorithmHmacSha256:
 		return true
-	case HmacSha384:
+	case TSIGAlgorithmHmacSha384:
 		return true
-	case HmacSha512:
+	case TSIGAlgorithmHmacSha512:
 		return true
 	default:
 		return false

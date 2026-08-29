@@ -1085,7 +1085,7 @@ func TestHistory(t *testing.T) {
 			t.Fatalf("events = %v, want the record that was added", c.Events)
 		}
 		e := (*c.Events)[0]
-		if e.Op != gen.Add || e.Name != "www.example.com." || e.Data != "192.0.2.10" {
+		if e.Op != gen.EventOpAdd || e.Name != "www.example.com." || e.Data != "192.0.2.10" {
 			t.Errorf("event = %+v, want the addition in full", e)
 		}
 	})
@@ -1105,7 +1105,7 @@ func TestHistory(t *testing.T) {
 		if c.Events == nil || len(*c.Events) != 1 {
 			t.Fatalf("events = %v, want the removal", c.Events)
 		}
-		if e := (*c.Events)[0]; e.Op != gen.Del || e.Data != "192.0.2.10" {
+		if e := (*c.Events)[0]; e.Op != gen.EventOpDel || e.Data != "192.0.2.10" {
 			t.Errorf("event = %+v, want the removal to carry the data in full", e)
 		}
 	})
@@ -1169,7 +1169,7 @@ func TestTokens(t *testing.T) {
 	var minted gen.TokenCreated
 	h.decode(h.do(http.MethodPost, "/tokens", gen.CreateToken{
 		Name:   "the deploy pipeline",
-		Scopes: []gen.Scope{gen.Write},
+		Scopes: []gen.Scope{gen.ScopeWrite},
 	}), http.StatusCreated, &minted)
 
 	if !strings.HasPrefix(minted.Secret, TokenPrefix) {
@@ -1183,7 +1183,7 @@ func TestTokens(t *testing.T) {
 			t.Errorf("status = %d for a read with a write token, want 200", resp.StatusCode)
 		}
 		resp := h.do(http.MethodPost, "/tokens", gen.CreateToken{
-			Name: "escalation", Scopes: []gen.Scope{gen.Admin},
+			Name: "escalation", Scopes: []gen.Scope{gen.ScopeAdmin},
 		}, withNew)
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("status = %d, want a write token to be refused an admin token", resp.StatusCode)
@@ -1223,7 +1223,7 @@ func TestTokens(t *testing.T) {
 	t.Run("an expiry in the past is refused", func(t *testing.T) {
 		past := time.Now().Add(-time.Hour)
 		resp := h.do(http.MethodPost, "/tokens", gen.CreateToken{
-			Name: "already over", Scopes: []gen.Scope{gen.Read}, ExpiresAt: &past,
+			Name: "already over", Scopes: []gen.Scope{gen.ScopeRead}, ExpiresAt: &past,
 		})
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
@@ -1270,7 +1270,7 @@ func TestTokenLockout(t *testing.T) {
 
 	var second gen.TokenCreated
 	h.decode(h.do(http.MethodPost, "/tokens", gen.CreateToken{
-		Name: "the second administrator", Scopes: []gen.Scope{gen.Admin},
+		Name: "the second administrator", Scopes: []gen.Scope{gen.ScopeAdmin},
 	}), http.StatusCreated, &second)
 
 	// With another way in, the first one may go.
@@ -1419,7 +1419,7 @@ func TestSessionScopes(t *testing.T) {
 
 	var minted gen.TokenCreated
 	h.decode(h.do(http.MethodPost, "/tokens", gen.CreateToken{
-		Name: "a reader", Scopes: []gen.Scope{gen.Read},
+		Name: "a reader", Scopes: []gen.Scope{gen.ScopeRead},
 	}), http.StatusCreated, &minted)
 
 	resp := h.do(http.MethodPost, sessionPath, gen.CreateSession{Token: minted.Secret},
@@ -1427,7 +1427,7 @@ func TestSessionScopes(t *testing.T) {
 	var opened gen.Session
 	h.decode(resp, http.StatusCreated, &opened)
 
-	if len(opened.Scopes) != 1 || opened.Scopes[0] != gen.Read {
+	if len(opened.Scopes) != 1 || opened.Scopes[0] != gen.ScopeRead {
 		t.Errorf("scopes = %v, want the ones the token carried", opened.Scopes)
 	}
 
@@ -2216,7 +2216,7 @@ func TestSettings(t *testing.T) {
 
 	var got gen.Settings
 	h.decode(h.do(http.MethodGet, "/settings", nil), http.StatusOK, &got)
-	if got.ReverseConflictPolicy != gen.FirstWins {
+	if got.ReverseConflictPolicy != gen.ReverseConflictPolicyFirstWins {
 		t.Errorf("policy = %q on a fresh server, want the default of D3",
 			got.ReverseConflictPolicy)
 	}
@@ -2233,16 +2233,16 @@ func TestSettings(t *testing.T) {
 	t.Run("it changes and reads back", func(t *testing.T) {
 		var after gen.Settings
 		h.decode(h.do(http.MethodPatch, "/settings", gen.UpdateSettings{
-			ReverseConflictPolicy: ptr(gen.LastWins),
+			ReverseConflictPolicy: ptr(gen.ReverseConflictPolicyLastWins),
 		}), http.StatusOK, &after)
-		if after.ReverseConflictPolicy != gen.LastWins {
+		if after.ReverseConflictPolicy != gen.ReverseConflictPolicyLastWins {
 			t.Errorf("policy = %q after the change, want last-wins",
 				after.ReverseConflictPolicy)
 		}
 
 		var reread gen.Settings
 		h.decode(h.do(http.MethodGet, "/settings", nil), http.StatusOK, &reread)
-		if reread.ReverseConflictPolicy != gen.LastWins {
+		if reread.ReverseConflictPolicy != gen.ReverseConflictPolicyLastWins {
 			t.Errorf("policy = %q on re-reading, want it to have been stored",
 				reread.ReverseConflictPolicy)
 		}
@@ -2306,7 +2306,7 @@ func TestTransferListReachesTheQueryPath(t *testing.T) {
 	t.Run("the reverse policy is left alone", func(t *testing.T) {
 		var reread gen.Settings
 		h.decode(h.do(http.MethodGet, "/settings", nil), http.StatusOK, &reread)
-		if reread.ReverseConflictPolicy != gen.FirstWins {
+		if reread.ReverseConflictPolicy != gen.ReverseConflictPolicyFirstWins {
 			t.Errorf("policy = %q, want the change to have left it alone",
 				reread.ReverseConflictPolicy)
 		}
@@ -2346,7 +2346,7 @@ func TestSettingsChangeTheWritePath(t *testing.T) {
 	h.createZone("2.0.192.in-addr.arpa.")
 
 	h.decode(h.do(http.MethodPatch, "/settings", gen.UpdateSettings{
-		ReverseConflictPolicy: ptr(gen.LastWins),
+		ReverseConflictPolicy: ptr(gen.ReverseConflictPolicyLastWins),
 	}), http.StatusOK, &gen.Settings{})
 
 	h.createRecord(forward.Id, gen.CreateRecord{
@@ -2360,7 +2360,7 @@ func TestSettingsChangeTheWritePath(t *testing.T) {
 		t.Fatalf("conflicts = %v, want last-wins to still report what it replaced",
 			second.Conflicts)
 	}
-	if got := (*second.Conflicts)[0].Policy; got != gen.LastWins {
+	if got := (*second.Conflicts)[0].Policy; got != gen.ReverseConflictPolicyLastWins {
 		t.Errorf("conflict policy = %q, want the one the settings hold", got)
 	}
 
