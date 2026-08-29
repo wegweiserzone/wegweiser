@@ -126,6 +126,12 @@ jobs:
           # says it has: an attestation manifest per platform confuses runtimes
           # that read the list themselves, and there is nothing here to attest
           # that the release page does not already say.
+          #
+          # oci-mediatypes=false is what carries the health check across. A
+          # HEALTHCHECK has no field in the OCI image configuration, so it rides
+          # as an extension that Docker reads and Podman does not: pushed as
+          # OCI, `podman run` gives a container with no health state at all.
+          # This is the same reason the Makefile builds with --format docker.
           docker buildx build \
             --file packaging/Containerfile \
             --platform linux/amd64,linux/arm64 \
@@ -135,7 +141,7 @@ jobs:
             --build-arg "DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --tag "$image:$version" \
             --tag "$image:latest" \
-            --push .
+            --output type=image,push=true,oci-mediatypes=false .
 
       # The image is scratch, so `weg health` is the only health check it can
       # have, and the OCI image format has no field for one. This fails the
@@ -152,3 +158,15 @@ jobs:
             *weg*health*) ;;
             *) echo "::error::the image has no health check"; exit 1 ;;
           esac
+
+          # Docker reads its own health check field out of either format, so the
+          # answer above is the same whichever was pushed. The manifest is what
+          # tells the two apart, and an OCI one is a health check no Podman will
+          # ever run.
+          docker buildx imagetools inspect --raw "$image:${GITHUB_REF_NAME#v}" \
+            > manifest.json
+          if ! grep -q 'vnd.docker.distribution.manifest.list.v2+json' manifest.json; then
+            head -c 400 manifest.json
+            echo "::error::pushed with OCI media types, which no runtime but Docker reads a health check out of"
+            exit 1
+          fi

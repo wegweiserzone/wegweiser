@@ -8,7 +8,15 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The published container image carries its health check into Podman, not only into Docker.
+  A `HEALTHCHECK` has no field in the OCI image configuration, so it travels as an extension
+  that Docker reads and Podman does not, and the image was being pushed with OCI media
+  types: `podman run` gave a container with no health state at all while `docker run` gave
+  one with it. It is pushed in Docker's manifest format now, and a release that pushed the
+  other format would fail rather than ship it, which the previous check could not see
+  because it asked Docker.
 
 ## [0.2.0] - 2026-08-29
 
