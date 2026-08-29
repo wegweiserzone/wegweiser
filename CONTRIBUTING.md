@@ -60,6 +60,22 @@ lists. What is not a Go package goes under `web`, `docs`, `ci` or `packaging`.
 If a commit changes DNS protocol behaviour, name the RFC and section in the body. "Because
 BIND does it that way" is not a reason. "RFC 4592 §2.2.2" is.
 
+## The changelog
+
+`CHANGELOG.md` is part of a change rather than paperwork after it. A commit that alters what
+somebody using the server, the API, the CLI or the interface can observe writes its own line
+into `## [Unreleased]`, in the same commit, in the shape already there: Keep a Changelog
+headings, grouped by area, phrased from the reader's side rather than from the diff's.
+
+A path under `docs/` that moves or is renamed earns a line too. Links to it break, and the
+person holding the broken link is exactly the reader a changelog is for.
+
+What earns nothing: a refactor nobody can observe from outside, and a test-only change.
+
+If it is unclear whether a change earns a line, or which heading it belongs under, say so in
+the pull request rather than guessing. A changelog guessed at is either one nobody trusts or
+one nobody reads.
+
 ## Before opening a pull request
 
 ```console

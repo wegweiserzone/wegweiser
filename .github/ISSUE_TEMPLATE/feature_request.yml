@@ -1,0 +1,33 @@
+name: Feature request
+description: Something Wegweiser does not do yet
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [scope fence][fence] says what is in, what is waiting its turn and what is
+        out for good, and [the decision records][records] say why. Some of this is
+        settled rather than missing, and a request that argues with the record it lands
+        on is worth far more than one that restates the wish.
+
+        [fence]: https://github.com/wegweiserzone/wegweiser/blob/main/docs/conventions.md#scope-fence
+        [records]: https://github.com/wegweiserzone/wegweiser/blob/main/docs/decisions/
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: >-
+        The situation rather than the solution. What it stops you doing is the part
+        that decides whether this gets built, and it often has an answer that is not
+        the feature you had in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: fence
+    attributes:
+      label: Where this sits against the scope fence
+      description: In, out, out for good, or not mentioned. Name the record if one rules on it.
+    validations:
+      required: true
