@@ -312,6 +312,17 @@ func (s *Server) transfer(
 			"no zone on this server has that name")
 	}
 
+	// Claimed here rather than when the connection arrived: an unauthorised
+	// request must not be able to spend the budget, and everything above this
+	// point is cheap. SERVFAIL rather than REFUSED, because the answer is
+	// "not now" and not "not you": a secondary retries on its SOA timer, and
+	// REFUSED would tell it the arrangement is over.
+	if !s.takeTransfer() {
+		return fail(wire.RcodeServerFailure, wire.ExtendedErrorCodeNotReady,
+			"this server is already sending as many zone transfers as it will at once")
+	}
+	defer s.releaseTransfer()
+
 	w := &transferWriter{msg: msg, send: send}
 	if qtype == zone.TypeIXFR {
 		since, ok := clientSerial(&req)

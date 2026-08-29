@@ -106,6 +106,9 @@ Both pieces this record left for later exist. NOTIFY is [D27](d27-notify.md), an
 [D28](d28-tsig.md), which makes an entry in the transfer list a key as well as a prefix.
 The decision itself is unchanged: the list starts empty and has no wildcard.
 
-One paragraph above is not built. A transfer runs on an ordinary TCP connection and is
-bounded only by `maxTCPClients`, which is the situation this record calls a way to stop the
-server answering anything. A bound of its own is still owed.
+The bound this record called owed is built. `maxTransfers` limits how many transfers run at
+once, inside the connections `maxTCPClients` allows, and it defaults to eight. A transfer
+arriving when they are all in use is answered SERVFAIL with the extended error "Not Ready",
+not REFUSED: the answer is "not now" rather than "not you", and a secondary retries on the
+timer its SOA already carries. The slot is claimed after the request is authorised, so a
+client that may not transfer cannot spend the budget by asking.

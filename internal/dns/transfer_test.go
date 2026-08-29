@@ -315,3 +315,53 @@ func TestATransferIsObserved(t *testing.T) {
 		})
 	}
 }
+
+// A transfer is bounded by the size of a zone rather than of a question, so
+// without a bound of their own a handful of slow clients take every connection
+// and the server stops answering anything (D26).
+func TestTransfersAreBoundedSeparately(t *testing.T) {
+	t.Parallel()
+
+	var reported []error
+	s := startServer(t, resolveFixture(t), Config{
+		Transfers:    loopback,
+		MaxTransfers: 1,
+		OnError:      func(err error) { reported = append(reported, err) },
+	})
+
+	// One transfer in flight, held by taking the slot the way a running one
+	// does. Doing it here rather than over a socket is what makes the test
+	// deterministic: a fixture zone fits in a kernel buffer, so a real
+	// transfer would finish before the second one arrived.
+	if !s.takeTransfer() {
+		t.Fatal("the first transfer could not take a slot")
+	}
+
+	msgs := askAXFR(t, s.Addr().String(), "example.com.")
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want one refusal", len(msgs))
+	}
+	got := msgs[0]
+
+	// Not now, rather than not you: a secondary retries on the timer its SOA
+	// already carries, where REFUSED would say the arrangement is over.
+	if got.Rcode != wire.RcodeServerFailure {
+		t.Errorf("rcode is %s, want %s", wire.RcodeToString[got.Rcode],
+			wire.RcodeToString[wire.RcodeServerFailure])
+	}
+	if len(got.Answer) != 0 {
+		t.Errorf("the refusal carries %d answers, want none", len(got.Answer))
+	}
+	if len(reported) != 1 {
+		t.Errorf("the operator was told %d times, want once: it is edge-triggered so that "+
+			"a flood cannot make the server generate work", len(reported))
+	}
+
+	// Once it is given back, the next transfer runs.
+	s.releaseTransfer()
+	again := askAXFR(t, s.Addr().String(), "example.com.")
+	if again[0].Rcode != wire.RcodeSuccess {
+		t.Errorf("rcode is %s after the slot was given back, want success",
+			wire.RcodeToString[again[0].Rcode])
+	}
+}

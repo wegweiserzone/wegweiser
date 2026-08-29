@@ -53,6 +53,7 @@ type DNSFile struct {
 	Listen          *string `json:"listen,omitempty"`
 	UDPResponseSize *uint16 `json:"udpResponseSize,omitempty"`
 	MaxTCPClients   *int    `json:"maxTCPClients,omitempty"`
+	MaxTransfers    *int    `json:"maxTransfers,omitempty"`
 }
 
 // APIFile is what the control plane takes.
@@ -88,6 +89,7 @@ type Config struct {
 	Database        Value[string]
 	UDPResponseSize Value[uint16]
 	MaxTCPClients   Value[int]
+	MaxTransfers    Value[int]
 	LogLevel        Value[string]
 }
 
@@ -99,6 +101,7 @@ var Defaults = struct {
 	Database        string
 	UDPResponseSize uint16
 	MaxTCPClients   int
+	MaxTransfers    int
 	LogLevel        string
 }{
 	// The port RFC 1035 §4.2 assigns, on every address the host has. Reaching
@@ -119,6 +122,7 @@ var Defaults = struct {
 	// Zero means the query path's own default rather than no bound: what "no
 	// bound at all" looks like is a negative number, said on purpose.
 	MaxTCPClients: 0,
+	MaxTransfers:  0,
 	LogLevel:      "info",
 }
 
@@ -134,6 +138,7 @@ type Flags struct {
 	Database        *string
 	UDPResponseSize *uint16
 	MaxTCPClients   *int
+	MaxTransfers    *int
 	LogLevel        *string
 }
 
@@ -176,6 +181,9 @@ func Load(path string, flags Flags) (*Config, error) {
 	errs = append(errs, err)
 	cfg.MaxTCPClients, err = resolveErr(flags.MaxTCPClients, "WEG_MAX_TCP_CLIENTS",
 		file.DNS.MaxTCPClients, Defaults.MaxTCPClients, parseInt)
+	errs = append(errs, err)
+	cfg.MaxTransfers, err = resolveErr(flags.MaxTransfers, "WEG_MAX_TRANSFERS",
+		file.DNS.MaxTransfers, Defaults.MaxTransfers, parseInt)
 	errs = append(errs, err)
 
 	if err := errors.Join(errs...); err != nil {

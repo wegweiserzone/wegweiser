@@ -43,6 +43,7 @@ type serveFlags struct {
 	database   string
 	udpSize    uint16
 	tcpClients int
+	transfers  int
 	logLevel   string
 }
 
@@ -67,6 +68,9 @@ func (f *serveFlags) asFlags(c *cobra.Command) config.Flags {
 	}
 	if c.Flags().Changed("max-tcp-clients") {
 		out.MaxTCPClients = &f.tcpClients
+	}
+	if c.Flags().Changed("max-transfers") {
+		out.MaxTransfers = &f.transfers
 	}
 	if c.Flags().Changed("log-level") {
 		out.LogLevel = &f.logLevel
@@ -131,6 +135,8 @@ func registerServeFlags(cmd *cobra.Command, f *serveFlags) {
 		"path to the SQLite database")
 	cmd.Flags().Uint16Var(&f.udpSize, "udp-response-size", config.Defaults.UDPResponseSize,
 		"largest UDP response to send, whatever a client advertises")
+	cmd.Flags().IntVar(&f.transfers, "max-transfers", config.Defaults.MaxTransfers,
+		"how many zone transfers may run at once (0 for the built-in default, negative for no bound)")
 	cmd.Flags().IntVar(&f.tcpClients, "max-tcp-clients", config.Defaults.MaxTCPClients,
 		"connections to answer at once; 0 takes the default, a negative number removes the bound")
 	cmd.Flags().StringVar(&f.logLevel, "log-level", config.Defaults.LogLevel,
@@ -185,6 +191,7 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		Addr:          cfg.DNSListen.Value,
 		Limits:        dns.Limits{MaxUDPResponse: cfg.UDPResponseSize.Value},
 		MaxTCPClients: cfg.MaxTCPClients.Value,
+		MaxTransfers:  cfg.MaxTransfers.Value,
 		OnError:       report,
 		// An incremental transfer replays the journal; everything else the
 		// server answers comes out of the snapshot (invariant 2).

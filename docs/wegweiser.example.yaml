@@ -34,6 +34,16 @@ dns:
   # Environment: $WEG_MAX_TCP_CLIENTS
   maxTCPClients: 0
 
+  # How many zone transfers may run at once, out of the connections above. A
+  # transfer is bounded by the size of a zone rather than of a question, so a
+  # large one going to a slow client holds its connection far longer than a
+  # query does, and without a bound of their own a handful of them take every
+  # slot and the server stops answering. A transfer arriving when they are all
+  # in use is told to come back, which a secondary does on its own timer. Zero
+  # keeps the built-in default of 8; a negative number removes the bound.
+  # Environment: $WEG_MAX_TRANSFERS
+  maxTransfers: 0
+
 api:
   # Where to serve the HTTP API and the web interface. Loopback by default,
   # because this API can change every zone this server answers for: exposing

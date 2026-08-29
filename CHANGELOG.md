@@ -26,6 +26,11 @@ public API is unstable and may change without a deprecation period.
   server does not hold.
 - A transfer leaves the connection loop that writes one response per query read, because it
   is one question and many answers.
+- How many transfers may run at once is bounded on its own, at eight by default and settable
+  as `maxTransfers`. A transfer is bounded by the size of a zone rather than of a question,
+  so without a bound of their own a handful of slow clients take every connection and the
+  server stops answering queries. One arriving when they are all in use is told to come back
+  rather than refused, which is what a secondary retries after.
 
 #### NOTIFY
 

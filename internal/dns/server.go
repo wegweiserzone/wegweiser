@@ -41,6 +41,19 @@ const (
 	// BIND, NSD and Knot all default to this number.
 	defaultTCPClients = 150
 
+	// defaultTransfers is how many zone transfers may run at once.
+	//
+	// A transfer is bounded by the size of a zone rather than by the size of a
+	// question, so a large one going to a slow client holds its connection for
+	// orders of magnitude longer than a query does. Without a bound of their
+	// own, a handful of them take every connection slot and the server stops
+	// answering anything, which is the situation D26 named and left owed.
+	//
+	// Small on purpose: a secondary that is told to come back later does, on
+	// the retry timer its SOA already carries, and the alternative to making
+	// it wait is making every querier wait.
+	defaultTransfers = 8
+
 	// maxUDPQuery is the largest datagram read. A question plus an OPT record
 	// with options is far below this; anything above it is not a query that
 	// this server has an answer for, and reading only the first part of it
@@ -71,6 +84,14 @@ type Config struct {
 	// talking. Zero means [defaultTCPClients]; a negative value means no bound
 	// at all, which is a decision an operator makes on purpose.
 	MaxTCPClients int
+
+	// MaxTransfers is how many zone transfers may run at once, out of the
+	// connections MaxTCPClients allows. A transfer arriving when they are all
+	// in use is answered SERVFAIL and told to come back, rather than queued
+	// behind one that may take minutes. Zero means [defaultTransfers]; a
+	// negative value means no bound, which is a decision an operator makes on
+	// purpose.
+	MaxTransfers int
 
 	// OnError is called for faults the server cannot act on itself: a socket
 	// that fails to read, a connection that fails to write, a response that
@@ -140,6 +161,12 @@ type Server struct {
 	// be a way to make the server generate work.
 	saturated atomic.Bool
 
+	// transfers bounds how many zone transfers run at once, inside the
+	// connection bound above. Nil when the operator asked for no bound.
+	transfers chan struct{}
+	// busy is the same edge trigger as saturated, for the transfer bound.
+	busy atomic.Bool
+
 	// conns are the open connections, kept so that a shutdown can wake their
 	// readers instead of waiting out the idle timeout on each.
 	mu    sync.Mutex
@@ -163,10 +190,16 @@ func NewServer(cfg Config) *Server {
 	if cfg.MaxTCPClients == 0 {
 		cfg.MaxTCPClients = defaultTCPClients
 	}
+	if cfg.MaxTransfers == 0 {
+		cfg.MaxTransfers = defaultTransfers
+	}
 
 	s := &Server{cfg: cfg, conns: make(map[*net.TCPConn]struct{})}
 	if cfg.MaxTCPClients > 0 {
 		s.slots = make(chan struct{}, cfg.MaxTCPClients)
+	}
+	if cfg.MaxTransfers > 0 {
+		s.transfers = make(chan struct{}, cfg.MaxTransfers)
 	}
 	s.SetTransfers(cfg.Transfers)
 	s.SetKeys(cfg.Keys)
@@ -615,4 +648,32 @@ func (s *Server) forgetConn(conn *net.TCPConn) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.conns, conn)
+}
+
+// takeTransfer claims one of the transfer slots, and reports whether there was
+// one to claim.
+func (s *Server) takeTransfer() bool {
+	if s.transfers == nil {
+		return true
+	}
+	select {
+	case s.transfers <- struct{}{}:
+		s.busy.Store(false)
+		return true
+	default:
+		if !s.busy.Swap(true) {
+			s.report(fmt.Errorf(
+				"all %d transfer slots are in use, so further transfers are being turned away; "+
+					"raise the limit if this many secondaries is ordinary rather than a flood",
+				s.cfg.MaxTransfers))
+		}
+		return false
+	}
+}
+
+// releaseTransfer gives a transfer slot back.
+func (s *Server) releaseTransfer() {
+	if s.transfers != nil {
+		<-s.transfers
+	}
 }
