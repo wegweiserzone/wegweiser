@@ -138,7 +138,9 @@ type Writer interface {
 	// UpdateZone replaces a zone's settings. It does not touch its records.
 	UpdateZone(ctx context.Context, z *zone.Zone) error
 
-	// DeleteZone removes a zone together with its records and its journal.
+	// DeleteZone removes a zone and its records. Its journal stays, which the
+	// schema explains where journal_commits is defined: a commit outlives the
+	// zone it describes, or deleting one would erase the record of who did it.
 	DeleteZone(ctx context.Context, id zone.ZoneID) error
 
 	// SetZoneSerial advances a zone serial. Separate from UpdateZone because
@@ -225,7 +227,9 @@ type Store interface {
 	// [ErrSchemaTooNew] if the database was written by a newer build.
 	Migrate(ctx context.Context) error
 
-	// Ping checks that the backend is reachable. It is what /healthz asks.
+	// Ping checks that the backend is reachable. Nothing on the serving path
+	// asks it: /healthz reports whether there is a snapshot to answer queries
+	// from, which is a question about the data plane rather than the database.
 	Ping(ctx context.Context) error
 
 	// Capabilities reports optional backend features.
