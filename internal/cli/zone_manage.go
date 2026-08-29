@@ -194,26 +194,26 @@ func runZoneShow(ctx context.Context, opts *options, f *clientFlags, name string
 	if err != nil {
 		return err
 	}
-	z, err := findZone(ctx, client, f, name)
-	if err != nil {
-		return err
-	}
-	// A name server this zone points at and has no address for is the one
-	// thing about a zone that looks fine and is not (RFC 1912 §2.8).
-	lame, err := lameNameServers(ctx, client, f, z)
+	found, err := findZone(ctx, client, f, name)
 	if err != nil {
 		return err
 	}
 
-	// Embedded so that --output json carries the zone's own fields at the top
-	// level, with the warning beside them rather than instead of them.
-	shown := struct {
-		*gen.Zone
-		LameNameServers []lameNS `json:"lameNameServers,omitempty"`
-	}{Zone: z, LameNameServers: lame}
+	// Read again by identifier, because the listing carries the zone and this
+	// carries the one diagnosis that travels with it: a name server the zone
+	// points at and has no address for (D31).
+	resp, err := client.GetZoneWithResponse(ctx, found.Id)
+	if err != nil {
+		return reachable(err, f.server)
+	}
+	if resp.JSON200 == nil {
+		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
+	}
+	z := resp.JSON200
+	lame := z.LameNameServers
 
 	p := opts.Printer()
-	return p.Print(shown, func(w io.Writer) error {
+	return p.Print(z, func(w io.Writer) error {
 		rows := [][2]string{
 			{"name", z.Name},
 			{"kind", string(z.Kind)},
@@ -250,7 +250,7 @@ func runZoneShow(ctx context.Context, opts *options, f *clientFlags, name string
 
 		for _, l := range lame {
 			if _, werr := fmt.Fprintf(w, "\n%s %s\n",
-				p.Paint(output.ColorYellow, "warning:"), lameNote(l)); werr != nil {
+				p.Paint(output.ColorYellow, "warning:"), l.Detail); werr != nil {
 				return werr
 			}
 		}

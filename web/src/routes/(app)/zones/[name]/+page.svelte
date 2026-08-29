@@ -10,10 +10,8 @@
 
   import { invalidateAll } from "$app/navigation";
   import { api, ApiError, NetworkError } from "$lib/api";
-  import type { Conflict, MissingZone, Record_ } from "$lib/api";
+  import type { Conflict, LameNameServer, MissingZone, Record_ } from "$lib/api";
   import { relative } from "$lib/format";
-  import { lameNameServers } from "$lib/health";
-  import type { LameNS } from "$lib/health";
   import { everyType } from "$lib/records";
   import { session } from "$lib/session.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -44,7 +42,7 @@
   let typeFilter = $state("");
 
   /** Name servers this zone points at and has no address for (RFC 1912 §2.8). */
-  let lame = $state<LameNS[]>([]);
+  let lame = $state<LameNameServer[]>([]);
   let pageIndex = $state(0);
   let pageSize = $state(250);
   /** The cursor that opens each page. The first page has none. */
@@ -104,10 +102,15 @@
     }
   }
 
-  /** checkGlue looks for the one defect a zone can have that looks like health. */
+  /**
+   * checkGlue reads the zone by identifier, which is where the one defect a
+   * zone can have that looks like health travels. The listing this page was
+   * navigated from does not carry it.
+   */
   async function checkGlue() {
     try {
-      lame = await lameNameServers(zone);
+      const detail = await api.get("/zones/{zoneId}", { path: { zoneId: zone.id } });
+      lame = detail.lameNameServers;
     } catch {
       // A diagnosis that cannot be made is not a failure worth a banner: the
       // records themselves are what this page is for.

@@ -258,3 +258,26 @@ func deref[T any](p *T, fallback T) T {
 // time0 is the zero time, as something deref can be handed: a filter bound
 // that was not sent is not a bound.
 var time0 time.Time
+
+// zoneDetailToAPI renders a zone together with the one diagnosis it carries.
+func zoneDetailToAPI(z *zone.Zone, lame []zone.NameServer) gen.ZoneDetail {
+	base := zoneToAPI(z)
+	out := gen.ZoneDetail{
+		Id: base.Id, Name: base.Name, Kind: base.Kind, Soa: base.Soa,
+		DefaultTtl: base.DefaultTtl, Disabled: base.Disabled,
+		Prefix: base.Prefix, AutoReverse: base.AutoReverse, Comment: base.Comment,
+		CreatedAt: base.CreatedAt, UpdatedAt: base.UpdatedAt,
+
+		// Never nil: a client ranging over it should not have to test first,
+		// and "no lame name servers" is an answer rather than an absence.
+		LameNameServers: make([]gen.LameNameServer, 0, len(lame)),
+	}
+	for _, ns := range lame {
+		out.LameNameServers = append(out.LameNameServers, gen.LameNameServer{
+			Owner:  ns.Owner.String(),
+			Target: ns.Target.String(),
+			Detail: zone.LameDetail(ns.Target),
+		})
+	}
+	return out
+}

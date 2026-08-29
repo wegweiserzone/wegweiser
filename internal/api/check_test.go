@@ -120,3 +120,35 @@ func TestCheckZoneWarnsAboutAZoneNobodyFinished(t *testing.T) {
 		t.Errorf("detail is %q, want it to name the server with no address", f.Detail)
 	}
 }
+
+// The diagnosis travels with the zone, not only with a check, because somebody
+// who has to know to ask has not been told (D31).
+func TestReadingAZoneCarriesTheLameNameServers(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	created := h.createZone("example.com.")
+
+	var z gen.ZoneDetail
+	h.decode(h.do(http.MethodGet, "/zones/"+created.Id, nil), http.StatusOK, &z)
+
+	if len(z.LameNameServers) != 1 {
+		t.Fatalf("got %d lame name servers, want 1: %+v", len(z.LameNameServers), z.LameNameServers)
+	}
+	lame := z.LameNameServers[0]
+	if lame.Target != "ns1.example.com." || lame.Owner != "example.com." {
+		t.Errorf("got %s at %s, want ns1.example.com. at the apex", lame.Target, lame.Owner)
+	}
+	if !strings.Contains(lame.Detail, "no address in this zone") {
+		t.Errorf("detail is %q, want the sentence no client should have to write", lame.Detail)
+	}
+
+	// Give it one, and the zone stops carrying the warning.
+	h.createRecord(created.Id, gen.CreateRecord{
+		Name: "ns1.example.com.", Type: "A", Data: "192.0.2.53",
+	})
+	h.decode(h.do(http.MethodGet, "/zones/"+created.Id, nil), http.StatusOK, &z)
+	if len(z.LameNameServers) != 0 {
+		t.Errorf("still lame after an address was added: %+v", z.LameNameServers)
+	}
+}

@@ -123,7 +123,15 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Read one zone */
+        /**
+         * Read one zone
+         * @description Everything a listing carries, and the one diagnosis a zone can carry
+         *     that nothing about it looks wrong for. It is computed here rather than
+         *     left to `/check` because somebody who has to know to run a check in
+         *     order to be told their delegation is broken has been told nothing. It
+         *     costs the zone's NS records and one lookup per name server, not a walk
+         *     of the zone, which is what makes that affordable.
+         */
         get: operations["getZone"];
         put?: never;
         post?: never;
@@ -871,6 +879,31 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        ZoneDetail: components["schemas"]["Zone"] & {
+            /**
+             * @description Name servers this zone points at and has no address for. A
+             *     resolver following the delegation is told, authoritatively,
+             *     that the name does not exist (RFC 1912 §2.8). Correct DNS and
+             *     almost never intended, which is why it travels with the zone
+             *     rather than only in a check.
+             */
+            lameNameServers: components["schemas"]["LameNameServer"][];
+        };
+        LameNameServer: {
+            /**
+             * @description What is wrong and what to do about it, in the same words the zone
+             *     check uses. It travels with the answer so that no client writes its
+             *     own version of the sentence.
+             */
+            detail: string;
+            /**
+             * @description The name the NS record sits on: the apex for this zone's own name
+             *     servers, a child name for a delegation.
+             */
+            owner: string;
+            /** @description The name server this zone has no address for. */
+            target: string;
+        };
         CreateZone: {
             /**
              * @description The apex. A trailing dot is optional; the name is absolute either
@@ -1543,7 +1576,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Zone"];
+                    "application/json": components["schemas"]["ZoneDetail"];
                 };
             };
             default: components["responses"]["Problem"];

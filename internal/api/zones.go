@@ -62,7 +62,69 @@ func (s *Server) GetZone(
 	if err != nil {
 		return nil, err
 	}
-	return gen.GetZone200JSONResponse(zoneToAPI(z)), nil
+
+	lame, err := s.lameNameServers(ctx, z)
+	if err != nil {
+		return nil, err
+	}
+	return gen.GetZone200JSONResponse(zoneDetailToAPI(z, lame)), nil
+}
+
+// lameNameServers finds the name servers this zone points at and has no
+// address for.
+//
+// It reads the zone's NS records and asks about each distinct target, rather
+// than walking the zone the way a check does, which is what makes it cheap
+// enough to answer on every read of a zone (D31).
+func (s *Server) lameNameServers(
+	ctx context.Context, z *zone.Zone,
+) ([]zone.NameServer, error) {
+	var lame []zone.NameServer
+	err := s.store.View(ctx, func(r store.Reader) error {
+		lame = lame[:0]
+
+		ns, lerr := allOfType(ctx, r, z.ID, zone.TypeNS)
+		if lerr != nil {
+			return lerr
+		}
+		for _, server := range zone.NameServersInside(*z, ns) {
+			addressed, aerr := hasAddress(ctx, r, z.ID, server.Target)
+			if aerr != nil {
+				return aerr
+			}
+			if !addressed {
+				lame = append(lame, server)
+			}
+		}
+		return nil
+	})
+	return lame, err
+}
+
+// allOfType reads every record of one type in a zone, following the cursor to
+// the end.
+func allOfType(
+	ctx context.Context, r store.Reader, zid zone.ZoneID, typ zone.RRType,
+) ([]zone.Record, error) {
+	f := store.RecordFilter{
+		ZoneID: zid,
+		Types:  []zone.RRType{typ},
+		Paging: store.Paging{Limit: store.MaxLimit},
+	}
+	var out []zone.Record
+	for {
+		page, err := r.ListRecords(ctx, f)
+		if err != nil {
+			return nil, err
+		}
+		for _, rec := range page.Items {
+			out = append(out, *rec)
+		}
+		if page.NextCursor == "" {
+			return out, nil
+		}
+		f.Cursor = page.NextCursor
+	}
 }
 
 // CreateZone brings a zone into existence.

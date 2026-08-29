@@ -137,10 +137,10 @@ type Check struct {
 
 	apexNS bool
 
-	// nameServers are the name servers this zone points at that live inside
-	// it, each mapped to the owner of the first NS record naming it. One
-	// outside the zone is somebody else's to answer for.
-	nameServers map[Name]Name
+	// nsRecords are the NS records seen so far. A zone names a handful of
+	// name servers however large it is, so holding them costs nothing and
+	// means the rule about them runs in one place.
+	nsRecords []Record
 }
 
 // NewCheck starts a check of z.
@@ -167,23 +167,7 @@ func (c *Check) Add(r *Record) {
 		if c.zone.IsApex(r.Name) {
 			c.apexNS = true
 		}
-		c.noteNameServer(r)
-	}
-}
-
-// noteNameServer remembers a name server this zone would have to answer for.
-func (c *Check) noteNameServer(r *Record) {
-	target, err := ParseName(r.RData.String())
-	if err != nil || !c.zone.Contains(target) {
-		// Not a name, or not one this zone answers for. Either way it is not
-		// this zone's business to have an address for it.
-		return
-	}
-	if c.nameServers == nil {
-		c.nameServers = make(map[Name]Name, 2)
-	}
-	if _, seen := c.nameServers[target]; !seen {
-		c.nameServers[target] = r.Name
+		c.nsRecords = append(c.nsRecords, *r)
 	}
 }
 
@@ -225,14 +209,8 @@ func (c *Check) Done(addressed Addressed) (Report, error) {
 // it again, because the address record may simply not have been written yet
 // (D31).
 func (c *Check) lame(addressed Addressed) error {
-	targets := make([]Name, 0, len(c.nameServers))
-	for target := range c.nameServers {
-		targets = append(targets, target)
-	}
-	slices.SortFunc(targets, func(a, b Name) int { return a.Compare(b) })
-
-	for _, target := range targets {
-		ok, err := addressed(target)
+	for _, ns := range NameServersInside(c.zone, c.nsRecords) {
+		ok, err := addressed(ns.Target)
 		if err != nil {
 			return err
 		}
@@ -242,14 +220,60 @@ func (c *Check) lame(addressed Addressed) error {
 		c.record(Finding{
 			Severity: SeverityWarning,
 			Scope:    ScopeNameServer,
-			Name:     c.nameServers[target],
-			Detail: fmt.Sprintf(
-				"%s has no address in this zone, so a resolver referred to it is told the "+
-					"name does not exist. Add %s A <address>, or point the delegation "+
-					"somewhere off-site (RFC 1912 §2.8).", target, target),
+			Name:     ns.Owner,
+			Detail:   LameDetail(ns.Target),
 		})
 	}
 	return nil
+}
+
+// NameServer is one name server a zone points at, with the owner of the NS
+// record that names it: the apex for the zone's own servers, a child name for
+// a delegation.
+type NameServer struct {
+	Owner  Name
+	Target Name
+}
+
+// NameServersInside returns the name servers these NS records name that live
+// inside the zone, in canonical order and each once. One outside the zone is
+// somebody else's to answer for, and two records naming one server are one
+// question.
+//
+// It is separate from the walk so that the zone's own read can ask the same
+// question from the NS records alone, without reading every record in the zone
+// to find out (D31).
+func NameServersInside(z Zone, ns []Record) []NameServer {
+	seen := make(map[Name]NameServer, len(ns))
+	for i := range ns {
+		r := &ns[i]
+		if r.Type != TypeNS {
+			continue
+		}
+		target, err := ParseName(r.RData.String())
+		if err != nil || !z.Contains(target) {
+			continue
+		}
+		if _, dup := seen[target]; !dup {
+			seen[target] = NameServer{Owner: r.Name, Target: target}
+		}
+	}
+
+	out := make([]NameServer, 0, len(seen))
+	for _, s := range seen {
+		out = append(out, s)
+	}
+	slices.SortFunc(out, func(a, b NameServer) int { return a.Target.Compare(b.Target) })
+	return out
+}
+
+// LameDetail is the sentence about a name server a zone points at and has no
+// address for.
+func LameDetail(target Name) string {
+	return fmt.Sprintf(
+		"%s has no address in this zone, so a resolver referred to it is told the name does "+
+			"not exist. Add %s A <address>, or point the delegation somewhere off-site "+
+			"(RFC 1912 §2.8).", target, target)
 }
 
 // flush checks the name that has just finished.

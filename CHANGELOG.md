@@ -84,6 +84,9 @@ public API is unstable and may change without a deprecation period.
   the same condition as one holding a record nothing can answer. A name server this zone
   points at and has no address for is the first of the second kind: correct DNS, and a
   resolver sent to it is told the name does not exist (RFC 1912 §2.8).
+- `GET /zones/{zoneId}` carries that same diagnosis, sentence included, so a client shows it
+  without deriving it. Both clients used to work it out themselves, from one request per
+  name server, and the two implementations were kept in step by hand.
 
 #### CLI
 

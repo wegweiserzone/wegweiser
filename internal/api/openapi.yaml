@@ -231,12 +231,19 @@ paths:
       operationId: getZone
       tags: [zones]
       summary: Read one zone
+      description: |
+        Everything a listing carries, and the one diagnosis a zone can carry
+        that nothing about it looks wrong for. It is computed here rather than
+        left to `/check` because somebody who has to know to run a check in
+        order to be told their delegation is broken has been told nothing. It
+        costs the zone's NS records and one lookup per name server, not a walk
+        of the zone, which is what makes that affordable.
       responses:
         "200":
           description: The zone.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Zone" }
+              schema: { $ref: "#/components/schemas/ZoneDetail" }
         default: { $ref: "#/components/responses/Problem" }
     patch:
       operationId: updateZone
@@ -1190,6 +1197,41 @@ components:
         comment: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+
+    ZoneDetail:
+      allOf:
+        - $ref: "#/components/schemas/Zone"
+        - type: object
+          required: [lameNameServers]
+          properties:
+            lameNameServers:
+              type: array
+              description: |
+                Name servers this zone points at and has no address for. A
+                resolver following the delegation is told, authoritatively,
+                that the name does not exist (RFC 1912 §2.8). Correct DNS and
+                almost never intended, which is why it travels with the zone
+                rather than only in a check.
+              items: { $ref: "#/components/schemas/LameNameServer" }
+
+    LameNameServer:
+      type: object
+      required: [owner, target, detail]
+      properties:
+        detail:
+          type: string
+          description: |
+            What is wrong and what to do about it, in the same words the zone
+            check uses. It travels with the answer so that no client writes its
+            own version of the sentence.
+        owner:
+          type: string
+          description: |
+            The name the NS record sits on: the apex for this zone's own name
+            servers, a child name for a delegation.
+        target:
+          type: string
+          description: The name server this zone has no address for.
 
     CreateZone:
       type: object
