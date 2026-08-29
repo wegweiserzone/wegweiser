@@ -448,6 +448,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/records/{recordId}/canonical": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a record. */
+                recordId: components["parameters"]["RecordID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make this the name an address reverses to
+         * @description Several names on one address is ordinary, and only one of them can be
+         *     the answer to a reverse lookup. Where the address record named here is
+         *     not that one, this hands it the entry and takes it from whatever
+         *     generated one holds it.
+         *
+         *     The record itself does not change. What changes is the reverse zone,
+         *     in a commit of its own like any other change the automation makes.
+         *
+         *     An entry somebody wrote by hand is left alone: detaching a generated
+         *     record is how a person says to stop maintaining it, and taking it back
+         *     would make detaching mean nothing (docs/decisions/ D4). A record that
+         *     already holds the entry is answered without anything being written.
+         */
+        post: operations["makeRecordCanonical"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/session": {
         parameters: {
             query?: never;
@@ -2002,6 +2036,30 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description The record, now authored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordWritten"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    makeRecordCanonical: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a record. */
+                recordId: components["parameters"]["RecordID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The record, and what claiming the entry wrote. */
             200: {
                 headers: {
                     [name: string]: unknown;

@@ -140,6 +140,13 @@ func (a *Applier) expandReverse(
 			return err
 		}
 	}
+	// Last, so that a claim is resolved against everything this command has
+	// already queued rather than against a half-built picture.
+	for i := range pending.claims {
+		if err := a.generate(ctx, tx, cs, &pending.claims[i], res); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -362,9 +369,12 @@ func (a *Applier) resolveConflict(
 	ctx context.Context, tx store.Tx, cs *changeSet, rev *zone.Zone, source *zone.Record,
 	addr netip.Addr, key zone.RRsetKey, existing []zone.Record, res *Result,
 ) error {
-	pol, err := a.effectivePolicy(ctx, tx)
-	if err != nil {
-		return err
+	pol := cs.policy
+	if pol == "" {
+		var perr error
+		if pol, perr = a.effectivePolicy(ctx, tx); perr != nil {
+			return perr
+		}
 	}
 
 	held := &existing[0]

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/netip"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/wegweiserzone/wegweiser/internal/apply"
@@ -1077,3 +1078,90 @@ func TestAutomationFillsWhatItHadNoChangeToReactTo(t *testing.T) {
 // ptrTo is a pointer to a value, for the three-state settings where nil means
 // "follow the server".
 func ptrTo[T any](v T) *T { return &v }
+
+// D3 asks for an answer to a conflict and not only a report of one: the losing
+// name takes the entry, and the check goes quiet because the state it named is
+// no longer true (D33).
+func TestMakeCanonicalTakesTheEntry(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	rev := f.reverseZone("2.0.192.in-addr.arpa.")
+	f.addA("www.example.com.", "192.0.2.10")
+	f.addA("mail.example.com.", "192.0.2.10")
+
+	if got := f.ptrs(rev); !slices.Equal(got, []string{
+		"10.2.0.192.in-addr.arpa. -> www.example.com.",
+	}) {
+		t.Fatalf("first-wins did not hold: %v", got)
+	}
+
+	f.mustApply(f.command(apply.RecordOp{
+		Action:   apply.ActionMakeCanonical,
+		RecordID: f.recordID("mail.example.com.", zone.TypeA),
+	}))
+
+	want := []string{"10.2.0.192.in-addr.arpa. -> mail.example.com."}
+	if got := f.ptrs(rev); !slices.Equal(got, want) {
+		t.Errorf("the reverse zone holds\n  got  %v\n  want %v", got, want)
+	}
+
+	// The conflict does not go away, and should not: two names still claim one
+	// address. What changed is which of them the reverse answers with, and the
+	// check now says so from the other side.
+	found, err := f.a.CheckReverse(t.Context(), rev.ID)
+	if err != nil {
+		t.Fatalf("CheckReverse: %v", err)
+	}
+	if len(found) != 1 {
+		t.Fatalf("got %d findings, want the same conflict from the other side: %+v", len(found), found)
+	}
+	if !strings.Contains(found[0].Detail, "as mail.example.com.") ||
+		!strings.Contains(found[0].Detail, "www.example.com. points at it") {
+		t.Errorf("detail is %q, want mail answering and www without an entry", found[0].Detail)
+	}
+}
+
+// A hand-written entry is never taken away, whoever asks. Detaching one is how
+// a person says to leave it alone (D4), and this must not undo that.
+func TestMakeCanonicalLeavesAHandWrittenEntry(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	rev := f.reverseZone("2.0.192.in-addr.arpa.")
+	f.addA("www.example.com.", "192.0.2.10")
+
+	// Detached, so the entry is somebody's own rather than the server's.
+	ptr := f.reversePTR(rev, "10.2.0.192.in-addr.arpa.")
+	f.mustApply(apply.Command{
+		ZoneID: rev.ID, Kind: journal.KindEdit, Source: journal.SourceAPI, Actor: "test",
+		Ops: []apply.RecordOp{{Action: apply.ActionDetach, RecordID: ptr}},
+	})
+
+	f.addA("mail.example.com.", "192.0.2.10")
+	f.mustApply(f.command(apply.RecordOp{
+		Action:   apply.ActionMakeCanonical,
+		RecordID: f.recordID("mail.example.com.", zone.TypeA),
+	}))
+
+	want := []string{"10.2.0.192.in-addr.arpa. -> www.example.com."}
+	if got := f.ptrs(rev); !slices.Equal(got, want) {
+		t.Errorf("a detached entry was taken away\n  got  %v\n  want %v", got, want)
+	}
+}
+
+// reversePTR finds the identifier of one PTR in a reverse zone.
+func (f *fixture) reversePTR(rev *zone.Zone, name string) zone.RecordID {
+	f.t.Helper()
+
+	for rec, err := range f.s.IterZoneRecords(f.t.Context(), rev.ID) {
+		if err != nil {
+			f.t.Fatalf("IterZoneRecords: %v", err)
+		}
+		if rec.Type == zone.TypePTR && rec.Name.String() == name {
+			return rec.ID
+		}
+	}
+	f.t.Fatalf("no PTR at %s", name)
+	return ""
+}

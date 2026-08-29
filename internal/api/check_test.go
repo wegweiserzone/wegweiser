@@ -152,3 +152,39 @@ func TestReadingAZoneCarriesTheLameNameServers(t *testing.T) {
 		t.Errorf("still lame after an address was added: %+v", z.LameNameServers)
 	}
 }
+
+// The answer to a conflict, over the wire: which name an address reverses to
+// is a thing a client can change (D3, D33).
+func TestMakingARecordCanonical(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	fwd := h.createZone("hosts.example.")
+	// Outside the reverse zone below, so the only PTR in it is the one this
+	// test is about.
+	h.createRecord(fwd.Id, gen.CreateRecord{Name: "ns1.hosts.example.", Type: "A", Data: "198.51.100.53"})
+	rev := h.createZone("192.0.2.0/24")
+
+	h.createRecord(fwd.Id, gen.CreateRecord{Name: "www.hosts.example.", Type: "A", Data: "192.0.2.10"})
+	second := h.createRecord(fwd.Id, gen.CreateRecord{
+		Name: "mail.hosts.example.", Type: "A", Data: "192.0.2.10",
+	})
+	// First wins, so the second name got nothing and said so.
+	if second.Conflicts == nil || len(*second.Conflicts) != 1 {
+		t.Fatalf("the second name reported %v conflicts, want one", second.Conflicts)
+	}
+
+	var written gen.RecordWritten
+	h.decode(h.do(http.MethodPost, "/records/"+second.Record.Id+"/canonical", nil),
+		http.StatusOK, &written)
+
+	// The reverse zone now answers with the second name.
+	var page gen.RecordPage
+	h.decode(h.do(http.MethodGet, "/zones/"+rev.Id+"/records?type=PTR", nil), http.StatusOK, &page)
+	if len(page.Items) != 1 {
+		t.Fatalf("the reverse zone holds %d PTRs, want one", len(page.Items))
+	}
+	if page.Items[0].Data != "mail.hosts.example." {
+		t.Errorf("the address reverses to %q, want mail.hosts.example.", page.Items[0].Data)
+	}
+}

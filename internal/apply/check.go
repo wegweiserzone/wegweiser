@@ -70,14 +70,19 @@ func (a *Applier) CheckReverse(
 	return out, nil
 }
 
-// conflictDetail is the sentence about an address two names claim.
+// conflictDetail is the sentence about an address more than one name claims.
+//
+// Worded as the state it is rather than as a failure, because several names on
+// one address is the ordinary case (D3): a virtual host, a load balancer, a
+// service alias. What is worth saying is which of them the reverse answers
+// with, since only one of them can.
 func conflictDetail(c *Conflict) string {
-	held := "which somebody wrote by hand"
+	held := ", which somebody wrote by hand"
 	if c.Generated {
-		held = "which was generated from another address record"
+		held = ""
 	}
 	return fmt.Sprintf(
-		"%s points at %s, and the reverse of that address already names %s, %s. "+
-			"Under this policy the first name keeps it, so nothing was written for %s.",
-		c.SourceName, c.Address, c.Existing, held, c.SourceName)
+		"%s is answered in reverse as %s%s, and %s points at it as well. A reverse lookup "+
+			"names one host, so %s has no entry of its own here.",
+		c.Address, c.Existing, held, c.SourceName, c.SourceName)
 }

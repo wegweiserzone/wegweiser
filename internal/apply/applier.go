@@ -253,7 +253,7 @@ func normalize(cmd *Command) {
 			for j := range op.Records {
 				mintID(&op.Records[j], cmd.ZoneID)
 			}
-		case ActionDelete, ActionDetach:
+		case ActionDelete, ActionDetach, ActionMakeCanonical:
 			// Addressed by identifier, so there is nothing left to determine.
 		}
 	}
@@ -285,6 +285,15 @@ func (a *Applier) planIn(
 	}
 
 	cs := &changeSet{}
+	// Making a name canonical is the one command that overrides the server's
+	// conflict policy, because taking the entry from whoever holds it is the
+	// whole of what it asks for.
+	for i := range cmd.Ops {
+		if cmd.Ops[i].Action == ActionMakeCanonical {
+			cs.policy = PolicyLastWins
+			break
+		}
+	}
 	cs.in(z) // the addressed zone commits first, even if only other zones change
 	for i := range cmd.Ops {
 		if rerr := a.resolve(ctx, tx, cs.in(z), z, &cmd.Ops[i]); rerr != nil {
@@ -514,6 +523,9 @@ func (a *Applier) resolve(
 
 	case ActionDetach:
 		return a.resolveDetach(ctx, tx, ch, z, op)
+
+	case ActionMakeCanonical:
+		return a.resolveCanonical(ctx, tx, ch, z, op)
 
 	case ActionReplaceRRset:
 		return a.resolveReplace(ctx, tx, ch, z, op)
@@ -864,4 +876,28 @@ func (k *keyedMutex) lock(key string) func() {
 			delete(k.locks, key)
 		}
 	}
+}
+
+// resolveCanonical queues a record to take the reverse entry for its address.
+//
+// It changes nothing about the record. What it does is ask the expansion to
+// generate from it under last-wins, which is the rule that takes a generated
+// entry away from the name holding it and leaves a hand-written one alone (D4).
+func (a *Applier) resolveCanonical(
+	ctx context.Context, tx store.Tx, ch *changes, z *zone.Zone, op *RecordOp,
+) error {
+	rec, err := tx.RecordByID(ctx, op.RecordID)
+	if err != nil {
+		return err
+	}
+	if err := checkOwnedAndAuthored(z, rec); err != nil {
+		return err
+	}
+	if _, ok := rec.Address(); !ok {
+		return fmt.Errorf(
+			"%w: %s is a %s, and only an address record has a reverse entry to claim",
+			zone.ErrInvalid, rec.Name, rec.Type)
+	}
+	ch.claim(rec)
+	return nil
 }

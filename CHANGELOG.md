@@ -97,6 +97,11 @@ public API is unstable and may change without a deprecation period.
   of the check because working it out plans the write that would fix it, which holds the
   zone while it runs. A conflict is worked out from the records every time rather than
   stored, so it stops being reported the moment it stops being true.
+- `POST /records/{recordId}/canonical` hands the reverse entry for an address to the record
+  it names, taking it from whatever generated one holds it. Several names on one address is
+  ordinary and only one of them can be the reverse answer; this is how somebody says which.
+  An entry written by hand is left alone, because detaching one is how a person says to
+  leave it alone.
 - `POST /zones/{zoneId}/reconcile` writes those entries. A reverse zone created for a network
   already in use has no change to react to and so starts empty, however many addresses are
   already named in it; this is what fills it, in one commit. It only adds.

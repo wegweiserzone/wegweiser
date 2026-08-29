@@ -195,6 +195,39 @@ func (s *Server) DetachRecord(
 	return gen.DetachRecord200JSONResponse(written), nil
 }
 
+// MakeRecordCanonical hands the reverse entry for an address to this record.
+//
+// It is the answer to a conflict that D3 asked for and D33 put here: the check
+// says which name an address reverses to, and this is how somebody changes it.
+func (s *Server) MakeRecordCanonical(
+	ctx context.Context, req gen.MakeRecordCanonicalRequestObject,
+) (gen.MakeRecordCanonicalResponseObject, error) {
+	rec, err := s.recordByID(ctx, zone.RecordID(req.RecordId))
+	if err != nil {
+		return nil, err
+	}
+
+	meta := s.meta(ctx, "")
+	res, err := s.applier.Apply(ctx, apply.Command{
+		ZoneID:  rec.ZoneID,
+		Ops:     []apply.RecordOp{{Action: apply.ActionMakeCanonical, RecordID: rec.ID}},
+		Kind:    journal.KindEdit,
+		Source:  meta.Source,
+		Actor:   meta.Actor,
+		Comment: "make this the name the address reverses to",
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.republish(ctx, res)
+
+	written, err := s.recordWritten(ctx, rec.ID, res)
+	if err != nil {
+		return nil, err
+	}
+	return gen.MakeRecordCanonical200JSONResponse(written), nil
+}
+
 // DeleteRecord removes a record, and whatever was generated from it.
 func (s *Server) DeleteRecord(
 	ctx context.Context, req gen.DeleteRecordRequestObject,

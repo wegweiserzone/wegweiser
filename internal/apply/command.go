@@ -22,6 +22,11 @@ const (
 	// empty set removes it. This is what a record editor submits, because it
 	// is the unit DNS answers with (RFC 2181 §5).
 	ActionReplaceRRset OpAction = "replace_rrset"
+	// ActionMakeCanonical takes the reverse entry for an address away from the
+	// name holding it and generates it from this record instead. It is the
+	// answer to a conflict rather than a way to write one (D3, D33), and it
+	// changes nothing about the record it names.
+	ActionMakeCanonical OpAction = "make_canonical"
 	// ActionDetach turns a generated record into an authored one. It keeps its
 	// data and its identity, loses its link to the record it came from, and the
 	// automation stops touching it. See docs/decisions/ D4.
@@ -31,7 +36,8 @@ const (
 // Valid reports whether a is one of the defined actions.
 func (a OpAction) Valid() bool {
 	switch a {
-	case ActionAdd, ActionUpdate, ActionDelete, ActionReplaceRRset, ActionDetach:
+	case ActionAdd, ActionUpdate, ActionDelete, ActionReplaceRRset,
+		ActionDetach, ActionMakeCanonical:
 		return true
 	default:
 		return false
@@ -93,6 +99,13 @@ func (o RecordOp) Validate() error {
 	case ActionDetach:
 		if o.RecordID == "" {
 			return fmt.Errorf("%w: detaching a record needs to say which one", zone.ErrInvalid)
+		}
+		return nil
+
+	case ActionMakeCanonical:
+		if o.RecordID == "" {
+			return fmt.Errorf(
+				"%w: making a name canonical needs to say which record it is", zone.ErrInvalid)
 		}
 		return nil
 

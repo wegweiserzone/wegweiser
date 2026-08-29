@@ -42,6 +42,14 @@ that still holds, because dismissing one would mean hiding a state the records a
 What D3 wanted from it is the action beside it: make this name the canonical one. That
 changes the records, and the conflict is then not true rather than not shown.
 
+**A conflict does not go away when somebody chooses a side.** Making a name canonical settles
+which of them the reverse answers with; it does not stop two names claiming one address, and
+the check says so afterwards from the other name's point of view. That reads as noise if the
+finding is worded as a failure, so it is not: several names on one address is the ordinary
+case this record's parent already calls normal, and what the check reports is which of them
+answers. D31's warning is exactly that shape, correct DNS that may or may not be what
+somebody meant.
+
 ## Consequences
 
 D3's obligation is met by the check rather than by a table, and its "listed under the zone"

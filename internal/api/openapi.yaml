@@ -619,6 +619,34 @@ paths:
               schema: { $ref: "#/components/schemas/RecordWritten" }
         default: { $ref: "#/components/responses/Problem" }
 
+  /records/{recordId}/canonical:
+    parameters:
+      - $ref: "#/components/parameters/RecordID"
+    post:
+      operationId: makeRecordCanonical
+      tags: [records]
+      summary: Make this the name an address reverses to
+      description: |
+        Several names on one address is ordinary, and only one of them can be
+        the answer to a reverse lookup. Where the address record named here is
+        not that one, this hands it the entry and takes it from whatever
+        generated one holds it.
+
+        The record itself does not change. What changes is the reverse zone,
+        in a commit of its own like any other change the automation makes.
+
+        An entry somebody wrote by hand is left alone: detaching a generated
+        record is how a person says to stop maintaining it, and taking it back
+        would make detaching mean nothing (docs/decisions/ D4). A record that
+        already holds the entry is answered without anything being written.
+      responses:
+        "200":
+          description: The record, and what claiming the entry wrote.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordWritten" }
+        default: { $ref: "#/components/responses/Problem" }
+
   /auth/session:
     post:
       operationId: createSession

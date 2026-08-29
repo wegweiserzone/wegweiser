@@ -15,6 +15,11 @@ type changeSet struct {
 	// order is the order the zones were first touched, so that the commits of
 	// one command come out the same way every time.
 	order []zone.ZoneID
+
+	// policy overrides the server's reverse conflict policy for this command.
+	// Empty leaves it to the setting, which is every command but the one that
+	// exists to take an entry away from the name holding it.
+	policy Policy
 }
 
 // in returns the pending changes for a zone, starting them if this is the first
@@ -51,6 +56,11 @@ type changes struct {
 	deletes []zone.Record
 	updates []recordUpdate
 	inserts []zone.Record
+
+	// claims are records that do not change and are to generate their reverse
+	// entry anyway, taking it from whatever holds it. It is how somebody says
+	// "this is the canonical name for that address" (D3, D33).
+	claims []zone.Record
 
 	// touched are the owner names to re-check once the writes are in. An update
 	// that moves a record contributes both the name it left and the one it
@@ -92,6 +102,10 @@ func (c *changes) insert(r *zone.Record) {
 	c.inserts = append(c.inserts, *r)
 	c.touch(r.Name)
 }
+
+// claim queues a record to generate its reverse entry without changing the
+// record itself.
+func (c *changes) claim(r *zone.Record) { c.claims = append(c.claims, *r) }
 
 func (c *changes) touch(n zone.Name) {
 	if c.touched == nil {
