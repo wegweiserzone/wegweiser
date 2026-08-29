@@ -77,5 +77,6 @@ the zones in it, and it is worth doing whether or not a cluster ever follows.
 Invariant 4's wording is left for the commit that carries this out: it should say zone data,
 or it describes a rule this code has never followed.
 
-This record assumes D29 and D30 take the numbers they are drafted under, and is not linked
-to them until they do.
+It arrives with [D29](d29-a-node-that-cannot-apply.md) and
+[D30](d30-what-a-log-snapshot-contains.md), which settle the other two questions a node has
+to have answered before it starts.

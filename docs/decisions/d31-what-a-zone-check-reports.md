@@ -69,6 +69,3 @@ A warning is not a thing to be cleared. A zone can carry one for a reason, and n
 gains a way to acknowledge or suppress one. If that turns out to be needed, it is a record of
 its own, because a suppression list is state and state belongs somewhere.
 
-This record assumes [D29](d29-a-node-that-cannot-apply.md) and
-[D30](d30-what-a-log-snapshot-contains.md) take the numbers they are drafted under. If either
-is dropped, this one is renumbered rather than leaving a gap.

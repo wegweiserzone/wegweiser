@@ -56,6 +56,8 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D26** | [Outbound zone transfer: who may ask, and what is answered](d26-outbound-zone-transfer.md) |
 | **D27** | [NOTIFY: who gets told, and when](d27-notify.md) |
 | **D28** | [TSIG: a transfer is granted to a key, not to an address](d28-tsig.md) |
+| **D29** | [A node that cannot apply an entry leaves the cluster and keeps answering](d29-a-node-that-cannot-apply.md) |
+| **D30** | [What a log snapshot contains](d30-what-a-log-snapshot-contains.md) |
 | **D31** | [A zone check reports refusals and diagnoses, and says which is which](d31-what-a-zone-check-reports.md) |
 | **D32** | [What the cluster replicates besides zone data](d32-what-else-the-cluster-replicates.md) |
 
