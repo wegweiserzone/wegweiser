@@ -60,7 +60,13 @@ These are not negotiable. A change that requires breaking one needs a discussion
    by pointer (RCU). A zone change must **never** block an in-flight query.
 3. **Persistence is an interface.** No SQL outside `internal/store/`. `Store` defines zone,
    record and journal operations; SQLite and Postgres are implementations.
-4. **Everything is a journal event.** No write bypasses the journal.
+4. **Every change to a zone is a journal event, and one path does the writing.** No record
+   changes without a commit explaining it. Tokens, transfer keys and server settings have no
+   zone and no serial, so they carry no commit, but they go through `internal/apply` like
+   everything else and reach other nodes the same way; see
+   `docs/decisions/d32-what-else-the-cluster-replicates.md`. The single write outside that
+   path is `TouchToken`, which records when a token was last used *here* and is node-local
+   on purpose.
 5. **Zonefiles are an import/export format, not a storage format.** An RFC 1035 parser and
    writer must exist so migrating off BIND takes minutes.
 6. **Config as code.** The complete state is to export to declarative YAML and import back.

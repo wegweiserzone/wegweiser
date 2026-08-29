@@ -89,8 +89,9 @@ type Config struct {
 	// through the applier.
 	Store store.Store
 
-	// Applier is the write path. Every change goes through it, so that no
-	// write bypasses the journal (architecture invariant 4).
+	// Applier is the write path. Everything this server stores goes through
+	// it, zones and the tokens, keys and settings beside them, so that there
+	// is one place a change is decided (architecture invariant 4).
 	Applier *apply.Applier
 
 	// Snapshots is the data plane whose view is republished after every write.

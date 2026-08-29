@@ -14,12 +14,17 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
-// Applier is the only thing that changes zone data.
+// Applier is the only thing that changes what this server stores.
 //
-// Every write goes through it, and every write it makes is recorded as a commit
-// in the same transaction (architecture invariant 4). Nothing else advances a
-// zone serial. That is what lets the audit log, the diff view, rollback and
-// incremental transfer all read from one structure instead of four.
+// Every change to a zone is recorded as a commit in the same transaction
+// (architecture invariant 4), and nothing else advances a zone serial. That is
+// what lets the audit log, the diff view, rollback and incremental transfer all
+// read from one structure instead of four.
+//
+// Tokens, transfer keys and server settings go through here as well and carry
+// no commit, because they belong to no zone and step no serial. What they get
+// from this path is the other half of it: one place where a change is decided,
+// and one shape it travels in.
 type Applier struct {
 	store store.Store
 	now   func() time.Time
