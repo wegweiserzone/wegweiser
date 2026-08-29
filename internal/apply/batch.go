@@ -45,6 +45,11 @@ type Batch struct {
 	// changes: a record needs its zone to exist, and a zone outlives the
 	// journal entry that removes it.
 	Zones []ZoneOp
+
+	// Settings are the server settings this change writes. They are not zone
+	// data and produce no commit, so a batch can carry these and nothing else
+	// (D32).
+	Settings []SettingChange
 }
 
 // zoneOp returns the batch's change to a zone itself, or nil.
@@ -58,7 +63,12 @@ func (b *Batch) zoneOp(zid zone.ZoneID) *ZoneOp {
 }
 
 // Empty reports whether the command changed nothing.
-func (b *Batch) Empty() bool { return b == nil || len(b.Commits) == 0 }
+//
+// A commit is not the test on its own. Everything that touches a zone produces
+// one, and a setting touches no zone.
+func (b *Batch) Empty() bool {
+	return b == nil || (len(b.Commits) == 0 && len(b.Settings) == 0)
+}
 
 // applied reports whether the journal already holds this batch.
 //
@@ -118,6 +128,15 @@ func (b *Batch) validate(ctx context.Context, tx store.Tx) error {
 // follower has to be unable to disagree with the node that planned the change,
 // so everything that could be objected to was objected to by [Batch.planned].
 func (b *Batch) write(ctx context.Context, tx store.Tx) error {
+	// First, so that anything below reading a setting reads the one this batch
+	// carries. Nothing does today, and the day something does it should not
+	// depend on where in this function it sits.
+	for _, c := range b.Settings {
+		if err := tx.PutSetting(ctx, c.Key, c.Value); err != nil {
+			return err
+		}
+	}
+
 	for _, op := range b.Zones {
 		switch op.Kind {
 		case ZoneCreate:
@@ -135,8 +154,12 @@ func (b *Batch) write(ctx context.Context, tx store.Tx) error {
 		}
 	}
 
-	if err := b.set.write(ctx, tx); err != nil {
-		return err
+	// A batch that carries only settings has no resolved zone changes at all,
+	// so there is nothing here to write and no set to write it from.
+	if b.set != nil {
+		if err := b.set.write(ctx, tx); err != nil {
+			return err
+		}
 	}
 
 	for _, commit := range b.Commits {

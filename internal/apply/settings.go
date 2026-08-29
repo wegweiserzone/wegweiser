@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 
 	"github.com/wegweiserzone/wegweiser/internal/store"
@@ -46,17 +47,17 @@ func StoredPolicy(ctx context.Context, r store.Reader) (Policy, error) {
 	return p, nil
 }
 
-// SetStoredPolicy records the policy every zone that says nothing about itself
-// inherits.
-func SetStoredPolicy(ctx context.Context, w store.Writer, p Policy) error {
+// PolicyChange is the change that records the policy every zone saying nothing
+// about itself inherits.
+func PolicyChange(p Policy) (SettingChange, error) {
 	if !p.Valid() {
-		return fmt.Errorf("%w reverse policy %q", zone.ErrInvalid, p)
+		return SettingChange{}, fmt.Errorf("%w reverse policy %q", zone.ErrInvalid, p)
 	}
 	raw, err := json.Marshal(p)
 	if err != nil {
-		return fmt.Errorf("apply: encode the reverse policy: %w", err)
+		return SettingChange{}, fmt.Errorf("apply: encode the reverse policy: %w", err)
 	}
-	return w.PutSetting(ctx, PolicySetting, raw)
+	return SettingChange{Key: PolicySetting, Value: raw}, nil
 }
 
 // effectivePolicy is the policy the write in progress runs under: what the
@@ -116,13 +117,13 @@ func StoredTransferAllow(ctx context.Context, r store.Reader) (TransferAllow, er
 	return ParseTransferAllow(text)
 }
 
-// SetStoredTransferAllow records who may pull a zone.
-func SetStoredTransferAllow(ctx context.Context, w store.Writer, allow TransferAllow) error {
+// TransferAllowChange is the change that records who may pull a zone.
+func TransferAllowChange(allow TransferAllow) (SettingChange, error) {
 	raw, err := json.Marshal(TransferAllowText(allow))
 	if err != nil {
-		return fmt.Errorf("apply: encode the transfer list: %w", err)
+		return SettingChange{}, fmt.Errorf("apply: encode the transfer list: %w", err)
 	}
-	return w.PutSetting(ctx, TransferSetting, raw)
+	return SettingChange{Key: TransferSetting, Value: raw}, nil
 }
 
 // ParseTransferAllow turns what a client sent into addresses and key names.
@@ -218,13 +219,14 @@ func StoredNotifyTargets(ctx context.Context, r store.Reader) ([]NotifyTarget, e
 	return ParseNotifyTargets(text)
 }
 
-// SetStoredNotifyTargets records who is told when a zone changes.
-func SetStoredNotifyTargets(ctx context.Context, w store.Writer, targets []NotifyTarget) error {
+// NotifyTargetsChange is the change that records who is told when a zone
+// changes.
+func NotifyTargetsChange(targets []NotifyTarget) (SettingChange, error) {
 	raw, err := json.Marshal(NotifyTargetsText(targets))
 	if err != nil {
-		return fmt.Errorf("apply: encode the notify list: %w", err)
+		return SettingChange{}, fmt.Errorf("apply: encode the notify list: %w", err)
 	}
-	return w.PutSetting(ctx, NotifySetting, raw)
+	return SettingChange{Key: NotifySetting, Value: raw}, nil
 }
 
 // ParseNotifyTargets turns what a client sent into addresses to send to.
@@ -300,4 +302,48 @@ func NotifyTargetsText(targets []NotifyTarget) []string {
 		out[i] = where + " " + keyPrefix + t.Key.String()
 	}
 	return out
+}
+
+// SettingChange is one server setting, resolved to the bytes that will be
+// stored.
+//
+// It travels in a batch like everything else this path writes: a setting is
+// read while a change is planned, so two nodes holding different ones would
+// resolve the same command into different records (D32).
+type SettingChange struct {
+	Key   string
+	Value []byte
+}
+
+// SetSettings writes server settings, all of them or none.
+//
+// It takes no zone lock, because a setting belongs to no zone. What orders it
+// against a write in flight is the store, which serializes writers: the
+// planning transaction reading the policy either sees this change or does not,
+// and never half of it.
+func (a *Applier) SetSettings(ctx context.Context, changes []SettingChange) error {
+	b, err := a.PlanSettings(changes)
+	if err != nil {
+		return err
+	}
+	return a.ApplyBatch(ctx, b)
+}
+
+// PlanSettings turns settings changes into the batch that carries them out.
+//
+// Nothing here reads the store: a setting is given rather than worked out, so
+// there is no state for the plan to resolve against. It is still a plan,
+// because what reaches every node has to be the resolved value and not the
+// request for one.
+func (a *Applier) PlanSettings(changes []SettingChange) (*Batch, error) {
+	for _, c := range changes {
+		if c.Key == "" {
+			return nil, fmt.Errorf("%w: a setting change names no setting", zone.ErrInvalid)
+		}
+		if !json.Valid(c.Value) {
+			return nil, fmt.Errorf("%w: the value for the setting %q is not JSON",
+				zone.ErrInvalid, c.Key)
+		}
+	}
+	return &Batch{Settings: slices.Clone(changes)}, nil
 }

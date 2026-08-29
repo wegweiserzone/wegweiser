@@ -18,10 +18,19 @@ const batchVersion = 1
 // wireBatch is the batch as it travels. Kept apart from the applier's own
 // types: those may be refactored, this one is a promise to every other node.
 type wireBatch struct {
-	Version int          `json:"version"`
-	Zones   []wireZone   `json:"zones,omitempty"`
-	ZoneOps []wireZoneOp `json:"zoneOps,omitempty"`
-	Commits []wireCommit `json:"commits,omitempty"`
+	Version  int           `json:"version"`
+	Zones    []wireZone    `json:"zones,omitempty"`
+	ZoneOps  []wireZoneOp  `json:"zoneOps,omitempty"`
+	Commits  []wireCommit  `json:"commits,omitempty"`
+	Settings []wireSetting `json:"settings,omitempty"`
+}
+
+// wireSetting is one server setting as it travels. The value is carried as the
+// JSON it already is rather than re-encoded, so what a node stores is the bytes
+// the node that planned it stored.
+type wireSetting struct {
+	Key   string          `json:"key"`
+	Value json.RawMessage `json:"value"`
 }
 
 type wireZoneOp struct {
@@ -213,6 +222,10 @@ func (b *Batch) MarshalJSON() ([]byte, error) {
 	for _, c := range b.Commits {
 		w.Commits = append(w.Commits, toWireCommit(c))
 	}
+
+	for _, c := range b.Settings {
+		w.Settings = append(w.Settings, wireSetting{Key: c.Key, Value: c.Value})
+	}
 	return json.Marshal(w)
 }
 
@@ -288,9 +301,22 @@ func (b *Batch) UnmarshalJSON(data []byte) error {
 		commits = append(commits, c)
 	}
 
+	settings := make([]SettingChange, 0, len(w.Settings))
+	for _, ws := range w.Settings {
+		if ws.Key == "" {
+			return fmt.Errorf("%w: a setting in the batch names no setting", zone.ErrInvalid)
+		}
+		if !json.Valid(ws.Value) {
+			return fmt.Errorf("%w: the value for the setting %q is not JSON",
+				zone.ErrInvalid, ws.Key)
+		}
+		settings = append(settings, SettingChange{Key: ws.Key, Value: ws.Value})
+	}
+
 	b.set = set
 	b.Zones = ops
 	b.Commits = commits
+	b.Settings = settings
 	return nil
 }
 

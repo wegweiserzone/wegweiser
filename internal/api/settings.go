@@ -36,39 +36,28 @@ func (s *Server) GetSettings(
 func (s *Server) UpdateSettings(
 	ctx context.Context, req gen.UpdateSettingsRequestObject,
 ) (gen.UpdateSettingsResponseObject, error) {
-	var cur settings
-	if err := s.store.Update(ctx, func(tx store.Tx) error {
-		if req.Body != nil && req.Body.ReverseConflictPolicy != nil {
-			p := apply.Policy(*req.Body.ReverseConflictPolicy)
-			if serr := apply.SetStoredPolicy(ctx, tx, p); serr != nil {
-				return serr
-			}
-		}
-		if req.Body != nil && req.Body.NotifyTargets != nil {
-			targets, perr := apply.ParseNotifyTargets(*req.Body.NotifyTargets)
-			if perr != nil {
-				return perr
-			}
-			if serr := apply.SetStoredNotifyTargets(ctx, tx, targets); serr != nil {
-				return serr
-			}
-		}
-		if req.Body != nil && req.Body.TransferAllow != nil {
-			allow, perr := apply.ParseTransferAllow(*req.Body.TransferAllow)
-			if perr != nil {
-				return perr
-			}
-			if serr := apply.SetStoredTransferAllow(ctx, tx, allow); serr != nil {
-				return serr
-			}
-		}
-		// Read back rather than echo what was sent: the response then says what
-		// the server holds, including the parts this request did not touch.
-		var verr error
-		cur, verr = s.settings(ctx, tx)
-		return verr
-	}); err != nil {
+	changes, err := settingChanges(req.Body)
+	if err != nil {
 		return nil, err
+	}
+	// Through the applier, not into the store: a setting is read while a
+	// change is planned, so it is replicated state and travels in a batch like
+	// everything else this path writes (D32).
+	if len(changes) > 0 {
+		if serr := s.applier.SetSettings(ctx, changes); serr != nil {
+			return nil, serr
+		}
+	}
+
+	// Read back rather than echo what was sent: the response then says what
+	// the server holds, including the parts this request did not touch.
+	var cur settings
+	if verr := s.store.View(ctx, func(r store.Reader) error {
+		var rerr error
+		cur, rerr = s.settings(ctx, r)
+		return rerr
+	}); verr != nil {
+		return nil, verr
 	}
 
 	// The list is enforced by the query path, which holds its own copy so a
@@ -118,4 +107,44 @@ func settingsToAPI(cur settings) gen.Settings {
 		TransferAllow: apply.TransferAllowText(cur.allow),
 		NotifyTargets: apply.NotifyTargetsText(cur.notify),
 	}
+}
+
+// settingChanges turns what a request asked for into the changes that carry it
+// out. A field the request leaves out produces none, so it is left alone.
+func settingChanges(body *gen.UpdateSettings) ([]apply.SettingChange, error) {
+	if body == nil {
+		return nil, nil
+	}
+
+	var out []apply.SettingChange
+	if body.ReverseConflictPolicy != nil {
+		c, err := apply.PolicyChange(apply.Policy(*body.ReverseConflictPolicy))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	if body.NotifyTargets != nil {
+		targets, err := apply.ParseNotifyTargets(*body.NotifyTargets)
+		if err != nil {
+			return nil, err
+		}
+		c, cerr := apply.NotifyTargetsChange(targets)
+		if cerr != nil {
+			return nil, cerr
+		}
+		out = append(out, c)
+	}
+	if body.TransferAllow != nil {
+		allow, err := apply.ParseTransferAllow(*body.TransferAllow)
+		if err != nil {
+			return nil, err
+		}
+		c, cerr := apply.TransferAllowChange(allow)
+		if cerr != nil {
+			return nil, cerr
+		}
+		out = append(out, c)
+	}
+	return out, nil
 }

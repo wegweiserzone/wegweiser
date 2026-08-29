@@ -1,12 +1,15 @@
 package apply_test
 
 import (
+	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/store"
+	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
 func TestParseTransferAllow(t *testing.T) {
@@ -114,11 +117,11 @@ func TestTransferAllowRoundTripsThroughTheStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseTransferAllow: %v", err)
 	}
-	if uerr := f.s.Update(t.Context(), func(tx store.Tx) error {
-		return apply.SetStoredTransferAllow(t.Context(), tx, want)
-	}); uerr != nil {
-		t.Fatalf("SetStoredTransferAllow: %v", uerr)
+	change, cerr := apply.TransferAllowChange(want)
+	if cerr != nil {
+		t.Fatalf("TransferAllowChange: %v", cerr)
 	}
+	setSetting(t, f, change)
 
 	read()
 	if !slices.Equal(apply.TransferAllowText(got), apply.TransferAllowText(want)) {
@@ -128,11 +131,11 @@ func TestTransferAllowRoundTripsThroughTheStore(t *testing.T) {
 
 	// And back to nobody, which has to be expressible or a list can never be
 	// taken away again.
-	if uerr := f.s.Update(t.Context(), func(tx store.Tx) error {
-		return apply.SetStoredTransferAllow(t.Context(), tx, apply.TransferAllow{})
-	}); uerr != nil {
-		t.Fatalf("SetStoredTransferAllow: %v", uerr)
+	empty, eerr := apply.TransferAllowChange(apply.TransferAllow{})
+	if eerr != nil {
+		t.Fatalf("TransferAllowChange: %v", eerr)
 	}
+	setSetting(t, f, empty)
 	read()
 	if !got.Empty() {
 		t.Errorf("after clearing it, %v may still transfer", apply.TransferAllowText(got))
@@ -252,15 +255,91 @@ func TestNotifyTargetsRoundTripThroughTheStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseNotifyTargets: %v", err)
 	}
-	if uerr := f.s.Update(t.Context(), func(tx store.Tx) error {
-		return apply.SetStoredNotifyTargets(t.Context(), tx, want)
-	}); uerr != nil {
-		t.Fatalf("SetStoredNotifyTargets: %v", uerr)
+	change, cerr := apply.NotifyTargetsChange(want)
+	if cerr != nil {
+		t.Fatalf("NotifyTargetsChange: %v", cerr)
 	}
+	setSetting(t, f, change)
 
 	read()
 	if !slices.Equal(apply.NotifyTargetsText(got), apply.NotifyTargetsText(want)) {
 		t.Errorf("stored %v, read back %v",
 			apply.NotifyTargetsText(want), apply.NotifyTargetsText(got))
+	}
+}
+
+// setSetting writes a setting the way everything else is written: planned, and
+// applied as a batch.
+func setSetting(t *testing.T, f *fixture, c apply.SettingChange) {
+	t.Helper()
+
+	if err := f.a.SetSettings(t.Context(), []apply.SettingChange{c}); err != nil {
+		t.Fatalf("SetSettings(%s): %v", c.Key, err)
+	}
+}
+
+// A setting is replicated state, so it has to survive the journey a batch
+// makes between nodes and land the same on the far side (D32).
+func TestASettingTravelsInABatch(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	change, err := apply.PolicyChange(apply.PolicyLastWins)
+	if err != nil {
+		t.Fatalf("PolicyChange: %v", err)
+	}
+
+	b, err := f.a.PlanSettings([]apply.SettingChange{change})
+	if err != nil {
+		t.Fatalf("PlanSettings: %v", err)
+	}
+	// A batch that touches no zone produces no commit, so "has commits" is not
+	// the test for whether it does anything.
+	if b.Empty() {
+		t.Fatal("a batch carrying a setting reports itself as empty")
+	}
+
+	encoded, err := json.Marshal(b)
+	if err != nil {
+		t.Fatalf("marshalling the batch: %v", err)
+	}
+	var travelled apply.Batch
+	if uerr := json.Unmarshal(encoded, &travelled); uerr != nil {
+		t.Fatalf("unmarshalling the batch: %v", uerr)
+	}
+	if travelled.Empty() {
+		t.Fatal("the batch arrived empty")
+	}
+
+	if aerr := f.a.ApplyBatch(t.Context(), &travelled); aerr != nil {
+		t.Fatalf("ApplyBatch: %v", aerr)
+	}
+
+	var got apply.Policy
+	if verr := f.s.View(t.Context(), func(r store.Reader) error {
+		var rerr error
+		got, rerr = apply.StoredPolicy(t.Context(), r)
+		return rerr
+	}); verr != nil {
+		t.Fatalf("StoredPolicy: %v", verr)
+	}
+	if got != apply.PolicyLastWins {
+		t.Errorf("the policy is %q after the batch travelled, want %q", got, apply.PolicyLastWins)
+	}
+}
+
+// Nothing reaches the store that the write path has not resolved first.
+func TestASettingThatIsNotJSONIsRefused(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	err := f.a.SetSettings(t.Context(), []apply.SettingChange{
+		{Key: "reverse_policy", Value: []byte(`{not json`)},
+	})
+	if err == nil {
+		t.Fatal("a value that is not JSON was accepted")
+	}
+	if !errors.Is(err, zone.ErrInvalid) {
+		t.Errorf("error = %v, want one wrapping zone.ErrInvalid", err)
 	}
 }
