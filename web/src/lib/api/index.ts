@@ -11,6 +11,7 @@ export type { Problem, Scope, Session } from "./client";
 /** The shapes the interface works with, named without the generated wrapping. */
 export type Zone = components["schemas"]["Zone"];
 export type LameNameServer = components["schemas"]["LameNameServer"];
+export type Finding = components["schemas"]["Finding"];
 export type ZoneKind = components["schemas"]["ZoneKind"];
 export type Record_ = components["schemas"]["Record"];
 export type RRset = components["schemas"]["RRset"];

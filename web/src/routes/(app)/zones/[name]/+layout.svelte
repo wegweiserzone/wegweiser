@@ -46,6 +46,7 @@
 
   const tabs = $derived([
     { href: base, label: "Records" },
+    { href: `${base}/check`, label: "Check" },
     { href: `${base}/settings`, label: "Settings" },
     // The history lives in one place for the whole server; this arrives there
     // already narrowed to this zone.

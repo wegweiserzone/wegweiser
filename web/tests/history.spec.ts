@@ -30,10 +30,12 @@ test("every write is there, newest first", async ({ page, server }) => {
   await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
 
   // Creating the zone and the two records: three commits, and each advances
-  // the serial by exactly one (D2). Newest first.
-  await expect(page.getByRole("button", { name: /^2→3 Edit/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^1→2 Edit/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^0→1 Created/ })).toBeVisible();
+  // the serial by exactly one (D2). Newest first. Named by zone, because this
+  // listing carries every zone the server has ever had: a commit outlives the
+  // zone it describes, so that "who deleted example.com" survives the delete.
+  await expect(page.getByRole("button", { name: /^2→3 Edit example\.com\./ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^1→2 Edit example\.com\./ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^0→1 Created example\.com\./ })).toBeVisible();
 });
 
 test("choosing a commit shows what it changed", async ({ page, server }) => {
@@ -66,8 +68,10 @@ test("reverting writes forward rather than rewinding", async ({ page, server }) 
   await signIn(page, server);
   await page.goto(`${server.url}/history`);
 
-  // Serial 2 is the state after www was added and before mail existed.
-  await page.getByRole("button", { name: /^1→2 Edit/ }).click();
+  // Serial 2 is the state after www was added and before mail existed. Named
+  // by zone: this listing carries every zone the server has ever had, because
+  // a commit outlives the zone it describes.
+  await page.getByRole("button", { name: /^1→2 Edit example\.com\./ }).click();
 
   await page.getByRole("button", { name: "Revert to this state" }).click();
   await page.getByRole("button", { name: "Revert the zone" }).click();

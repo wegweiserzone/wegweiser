@@ -108,6 +108,9 @@ public API is unstable and may change without a deprecation period.
 
 #### Web interface
 
+- A Check tab on a zone, listing what is wrong with it as it stands, told apart by whether
+  the server would have refused it. The reverse entries a zone is missing are asked for
+  rather than assumed, and can be written from the same screen.
 - A screen for the transfer keys, beside the settings that name them.
 
 #### Observation
