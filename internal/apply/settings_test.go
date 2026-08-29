@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/wegweiserzone/wegweiser/internal/apply"
+	"github.com/wegweiserzone/wegweiser/internal/id"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
@@ -409,5 +410,69 @@ func TestATransferKeyTravelsInABatch(t *testing.T) {
 	}
 	if len(revoked.Secret) != 0 {
 		t.Error("a revoked key still carries its secret")
+	}
+}
+
+// A token created on one node has to authenticate on every node, so what is
+// stored about it travels. The secret does not: this server never held one.
+func TestATokenTravelsInABatch(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	hash := make([]byte, 32)
+	for i := range hash {
+		hash[i] = byte(i)
+	}
+	tok := &store.Token{
+		ID:     store.TokenID(id.New()),
+		Name:   "deploy",
+		Prefix: "weg_abcd",
+		Hash:   hash,
+		Scopes: []string{"write"},
+	}
+
+	b, err := f.a.PlanCreateToken(tok)
+	if err != nil {
+		t.Fatalf("PlanCreateToken: %v", err)
+	}
+	if tok.CreatedAt.IsZero() {
+		t.Error("the plan left the moment for whoever writes it to invent")
+	}
+
+	encoded, err := json.Marshal(b)
+	if err != nil {
+		t.Fatalf("marshalling the batch: %v", err)
+	}
+	if bytes.Contains(encoded, []byte("weg_abcd")) == false {
+		t.Error("the prefix did not travel, and the interface tells tokens apart by it")
+	}
+	var travelled apply.Batch
+	if uerr := json.Unmarshal(encoded, &travelled); uerr != nil {
+		t.Fatalf("unmarshalling the batch: %v", uerr)
+	}
+	if aerr := f.a.ApplyBatch(t.Context(), &travelled); aerr != nil {
+		t.Fatalf("ApplyBatch: %v", aerr)
+	}
+
+	got, err := f.s.TokenByHash(t.Context(), tok.Hash)
+	if err != nil {
+		t.Fatalf("TokenByHash: %v", err)
+	}
+	if got.ID != tok.ID || got.Name != "deploy" {
+		t.Errorf("the token arrived as %s/%s, want %s/deploy", got.ID, got.Name, tok.ID)
+	}
+}
+
+// A revocation is refused while it is planned, not while it is written: a
+// follower must not be in a position to disagree with the node that decided.
+func TestARevocationIsRefusedInThePlan(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	refused := errors.New("the last administrator")
+	err := f.a.RevokeToken(t.Context(), store.TokenID(id.New()),
+		func([]*store.Token) error { return refused })
+	if !errors.Is(err, refused) {
+		t.Fatalf("error = %v, want the guard's own", err)
 	}
 }

@@ -25,6 +25,29 @@ type wireBatch struct {
 	Commits  []wireCommit  `json:"commits,omitempty"`
 	Settings []wireSetting `json:"settings,omitempty"`
 	Keys     []wireKeyOp   `json:"keys,omitempty"`
+	Tokens   []wireTokenOp `json:"tokens,omitempty"`
+}
+
+// wireTokenOp is one change to an API token as it travels.
+type wireTokenOp struct {
+	Kind    TokenOpKind   `json:"kind"`
+	Token   *wireToken    `json:"token,omitempty"`
+	TokenID store.TokenID `json:"tokenId,omitempty"`
+	At      *time.Time    `json:"at,omitempty"`
+}
+
+// wireToken is a token as it travels. The hash rather than the secret, which
+// this server never held (D5). LastUsedAt is left out: it is node-local and
+// named as such by D24.
+type wireToken struct {
+	ID        store.TokenID `json:"id"`
+	Name      string        `json:"name"`
+	Prefix    string        `json:"prefix"`
+	Hash      []byte        `json:"hash"`
+	Scopes    []string      `json:"scopes"`
+	CreatedAt time.Time     `json:"createdAt"`
+	ExpiresAt time.Time     `json:"expiresAt,omitzero"`
+	RevokedAt time.Time     `json:"revokedAt,omitzero"`
 }
 
 // wireKeyOp is one change to a transfer key as it travels.
@@ -261,6 +284,23 @@ func (b *Batch) MarshalJSON() ([]byte, error) {
 		}
 		w.Keys = append(w.Keys, out)
 	}
+
+	for _, op := range b.Tokens {
+		out := wireTokenOp{Kind: op.Kind, TokenID: op.TokenID}
+		if op.Token != nil {
+			out.Token = &wireToken{
+				ID: op.Token.ID, Name: op.Token.Name, Prefix: op.Token.Prefix,
+				Hash: op.Token.Hash, Scopes: op.Token.Scopes,
+				CreatedAt: op.Token.CreatedAt, ExpiresAt: op.Token.ExpiresAt,
+				RevokedAt: op.Token.RevokedAt,
+			}
+		}
+		if !op.At.IsZero() {
+			at := op.At
+			out.At = &at
+		}
+		w.Tokens = append(w.Tokens, out)
+	}
 	return json.Marshal(w)
 }
 
@@ -366,8 +406,26 @@ func (b *Batch) UnmarshalJSON(data []byte) error {
 	b.set = set
 	b.Zones = ops
 	b.Commits = commits
+	tokens := make([]TokenOp, 0, len(w.Tokens))
+	for _, wo := range w.Tokens {
+		op := TokenOp{Kind: wo.Kind, TokenID: wo.TokenID}
+		if wo.Token != nil {
+			op.Token = &store.Token{
+				ID: wo.Token.ID, Name: wo.Token.Name, Prefix: wo.Token.Prefix,
+				Hash: wo.Token.Hash, Scopes: wo.Token.Scopes,
+				CreatedAt: wo.Token.CreatedAt, ExpiresAt: wo.Token.ExpiresAt,
+				RevokedAt: wo.Token.RevokedAt,
+			}
+		}
+		if wo.At != nil {
+			op.At = *wo.At
+		}
+		tokens = append(tokens, op)
+	}
+
 	b.Settings = settings
 	b.Keys = keys
+	b.Tokens = tokens
 	return nil
 }
 

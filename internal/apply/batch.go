@@ -54,6 +54,9 @@ type Batch struct {
 	// Keys are the changes to the keys a secondary signs with, for the same
 	// reason and with the same consequence.
 	Keys []KeyOp
+
+	// Tokens are the changes to the tokens this server accepts, likewise.
+	Tokens []TokenOp
 }
 
 // zoneOp returns the batch's change to a zone itself, or nil.
@@ -72,7 +75,8 @@ func (b *Batch) zoneOp(zid zone.ZoneID) *ZoneOp {
 // one, and a setting touches no zone.
 func (b *Batch) Empty() bool {
 	return b == nil ||
-		(len(b.Commits) == 0 && len(b.Settings) == 0 && len(b.Keys) == 0)
+		(len(b.Commits) == 0 && len(b.Settings) == 0 &&
+			len(b.Keys) == 0 && len(b.Tokens) == 0)
 }
 
 // applied reports whether the journal already holds this batch.
@@ -142,6 +146,9 @@ func (b *Batch) write(ctx context.Context, tx store.Tx) error {
 		}
 	}
 	if err := b.writeKeys(ctx, tx); err != nil {
+		return err
+	}
+	if err := b.writeTokens(ctx, tx); err != nil {
 		return err
 	}
 

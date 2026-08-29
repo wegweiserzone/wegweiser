@@ -65,7 +65,7 @@ func newServer(t *testing.T) server {
 	if err != nil {
 		t.Fatalf("build the applier: %v", err)
 	}
-	token, err := api.EnsureBootstrapToken(t.Context(), st, time.Now())
+	token, err := api.EnsureBootstrapToken(t.Context(), st, applier, time.Now())
 	if err != nil {
 		t.Fatalf("mint a token: %v", err)
 	}

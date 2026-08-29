@@ -50,6 +50,14 @@ is written. The path that exists already works for a batch that touches no zone:
 no commit, the journal has nothing to say about it, and the applied index written in the same
 transaction is what makes applying it twice change things once.
 
+**The bootstrap token is written like any other, and only by a node that is starting a
+cluster rather than joining one.** It exists because a server nobody has any credential for
+needs one, and a node joining a cluster is not that server: the credentials it needs are
+already in the log it is about to replay. A node that minted its own on the way in would
+carry an administrator token that the cluster never issued and nobody knows about, which is
+the worst kind of credential to leave lying on a disk. **A node joins with an empty store,
+or it does not join.**
+
 **Node-local, and deliberately not replicated:**
 
 - the applied index, which is a statement about one node rather than about the cluster;

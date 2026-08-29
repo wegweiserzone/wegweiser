@@ -69,7 +69,7 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 		t.Fatalf("build the applier: %v", err)
 	}
 
-	secret, err := EnsureBootstrapToken(t.Context(), st, time.Now())
+	secret, err := EnsureBootstrapToken(t.Context(), st, applier, time.Now())
 	if err != nil {
 		t.Fatalf("mint the bootstrap token: %v", err)
 	}
@@ -629,7 +629,7 @@ func TestBootstrapTokenIsMintedOnce(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 
-	again, err := EnsureBootstrapToken(t.Context(), h.store, time.Now())
+	again, err := EnsureBootstrapToken(t.Context(), h.store, h.api.applier, time.Now())
 	if err != nil {
 		t.Fatalf("second call: %v", err)
 	}

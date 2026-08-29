@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/id"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 )
@@ -495,7 +496,7 @@ const BootstrapName = "bootstrap"
 // is no way to ask for the secret again: what is stored is a hash, so a lost
 // bootstrap token is replaced rather than recovered (docs/decisions/ D5).
 func EnsureBootstrapToken(
-	ctx context.Context, s store.Store, now time.Time,
+	ctx context.Context, s store.Store, a *apply.Applier, now time.Time,
 ) (secret string, err error) {
 	var existing []*store.Token
 	if verr := s.View(ctx, func(r store.Reader) error {
@@ -513,9 +514,7 @@ func EnsureBootstrapToken(
 	if err != nil {
 		return "", err
 	}
-	if err := s.Update(ctx, func(tx store.Tx) error {
-		return tx.CreateToken(ctx, &tok)
-	}); err != nil {
+	if err := a.CreateToken(ctx, &tok); err != nil {
 		return "", fmt.Errorf("api: store the bootstrap token: %w", err)
 	}
 	return secret, nil

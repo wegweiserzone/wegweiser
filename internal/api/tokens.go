@@ -68,9 +68,9 @@ func (s *Server) CreateToken(
 		tok.ExpiresAt = *req.Body.ExpiresAt
 	}
 
-	if err := s.store.Update(ctx, func(tx store.Tx) error {
-		return tx.CreateToken(ctx, &tok)
-	}); err != nil {
+	// Through the applier: a token created on one node has to authenticate on
+	// every node, or the API works for some requests and not others (D32).
+	if err := s.applier.CreateToken(ctx, &tok); err != nil {
 		return nil, err
 	}
 
@@ -88,17 +88,13 @@ func (s *Server) RevokeToken(
 		return nil, err
 	}
 
+	// The guard runs inside the plan's own read, so the check and the write it
+	// permits cannot be separated by another revocation.
 	now := s.now()
-	if err := s.store.Update(ctx, func(tx store.Tx) error {
-		toks, lerr := tx.ListTokens(ctx)
-		if lerr != nil {
-			return lerr
-		}
-		if verr := checkNotLastAdmin(toks, store.TokenID(req.TokenId), now); verr != nil {
-			return verr
-		}
-		return tx.RevokeToken(ctx, store.TokenID(req.TokenId), now)
-	}); err != nil {
+	if err := s.applier.RevokeToken(ctx, store.TokenID(req.TokenId),
+		func(toks []*store.Token) error {
+			return checkNotLastAdmin(toks, store.TokenID(req.TokenId), now)
+		}); err != nil {
 		return nil, err
 	}
 	return gen.RevokeToken204Response{}, nil

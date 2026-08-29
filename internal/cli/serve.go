@@ -248,7 +248,7 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 	// The first start mints an administrator token and shows it once. What is
 	// stored is its hash, so this is the only moment it exists in readable
 	// form (docs/decisions/ D5).
-	secret, err := api.EnsureBootstrapToken(ctx, st, time.Now())
+	secret, err := api.EnsureBootstrapToken(ctx, st, applier, time.Now())
 	if err != nil {
 		return err
 	}
