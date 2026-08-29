@@ -10,6 +10,11 @@ public API is unstable and may change without a deprecation period.
 
 ### Fixed
 
+- `weg config show` reports `dns.maxTransfers`, and names `WEG_MAX_TRANSFERS` among the
+  environment variables it lists. The setting has been read from the file, the environment
+  and the flag since it existed; the one command whose job is to say what a server would
+  start with and where each value came from was the only place it did not appear.
+
 - The published container image carries its health check into Podman, not only into Docker.
   A `HEALTHCHECK` has no field in the OCI image configuration, so it travels as an extension
   that Docker reads and Podman does not, and the image was being pushed with OCI media

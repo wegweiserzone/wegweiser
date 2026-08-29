@@ -82,6 +82,7 @@ func runConfigShow(opts *options, cfg *config.Config) error {
 			{"dns.listen", cfg.DNSListen.Value, string(cfg.DNSListen.Source)},
 			{"dns.udpResponseSize", fmt.Sprint(cfg.UDPResponseSize.Value), string(cfg.UDPResponseSize.Source)},
 			{"dns.maxTCPClients", fmt.Sprint(cfg.MaxTCPClients.Value), string(cfg.MaxTCPClients.Source)},
+			{"dns.maxTransfers", fmt.Sprint(cfg.MaxTransfers.Value), string(cfg.MaxTransfers.Source)},
 			{"api.listen", cfg.APIListen.Value, string(cfg.APIListen.Source)},
 			{"api.ui", yesNo(cfg.APIUI.Value), string(cfg.APIUI.Source)},
 			{"database.path", cfg.Database.Value, string(cfg.Database.Source)},
@@ -129,7 +130,7 @@ func runConfigShow(opts *options, cfg *config.Config) error {
 // stale silently; this one goes stale next to the code that would change it.
 var configEnvNames = []string{
 	config.PathEnv, "WEG_LISTEN", "WEG_API_LISTEN", "WEG_API_UI", "WEG_DATABASE",
-	"WEG_UDP_RESPONSE_SIZE", "WEG_MAX_TCP_CLIENTS", "WEG_LOG_LEVEL",
+	"WEG_UDP_RESPONSE_SIZE", "WEG_MAX_TCP_CLIENTS", "WEG_MAX_TRANSFERS", "WEG_LOG_LEVEL",
 }
 
 // yesNo prints a switch the way the file spells it, so that what the table
