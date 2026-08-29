@@ -837,3 +837,66 @@ func TestDelegatingOverADeeperDelegationIsAllowed(t *testing.T) {
 		t.Fatalf("delegating above another delegation was refused: %v", err)
 	}
 }
+
+// The check has to see exactly what reconcile would write, or the two answers
+// to one question drift apart.
+func TestCheckReverseSeesWhatReconcileWouldWrite(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	f.addA("www.example.com.", "10.0.0.1")
+	f.addA("mail.example.com.", "10.0.0.2")
+
+	// The reverse zone arrives after the addresses, so it has no change to
+	// react to and starts empty.
+	rev := f.reverseZone("0.0.10.in-addr.arpa.")
+
+	found, err := f.a.CheckReverse(t.Context(), rev.ID)
+	if err != nil {
+		t.Fatalf("CheckReverse: %v", err)
+	}
+	if len(found) != 2 {
+		t.Fatalf("got %d findings, want 2: %+v", len(found), found)
+	}
+	for _, got := range found {
+		if got.Severity != zone.SeverityWarning {
+			t.Errorf("%q is %q, want a warning: nothing here is invalid", got.Name, got.Severity)
+		}
+		if got.Scope != zone.ScopeReverse {
+			t.Errorf("scope is %q, want %q", got.Scope, zone.ScopeReverse)
+		}
+	}
+
+	// Reconciling writes exactly those, and the check then has nothing to say.
+	if _, rerr := f.a.Reconcile(t.Context(), rev.ID, testMeta()); rerr != nil {
+		t.Fatalf("Reconcile: %v", rerr)
+	}
+	after, err := f.a.CheckReverse(t.Context(), rev.ID)
+	if err != nil {
+		t.Fatalf("CheckReverse: %v", err)
+	}
+	if len(after) != 0 {
+		t.Errorf("still %d findings after reconciling: %+v", len(after), after)
+	}
+}
+
+// A check writes nothing, which is the whole difference between it and the
+// reconcile it plans.
+func TestCheckReverseWritesNothing(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	f.addA("www.example.com.", "10.0.0.1")
+	rev := f.reverseZone("0.0.10.in-addr.arpa.")
+
+	before, serial := f.everything(), f.serial()
+	if _, err := f.a.CheckReverse(t.Context(), rev.ID); err != nil {
+		t.Fatalf("CheckReverse: %v", err)
+	}
+	if got := f.everything(); !slices.Equal(got, before) {
+		t.Errorf("the store changed\n got: %v\nwant: %v", got, before)
+	}
+	if got := f.serial(); got != serial {
+		t.Errorf("the serial moved to %s, want it left at %s", got, serial)
+	}
+}

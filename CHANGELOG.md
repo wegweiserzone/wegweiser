@@ -87,12 +87,20 @@ public API is unstable and may change without a deprecation period.
 - `GET /zones/{zoneId}` carries that same diagnosis, sentence included, so a client shows it
   without deriving it. Both clients used to work it out themselves, from one request per
   name server, and the two implementations were kept in step by hand.
+- `GET /zones/{zoneId}/check?reverse=true` adds what reverse automation would generate for a
+  zone and has not. Separate from the rest of the check because working it out plans the
+  write that would fix it, which holds the zone while it runs.
+- `POST /zones/{zoneId}/reconcile` writes those entries. A reverse zone created for a network
+  already in use has no change to react to and so starts empty, however many addresses are
+  already named in it; this is what fills it, in one commit. It only adds.
 
 #### CLI
 
 - `weg tsig create|list|show|revoke`.
 - `weg settings set --transfer-allow` and `--notify`, the second taking an optional
   `key:<name>` after an address.
+- `weg zone reconcile` fills in the reverse entries a zone was missing, and
+  `weg zone check --reverse` says what it would do without doing it.
 - `weg zone check` lists what is wrong with a zone as it stands, one block per finding,
   each headed by whether the server would have refused it. It exits zero either way: the
   findings are the answer rather than a failure of the command. `--output json` carries the

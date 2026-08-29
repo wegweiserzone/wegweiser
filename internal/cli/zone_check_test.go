@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/id"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
@@ -160,4 +161,76 @@ func TestCheckSummaryCountsBySeverity(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A reverse zone created after the addresses it should answer for has nothing
+// to react to, so it starts empty. The check says so and reconcile fixes it.
+func TestZoneCheckReverseAndReconcile(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+
+	mustRun(t, srv, "zone", "create", "example.com")
+	mustRun(t, srv, "record", "add", "example.com", "ns1", "A", "192.0.2.53")
+	mustRun(t, srv, "record", "add", "example.com", "www", "A", "10.0.0.1")
+	mustRun(t, srv, "zone", "create", "10.0.0.0/24")
+
+	t.Run("without the flag the reverse is not looked at", func(t *testing.T) {
+		out := mustRun(t, srv, "zone", "check", "0.0.10.in-addr.arpa.", "--output", "json")
+		var got zoneChecked
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("decode %q: %v", out, err)
+		}
+		for _, f := range got.Findings {
+			if f.Scope == string(gen.FindingScopeReverse) {
+				t.Errorf("a reverse finding without --reverse: %+v", f)
+			}
+		}
+	})
+
+	t.Run("with the flag it says what is missing", func(t *testing.T) {
+		out := mustRun(t, srv, "zone", "check", "0.0.10.in-addr.arpa.", "--reverse", "--output", "json")
+
+		var got zoneChecked
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("decode %q: %v", out, err)
+		}
+		if got.Warnings == 0 {
+			t.Fatalf("nothing was reported for a reverse zone that is missing a PTR: %+v", got)
+		}
+		var reverse int
+		for _, f := range got.Findings {
+			if f.Scope == string(gen.FindingScopeReverse) {
+				reverse++
+				if f.Severity != "warning" {
+					t.Errorf("a missing PTR is %q, want a warning", f.Severity)
+				}
+			}
+		}
+		if reverse != 1 {
+			t.Errorf("got %d reverse findings, want 1: %+v", reverse, got.Findings)
+		}
+	})
+
+	t.Run("reconcile writes them, and the check goes quiet", func(t *testing.T) {
+		out := mustRun(t, srv, "zone", "reconcile", "0.0.10.in-addr.arpa.")
+		if !strings.Contains(out, "1 entry written") {
+			t.Errorf("output = %q, want it to say what it wrote", out)
+		}
+
+		out = mustRun(t, srv, "zone", "check", "0.0.10.in-addr.arpa.", "--reverse", "--output", "json")
+		var got zoneChecked
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("decode %q: %v", out, err)
+		}
+		for _, f := range got.Findings {
+			if f.Scope == string(gen.FindingScopeReverse) {
+				t.Errorf("still missing after reconciling: %+v", f)
+			}
+		}
+
+		// And again changes nothing.
+		if again := mustRun(t, srv, "zone", "reconcile", "0.0.10.in-addr.arpa."); !strings.Contains(again, "needed nothing") {
+			t.Errorf("a second reconcile said %q, want it to say the zone needed nothing", again)
+		}
+	})
 }

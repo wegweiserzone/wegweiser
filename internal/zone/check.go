@@ -51,6 +51,10 @@ const (
 	// ScopeNameServer covers the name servers this zone points at, and whether
 	// it answers for the ones that live inside it.
 	ScopeNameServer FindingScope = "nameserver"
+
+	// ScopeReverse covers the records reverse automation would generate and
+	// this zone does not have.
+	ScopeReverse FindingScope = "reverse"
 )
 
 // Addressed answers whether a name has an address record in this zone. The
@@ -326,4 +330,13 @@ func finding(scope FindingScope, name Name, err error) Finding {
 		detail = strings.TrimPrefix(detail, ErrInvalid.Error()+": ")
 	}
 	return Finding{Severity: SeverityError, Scope: scope, Name: name, Detail: detail}
+}
+
+// MissingReverseDetail is the sentence about an entry reverse automation would
+// generate for a record and has not.
+func MissingReverseDetail(r Record) string {
+	return fmt.Sprintf(
+		"a %s at %s naming %s is missing, so the reverse of that address answers nothing. "+
+			"Reverse automation writes it when the record it follows from is next saved, or "+
+			"when this zone is reconciled.", r.Type, r.Name, r.RData)
 }

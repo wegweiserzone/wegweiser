@@ -365,12 +365,23 @@ func (s *Server) CheckZone(
 		return nil, verr
 	}
 
+	findings := report.Findings
+	if deref(req.Params.Reverse, false) {
+		// After the walk and its own transaction: this one plans a write, so
+		// it takes the zone's lock rather than sharing the read above.
+		reverse, rerr := s.applier.CheckReverse(ctx, z.ID)
+		if rerr != nil {
+			return nil, rerr
+		}
+		findings = append(findings, reverse...)
+	}
+
 	out := gen.ZoneCheck{
 		Records:   report.Records,
 		Truncated: report.Truncated,
-		Findings:  make([]gen.Finding, len(report.Findings)),
+		Findings:  make([]gen.Finding, len(findings)),
 	}
-	for i, f := range report.Findings {
+	for i, f := range findings {
 		out.Findings[i] = gen.Finding{
 			Severity: gen.FindingSeverity(f.Severity),
 			Scope:    gen.FindingScope(f.Scope),
@@ -379,6 +390,28 @@ func (s *Server) CheckZone(
 		}
 	}
 	return gen.CheckZone200JSONResponse(out), nil
+}
+
+// ReconcileZone writes the reverse entries a zone's records imply and it does
+// not have.
+func (s *Server) ReconcileZone(
+	ctx context.Context, req gen.ReconcileZoneRequestObject,
+) (gen.ReconcileZoneResponseObject, error) {
+	res, err := s.applier.Reconcile(ctx, zone.ZoneID(req.ZoneId),
+		s.meta(ctx, "fill in the reverse entries this zone was missing"))
+	if err != nil {
+		return nil, err
+	}
+	s.republish(ctx, res)
+
+	out := gen.ReconcileResult{
+		Conflicts:    conflictsToAPI(res.Conflicts),
+		MissingZones: missingZonesToAPI(res.MissingZones),
+	}
+	if c := res.Commit(); c != nil {
+		out.Commit = ptr(commitToAPI(c))
+	}
+	return gen.ReconcileZone200JSONResponse(out), nil
 }
 
 // hasAddress reports whether a zone answers for a name with an address.

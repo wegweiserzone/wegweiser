@@ -212,7 +212,7 @@ func TestZoneLifecycle(t *testing.T) {
 	h := newHarness(t)
 
 	z := h.createZone("example.com.")
-	if z.Name != "example.com." || z.Kind != gen.Forward {
+	if z.Name != "example.com." || z.Kind != gen.ZoneKindForward {
 		t.Errorf("created %+v, want a forward zone named example.com.", z)
 	}
 	if z.Soa.PrimaryNs != "ns1.example.com." {
@@ -2157,7 +2157,7 @@ func TestCreateZoneFromANetwork(t *testing.T) {
 			if got.Name != tc.want {
 				t.Errorf("%s became %q, want %q", tc.given, got.Name, tc.want)
 			}
-			if got.Kind != gen.Reverse {
+			if got.Kind != gen.ZoneKindReverse {
 				t.Errorf("%s became a %s zone, want reverse", tc.given, got.Kind)
 			}
 		})

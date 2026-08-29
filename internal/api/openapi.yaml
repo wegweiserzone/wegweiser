@@ -419,6 +419,16 @@ paths:
       operationId: checkZone
       tags: [zones]
       summary: Report what is wrong with a zone as it stands
+      parameters:
+        - name: reverse
+          in: query
+          required: false
+          description: |
+            Also report the reverse entries this zone's records imply and it
+            does not have. Off by default: working that out means planning the
+            write that would fix it, which holds the zone's write lock while it
+            runs, and a check is otherwise a read that blocks nothing.
+          schema: { type: boolean, default: false }
       description: |
         Every rule the write path enforces, applied to the zone as it is
         stored.
@@ -440,6 +450,33 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ZoneCheck" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /zones/{zoneId}/reconcile:
+    parameters:
+      - $ref: "#/components/parameters/ZoneID"
+    post:
+      operationId: reconcileZone
+      tags: [zones]
+      summary: Write the reverse entries this zone's records imply and does not have
+      description: |
+        Reverse automation reacts to changes, so a zone that arrives after the
+        records it should hold has nothing to react to. A reverse zone created
+        for a network already in use starts empty, however many addresses are
+        already named in it, and this is what fills it: one commit for
+        everything missing.
+
+        It only adds. An entry that became obsolete was taken away by the
+        change that obsoleted it, and one somebody detached is theirs to keep,
+        so nothing here removes anything.
+
+        A zone that needs nothing is left alone and answers with no commit.
+      responses:
+        "200":
+          description: What filling the zone produced.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconcileResult" }
         default: { $ref: "#/components/responses/Problem" }
 
   /zones/{zoneId}/rollback:
@@ -1477,7 +1514,7 @@ components:
       description: |
         Which rule produced a finding, so that a client can group or filter
         without reading the sentence.
-      enum: [owner, delegation, zone, nameserver]
+      enum: [owner, delegation, zone, nameserver, reverse]
       x-enum-descriptions:
         owner: The records sharing one name, and whether they can coexist.
         delegation: Where a name sits relative to the zone's delegations.
@@ -1485,6 +1522,9 @@ components:
         nameserver: |
           The name servers this zone points at, and whether it answers for the
           ones that live inside it.
+        reverse: |
+          The entries reverse automation would generate for this zone and has
+          not. Only reported when the check is asked for them.
 
     Finding:
       type: object
@@ -1642,6 +1682,23 @@ components:
           description: |
             The commit that moved the zone to that state, with its events.
             Absent when the zone was already there and nothing was written.
+        conflicts:
+          type: array
+          items: { $ref: "#/components/schemas/Conflict" }
+        missingZones:
+          type: array
+          items: { $ref: "#/components/schemas/MissingZone" }
+
+    ReconcileResult:
+      type: object
+      description: What filling a zone produced.
+      properties:
+        commit:
+          allOf:
+            - $ref: "#/components/schemas/Commit"
+          description: |
+            The commit that wrote the missing entries, with its events. Absent
+            when the zone needed nothing.
         conflicts:
           type: array
           items: { $ref: "#/components/schemas/Conflict" }

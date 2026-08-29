@@ -283,6 +283,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/zones/{zoneId}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a zone. */
+                zoneId: components["parameters"]["ZoneID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write the reverse entries this zone's records imply and does not have
+         * @description Reverse automation reacts to changes, so a zone that arrives after the
+         *     records it should hold has nothing to react to. A reverse zone created
+         *     for a network already in use starts empty, however many addresses are
+         *     already named in it, and this is what fills it: one commit for
+         *     everything missing.
+         *
+         *     It only adds. An entry that became obsolete was taken away by the
+         *     change that obsoleted it, and one somebody detached is theirs to keep,
+         *     so nothing here removes anything.
+         *
+         *     A zone that needs nothing is left alone and answers with no commit.
+         */
+        post: operations["reconcileZone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/zones/{zoneId}/rollback": {
         parameters: {
             query?: never;
@@ -1091,7 +1124,7 @@ export interface components {
          *     without reading the sentence.
          * @enum {string}
          */
-        FindingScope: "owner" | "delegation" | "zone" | "nameserver";
+        FindingScope: "owner" | "delegation" | "zone" | "nameserver" | "reverse";
         /** @description One thing wrong with a zone. Data rather than an error. */
         Finding: {
             severity: components["schemas"]["FindingSeverity"];
@@ -1209,6 +1242,16 @@ export interface components {
             /**
              * @description The commit that moved the zone to that state, with its events.
              *     Absent when the zone was already there and nothing was written.
+             */
+            commit?: components["schemas"]["Commit"];
+            conflicts?: components["schemas"]["Conflict"][];
+            missingZones?: components["schemas"]["MissingZone"][];
+        };
+        /** @description What filling a zone produced. */
+        ReconcileResult: {
+            /**
+             * @description The commit that wrote the missing entries, with its events. Absent
+             *     when the zone needed nothing.
              */
             commit?: components["schemas"]["Commit"];
             conflicts?: components["schemas"]["Conflict"][];
@@ -1762,7 +1805,15 @@ export interface operations {
     };
     checkZone: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description Also report the reverse entries this zone's records imply and it
+                 *     does not have. Off by default: working that out means planning the
+                 *     write that would fix it, which holds the zone's write lock while it
+                 *     runs, and a check is otherwise a read that blocks nothing.
+                 */
+                reverse?: boolean;
+            };
             header?: never;
             path: {
                 /** @description The ULID of a zone. */
@@ -1779,6 +1830,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ZoneCheck"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    reconcileZone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a zone. */
+                zoneId: components["parameters"]["ZoneID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What filling the zone produced. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReconcileResult"];
                 };
             };
             default: components["responses"]["Problem"];

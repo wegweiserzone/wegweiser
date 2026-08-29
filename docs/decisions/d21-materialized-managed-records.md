@@ -59,3 +59,26 @@ bounded: one extra row per address record, kept correct by the single write path
   the rules would generate today. It exists because a rules change, an import, or a bug can
   desynchronize them, and silent desynchronization is exactly the failure the feature is
   supposed to eliminate.
+
+## Where this stands
+
+`weg zone check --reverse`, over `GET /zones/{zoneId}/check?reverse=true`, reports the
+entries a zone's records imply and it does not have. It does not compare against a second
+implementation of the rules: it plans exactly what a reconcile would write and reports that
+instead of carrying it out, so the two answers cannot drift apart.
+
+**The inverse question is deliberately not asked.** An entry that is here and would not be
+generated today is not reported, because reverse automation only ever adds: an entry made
+obsolete is taken away by the change that obsoleted it, and one somebody detached is theirs
+to keep ([D4](d04-detaching-generated-records.md)). Asking it would need a rule for what may
+legitimately remain, which D4 leaves to the person.
+
+`weg zone reconcile` and `POST /zones/{zoneId}/reconcile` carry out what the check reports.
+Until they existed, `Applier.Reconcile` had been written and tested and was called by
+nothing, so the backfill this record describes never ran.
+
+**The two triggers this record names are still not wired.** Creating a reverse zone for a
+network already in use does not fill it, and enabling `auto_reverse` on a zone that already
+has records does not backfill; both are the explicit command for now. Disabling
+`auto_reverse` triggering the inverse is further off than that, because reconcile only adds
+and what may be removed is the question D4 left open.
