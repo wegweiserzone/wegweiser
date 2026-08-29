@@ -143,6 +143,15 @@ policed).
 Do not build any of it early. Keep the seams so it fits later without a rewrite, especially
 the `Store` interface (for Postgres).
 
+**Out, and the differentiators say why:** inbound zone transfer, and with it being a
+secondary for a zone somebody else runs. Differentiator 3 names manual primary/secondary
+wiring as the thing a cluster exists to avoid, so building the other half of it is the
+opposite direction. It is also a third kind of zone rather than more of the transfer that
+exists: a received zone has changes that did not come from here, a serial that jumps rather
+than steps (D2), no reverse automation and nothing to roll back, so three of the four
+differentiators simply do not reach it. Reopening this takes a decision record, and that
+argument starts with what a zone nobody here edits is for.
+
 **Out for good, and not waiting its turn:** recursive resolution, forwarding, and any cache
 of data this server is not authoritative for. [D17](decisions/d17-no-recursion.md) settles it and says what to
 run instead, which is a resolver in front with a stub zone pointed here. Nothing is kept open

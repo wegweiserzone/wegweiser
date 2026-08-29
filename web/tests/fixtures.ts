@@ -60,7 +60,19 @@ export async function seed(
 }
 
 /**
- * reset empties the server.
+ * reset empties the server of zones.
+ *
+ * Every spec file starts with one, because they share a server and run in file
+ * order. Two things it does not clear, and both have caught a test out:
+ *
+ * - **The history.** A commit outlives the zone it describes, so that "who
+ *   deleted example.com" survives the delete, and `/history` therefore lists
+ *   every zone this server has ever had. An assertion about a commit names the
+ *   zone it belongs to, or the next file to use the same zone name breaks it.
+ * - **The reverse zones another file's addresses fall into.** A file that
+ *   creates a reverse zone picks up every address record inside it, including
+ *   ones seeded for something else. Keep a file's addresses to a range it does
+ *   not share.
  */
 export async function reset(server: Server): Promise<void> {
   const context = await request.newContext({
