@@ -1,0 +1,16 @@
+# Normalised in the repository and checked out as LF, so that a contributor on
+# Windows cannot commit CRLF into a Go file or a zonefile fixture and rewrite
+# every line of it. Nothing in the index has CRLF today; this keeps it that way.
+* text=auto eol=lf
+
+# The interface's fonts. Git detects these as binary anyway; saying so stops the
+# question being asked again.
+*.woff2 binary
+
+# Generated, never edited by hand. Marking it collapses these in a pull request
+# diff and keeps them out of the language statistics: one spec change otherwise
+# shows a thousand lines nobody wrote. `make generate` and `make web-generate`
+# are what change them, and `make check` fails if the committed copy differs.
+internal/api/gen/api.gen.go  linguist-generated=true
+web/src/lib/api/schema.d.ts  linguist-generated=true
+internal/api/dist/**         linguist-generated=true

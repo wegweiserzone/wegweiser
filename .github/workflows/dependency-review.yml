@@ -1,0 +1,26 @@
+# Dependabot reports what is already in the tree. This refuses what a pull
+# request is about to add, which is the cheaper end to catch it at.
+name: Dependency review
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # GitHub-owned, so the organisation's "GitHub-owned and verified actions
+      # only" policy allows it without an exception.
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          # Only what ships. The one advisory this repository has had was for a
+          # package the interface builds with and does not include, and it was
+          # dismissed on exactly that ground; failing a pull request over the
+          # same shape of finding would teach people to ignore this check.
+          fail-on-scopes: runtime
