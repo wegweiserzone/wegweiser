@@ -272,3 +272,39 @@ func TestRecordCanonicalTakesTheEntry(t *testing.T) {
 		t.Errorf("the old entry is still there: %s", after)
 	}
 }
+
+// A network is accepted wherever a zone name is. Somebody who created a zone
+// with `weg zone create 10.0.0.0/24` has no reason to work out that it ended
+// up called 0.0.10.in-addr.arpa.
+func TestAZoneCanBeNamedByItsNetwork(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+
+	mustRun(t, srv, "zone", "create", "10.0.0.0/24")
+
+	t.Run("the network finds it", func(t *testing.T) {
+		out := mustRun(t, srv, "zone", "show", "10.0.0.0/24")
+		if !strings.Contains(out, "0.0.10.in-addr.arpa.") {
+			t.Errorf("output = %q, want the zone it created", out)
+		}
+	})
+
+	t.Run("so does the name it ended up with", func(t *testing.T) {
+		out := mustRun(t, srv, "zone", "show", "0.0.10.in-addr.arpa")
+		if !strings.Contains(out, "0.0.10.in-addr.arpa.") {
+			t.Errorf("output = %q, want the zone", out)
+		}
+	})
+
+	// A bare address is a mistake worth naming, because it parses as a domain
+	// name and would otherwise be reported as a zone that is simply not here.
+	t.Run("a bare address says what was probably meant", func(t *testing.T) {
+		code, _, errOut := run(t, srv, "zone", "show", "10.0.0.7")
+		if code == ExitOK {
+			t.Error("an address was accepted as a zone name")
+		}
+		if !strings.Contains(errOut, "10.0.0.0/24") {
+			t.Errorf("stderr = %q, want it to suggest the network", errOut)
+		}
+	})
+}

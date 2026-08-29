@@ -115,6 +115,10 @@ public API is unstable and may change without a deprecation period.
 - `weg zone reconcile` fills in the reverse entries a zone was missing, and
   `weg zone check --reverse` says what it would do without doing it.
 - `weg record canonical` makes a record the name its address reverses to.
+- Every command that takes a zone takes a network for it as well, so a zone created with
+  `weg zone create 10.0.0.0/24` is reachable the same way afterwards. A bare address is
+  refused with the network it probably meant, rather than looked up as a domain name and
+  reported missing.
 - `weg zone check` lists what is wrong with a zone as it stands, one block per finding,
   each headed by whether the server would have refused it. It exits zero either way: the
   findings are the answer rather than a failure of the command. `--output json` carries the

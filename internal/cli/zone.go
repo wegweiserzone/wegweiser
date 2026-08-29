@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
 // newZoneCommand groups everything that acts on a whole zone.
@@ -214,14 +216,13 @@ func runZoneExport(ctx context.Context, opts *options, f *clientFlags, name stri
 func findZone(
 	ctx context.Context, client *gen.ClientWithResponses, f *clientFlags, name string,
 ) (*gen.Zone, error) {
-	// A trailing dot is optional here for the same reason it is optional
-	// everywhere else a person types a zone name.
-	qualified := name
-	if !strings.HasSuffix(qualified, ".") {
-		qualified += "."
+	qualified, err := zoneArgument(name)
+	if err != nil {
+		return nil, err
 	}
 
-	resp, err := client.ListZonesWithResponse(ctx, &gen.ListZonesParams{Name: &qualified})
+	resp, lerr := client.ListZonesWithResponse(ctx, &gen.ListZonesParams{Name: &qualified})
+	err = lerr
 	if err != nil {
 		return nil, reachable(err, f.server)
 	}
@@ -267,4 +268,39 @@ func deref[T any](p *[]T, fallback []T) []T {
 		return fallback
 	}
 	return *p
+}
+
+// zoneArgument turns what a person typed into the apex to look for.
+//
+// A network is accepted wherever a zone name is, because `weg zone create`
+// takes one and a person who created a zone that way has no reason to work out
+// what it ended up called.
+func zoneArgument(name string) (string, error) {
+	if p, err := netip.ParsePrefix(name); err == nil {
+		apex, nerr := zone.ReverseZoneName(p)
+		if nerr != nil {
+			return "", nerr
+		}
+		return apex.String(), nil
+	}
+
+	// A bare address is the near miss worth catching. It parses as a name,
+	// since all-numeric labels are legal, so without this it would be looked up
+	// as a forward zone and reported missing, which says nothing useful.
+	if addr, err := netip.ParseAddr(name); err == nil {
+		suggest := netip.PrefixFrom(addr, 24)
+		if addr.Is6() {
+			suggest = netip.PrefixFrom(addr, 64)
+		}
+		return "", fmt.Errorf(
+			"%q is an address, not a zone: say %s for the reverse zone that answers for it",
+			name, suggest.Masked())
+	}
+
+	// A trailing dot is optional here for the same reason it is optional
+	// everywhere else a person types a zone name.
+	if !strings.HasSuffix(name, ".") {
+		name += "."
+	}
+	return name, nil
 }
