@@ -844,12 +844,14 @@ func TestCheckReverseSeesWhatReconcileWouldWrite(t *testing.T) {
 	t.Parallel()
 
 	f := newFixture(t)
-	f.addA("www.example.com.", "10.0.0.1")
-	f.addA("mail.example.com.", "10.0.0.2")
-
-	// The reverse zone arrives after the addresses, so it has no change to
-	// react to and starts empty.
 	rev := f.reverseZone("0.0.10.in-addr.arpa.")
+
+	// Past the applier, so nothing generated an entry for them. Creating the
+	// zone fills it from what the applier does know about, so this is the one
+	// way left to a zone that is missing entries: records the write path never
+	// saw.
+	f.storeA("www.example.com.", "10.0.0.1")
+	f.storeA("mail.example.com.", "10.0.0.2")
 
 	found, err := f.a.CheckReverse(t.Context(), rev.ID)
 	if err != nil {
@@ -886,8 +888,8 @@ func TestCheckReverseWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	f := newFixture(t)
-	f.addA("www.example.com.", "10.0.0.1")
 	rev := f.reverseZone("0.0.10.in-addr.arpa.")
+	f.storeA("www.example.com.", "10.0.0.1")
 
 	before, serial := f.everything(), f.serial()
 	if _, err := f.a.CheckReverse(t.Context(), rev.ID); err != nil {

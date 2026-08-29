@@ -42,34 +42,30 @@ test("a name server with no address is a warning, not an error", async ({ page, 
   await expect(page.getByText("warning · nameserver")).toBeVisible();
 });
 
-test("the reverse entries a zone is missing can be written from here", async ({ page, server }) => {
-  const forward = await seed(server, "POST", "/zones", { name: "hosts.example" });
-  await seed(server, "POST", `/zones/${forward.id}/records`, {
+test("a reverse zone the server filled has nothing missing", async ({ page, server }) => {
+  const fwd = await seed(server, "POST", "/zones", { name: "hosts.example" });
+  await seed(server, "POST", `/zones/${fwd.id}/records`, {
     name: "ns1.hosts.example.",
     type: "A",
     data: "192.0.2.53",
   });
-  await seed(server, "POST", `/zones/${forward.id}/records`, {
+  await seed(server, "POST", `/zones/${fwd.id}/records`, {
     name: "www.hosts.example.",
     type: "A",
     data: "10.0.0.1",
   });
-  // The reverse zone arrives after the address, so it has no change to react
-  // to and starts empty.
+  // The reverse zone arrives after the address and fills itself: there was no
+  // change for the automation to react to, so creating it is the moment.
   await seed(server, "POST", "/zones", { name: "10.0.0.0/24" });
 
   await signIn(page, server);
   await page.goto(`${server.url}/zones/0.0.10.in-addr.arpa./check`);
 
-  // Not asked for, not looked at.
-  await page.getByRole("button", { name: "Check this zone" }).click();
-  await expect(page.getByText("warning · reverse")).toHaveCount(0);
-
   await page.getByLabel("Include the reverse entries this zone is missing").check();
-  await page.getByRole("button", { name: "Check again" }).click();
-  await expect(page.getByText("warning · reverse")).toBeVisible();
+  await page.getByRole("button", { name: "Check this zone" }).click();
 
-  await page.getByRole("button", { name: "Fill them in" }).click();
-  await expect(page.getByText("The missing entries were written")).toBeVisible();
+  // The PTR is there, so nothing is missing and nothing offers to write it.
+  await expect(page.getByText("1 warning in")).toBeVisible();
   await expect(page.getByText("warning · reverse")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Fill them in" })).toHaveCount(0);
 });

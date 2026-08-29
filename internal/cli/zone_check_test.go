@@ -98,6 +98,13 @@ func TestZoneCheckReportsFindingsAndStillSucceeds(t *testing.T) {
 // older build or a hand on the file could leave behind.
 func occlude(t *testing.T, srv server, apex, name string) {
 	t.Helper()
+	storeRecord(t, srv, apex, name, zone.TypeTXT, `"never answered"`)
+}
+
+// storeRecord writes a record straight into the database, past the API and so
+// past everything the write path does about it.
+func storeRecord(t *testing.T, srv server, apex, name string, typ zone.RRType, data string) {
+	t.Helper()
 
 	var zid zone.ZoneID
 	if verr := srv.store.View(t.Context(), func(r store.Reader) error {
@@ -111,8 +118,7 @@ func occlude(t *testing.T, srv server, apex, name string) {
 		t.Fatalf("find the zone: %v", verr)
 	}
 
-	rec, err := zone.NewRecord(zid, zone.MustParseName(name),
-		zone.ClassIN, zone.TypeTXT, 300, `"never answered"`)
+	rec, err := zone.NewRecord(zid, zone.MustParseName(name), zone.ClassIN, typ, 300, data)
 	if err != nil {
 		t.Fatalf("NewRecord: %v", err)
 	}
@@ -171,8 +177,12 @@ func TestZoneCheckReverseAndReconcile(t *testing.T) {
 
 	mustRun(t, srv, "zone", "create", "example.com")
 	mustRun(t, srv, "record", "add", "example.com", "ns1", "A", "192.0.2.53")
-	mustRun(t, srv, "record", "add", "example.com", "www", "A", "10.0.0.1")
 	mustRun(t, srv, "zone", "create", "10.0.0.0/24")
+
+	// Past the API, because everything that goes through it generates the
+	// entry as it is written. What is left for the check is what the write
+	// path never saw.
+	storeRecord(t, srv, "example.com.", "www.example.com.", zone.TypeA, "10.0.0.1")
 
 	t.Run("without the flag the reverse is not looked at", func(t *testing.T) {
 		out := mustRun(t, srv, "zone", "check", "0.0.10.in-addr.arpa.", "--output", "json")

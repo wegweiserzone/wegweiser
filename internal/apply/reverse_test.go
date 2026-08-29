@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/wegweiserzone/wegweiser/internal/apply"
+	"github.com/wegweiserzone/wegweiser/internal/id"
 	"github.com/wegweiserzone/wegweiser/internal/journal"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
@@ -48,6 +49,26 @@ func (f *fixture) addA(name, addr string) *journal.Commit {
 	return f.mustApply(f.command(apply.RecordOp{
 		Action: apply.ActionAdd, Record: f.record(name, zone.TypeA, 3600, addr),
 	}))
+}
+
+// storeA writes an address record straight into the database, past the applier
+// and so past reverse automation. It is how a test reaches the state the write
+// path no longer produces: an address with no entry generated for it.
+func (f *fixture) storeA(name, addr string) zone.Record {
+	f.t.Helper()
+
+	rec, err := zone.NewRecord(f.z.ID, zone.MustParseName(name),
+		zone.ClassIN, zone.TypeA, 3600, addr)
+	if err != nil {
+		f.t.Fatalf("NewRecord(%s %s): %v", name, addr, err)
+	}
+	rec.ID = zone.RecordID(id.New())
+	if uerr := f.s.Update(f.t.Context(), func(tx store.Tx) error {
+		return tx.InsertRecord(f.t.Context(), &rec)
+	}); uerr != nil {
+		f.t.Fatalf("insert behind the applier's back: %v", uerr)
+	}
+	return rec
 }
 
 func TestReverseGeneration(t *testing.T) {
@@ -870,23 +891,10 @@ func TestReconcile(t *testing.T) {
 			t.Fatalf("the change reported %d missing zones, want three", len(res.MissingZones))
 		}
 
+		// Creating the zone fills it, because a zone arriving after the records
+		// it should hold has no change to react to and nothing else would ever
+		// write them (D21).
 		rev := f.reverseZone("2.0.192.in-addr.arpa.")
-		if got := f.ptrs(rev); len(got) != 0 {
-			t.Fatalf("creating the zone filled it by itself: %v", got)
-		}
-
-		got, err := f.a.Reconcile(t.Context(), rev.ID, testMeta())
-		if err != nil {
-			t.Fatalf("Reconcile: %v", err)
-		}
-		if len(got.Commits) != 1 {
-			t.Fatalf("the reconciliation produced %d commits, want one", len(got.Commits))
-		}
-		// One commit for the zone, not one per entry: a serial step per address
-		// would make a secondary fetch the zone once for every record in it.
-		if n := len(got.Commits[0].Events); n != 2 {
-			t.Errorf("the commit carries %d events, want two", n)
-		}
 
 		want := []string{
 			"10.2.0.192.in-addr.arpa. -> www.example.com.",
@@ -1005,3 +1013,67 @@ func TestReconcile(t *testing.T) {
 		}
 	})
 }
+
+// The two moments reverse automation has nothing to react to, and what D21
+// asks to happen at each.
+func TestAutomationFillsWhatItHadNoChangeToReactTo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a reverse zone arriving after the addresses", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		f.addA("www.example.com.", "192.0.2.10")
+
+		rev := f.reverseZone("2.0.192.in-addr.arpa.")
+
+		want := []string{"10.2.0.192.in-addr.arpa. -> www.example.com."}
+		if got := f.ptrs(rev); !slices.Equal(got, want) {
+			t.Errorf("the new zone holds\n  got  %v\n  want %v", got, want)
+		}
+	})
+
+	t.Run("automation switched on for a zone that already has records", func(t *testing.T) {
+		t.Parallel()
+		f := newFixtureWith(t, apply.Options{AutoReverse: ptrTo(false)})
+		rev := f.reverseZone("2.0.192.in-addr.arpa.")
+		f.addA("www.example.com.", "192.0.2.10")
+
+		if got := f.ptrs(rev); len(got) != 0 {
+			t.Fatalf("automation is off and something was generated anyway: %v", got)
+		}
+
+		next := *f.z
+		next.AutoReverse = ptrTo(true)
+		if _, err := f.a.UpdateZone(t.Context(), &next, testMeta()); err != nil {
+			t.Fatalf("UpdateZone: %v", err)
+		}
+
+		want := []string{"10.2.0.192.in-addr.arpa. -> www.example.com."}
+		if got := f.ptrs(rev); !slices.Equal(got, want) {
+			t.Errorf("switching automation on left\n  got  %v\n  want %v", got, want)
+		}
+	})
+
+	// Off does not undo. What may be taken away is the question D4 leaves to
+	// the person, and reverse automation only ever adds.
+	t.Run("switching it off again leaves what was written", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		rev := f.reverseZone("2.0.192.in-addr.arpa.")
+		f.addA("www.example.com.", "192.0.2.10")
+
+		next := *f.z
+		next.AutoReverse = ptrTo(false)
+		if _, err := f.a.UpdateZone(t.Context(), &next, testMeta()); err != nil {
+			t.Fatalf("UpdateZone: %v", err)
+		}
+
+		if got := f.ptrs(rev); len(got) != 1 {
+			t.Errorf("switching automation off removed entries: %v", got)
+		}
+	})
+}
+
+// ptrTo is a pointer to a value, for the three-state settings where nil means
+// "follow the server".
+func ptrTo[T any](v T) *T { return &v }

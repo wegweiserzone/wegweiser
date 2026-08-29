@@ -51,17 +51,53 @@ func (a *Applier) CreateZone(
 		z.ID = zone.ZoneID(id.New())
 	}
 
-	unlock := a.locks.lock(string(z.ID))
-	defer unlock()
+	res, err := func() (*Result, error) {
+		unlock := a.locks.lock(string(z.ID))
+		defer unlock()
 
-	b, res, err := a.PlanCreateZone(ctx, z, records, meta)
+		b, res, err := a.PlanCreateZone(ctx, z, records, meta)
+		if err != nil {
+			return nil, err
+		}
+		if err := a.ApplyBatch(ctx, b); err != nil {
+			return nil, err
+		}
+		return res, nil
+	}()
 	if err != nil {
 		return nil, err
 	}
-	if err := a.ApplyBatch(ctx, b); err != nil {
-		return nil, err
+
+	// A reverse zone for a network already in use has no change to react to,
+	// so nothing would ever write the entries its records imply (D21). Filling
+	// it is a commit of its own, taken once the lock the creation held is gone.
+	if z.Kind == zone.KindReverse {
+		if ferr := a.fill(ctx, res, z.ID, meta); ferr != nil {
+			return nil, ferr
+		}
 	}
 	return res, nil
+}
+
+// fill reconciles a zone and folds what that wrote into res, so the caller
+// republishes both commits and reports both.
+//
+// A failure here fails the operation it was part of. The zone is created or
+// updated either way, and the alternative is a zone that quietly holds none of
+// the entries it implies, which is the failure this automation exists to
+// remove. [Applier.Reconcile] is the way back from it.
+func (a *Applier) fill(ctx context.Context, res *Result, zid zone.ZoneID, meta Meta) error {
+	filled, err := a.Reconcile(ctx, zid, Meta{
+		Source: meta.Source, Actor: meta.Actor,
+		Comment: "fill in the reverse entries this zone's records imply",
+	})
+	if err != nil {
+		return err
+	}
+	res.Commits = append(res.Commits, filled.Commits...)
+	res.Conflicts = append(res.Conflicts, filled.Conflicts...)
+	res.MissingZones = append(res.MissingZones, filled.MissingZones...)
+	return nil
 }
 
 // PlanCreateZone works out what bringing a zone into being would amount to,
@@ -149,17 +185,58 @@ func (a *Applier) UpdateZone(
 		return nil, err
 	}
 
-	unlock := a.locks.lock(string(z.ID))
-	defer unlock()
-
-	b, res, err := a.PlanUpdateZone(ctx, z, meta)
+	// Read before the change so that switching reverse automation on can be
+	// told from having it on already. A stale answer here costs a reconcile
+	// that finds nothing, which is what a reconcile does when nothing is
+	// missing.
+	was, err := a.autoReverseWas(ctx, z.ID)
 	if err != nil {
 		return nil, err
 	}
-	if err := a.ApplyBatch(ctx, b); err != nil {
-		return nil, err
+
+	res, uerr := func() (*Result, error) {
+		unlock := a.locks.lock(string(z.ID))
+		defer unlock()
+
+		b, res, perr := a.PlanUpdateZone(ctx, z, meta)
+		if perr != nil {
+			return nil, perr
+		}
+		if aerr := a.ApplyBatch(ctx, b); aerr != nil {
+			return nil, aerr
+		}
+		return res, nil
+	}()
+	if uerr != nil {
+		return nil, uerr
+	}
+
+	// Switching reverse automation on for a zone that already has records is
+	// the same situation as a reverse zone arriving late: there is no change
+	// for the automation to react to, so the entries are written now (D21).
+	// Switching it off does not take them away again; what may be removed is
+	// the question D4 leaves to the person.
+	if !was && a.autoReverse(z) {
+		if ferr := a.fill(ctx, res, z.ID, meta); ferr != nil {
+			return nil, ferr
+		}
 	}
 	return res, nil
+}
+
+// autoReverseWas reports whether reverse automation was in force for a zone
+// before the change about to be applied to it.
+func (a *Applier) autoReverseWas(ctx context.Context, zid zone.ZoneID) (bool, error) {
+	var on bool
+	err := a.store.View(ctx, func(r store.Reader) error {
+		current, cerr := r.ZoneByID(ctx, zid)
+		if cerr != nil {
+			return cerr
+		}
+		on = a.autoReverse(current)
+		return nil
+	})
+	return on, err
 }
 
 // PlanUpdateZone works out what changing a zone's settings would amount to,

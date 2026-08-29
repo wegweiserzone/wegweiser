@@ -105,8 +105,10 @@ func TestPlanningLeavesTheStoreAsItFoundIt(t *testing.T) {
 		{
 			name: "reconciling a reverse zone",
 			prepare: func(f *fixture) planner {
-				f.addA("www.example.com.", "10.0.0.1")
+				// Past the applier, because creating the zone fills it from
+				// everything the applier knows about.
 				rev := f.reverseZone("0.0.10.in-addr.arpa.")
+				f.storeA("www.example.com.", "10.0.0.1")
 				return func() (*apply.Batch, *apply.Result, error) {
 					return f.a.PlanReconcile(f.t.Context(), rev.ID, testMeta())
 				}

@@ -136,6 +136,10 @@ public API is unstable and may change without a deprecation period.
 
 ### Fixed
 
+- Creating a reverse zone for a network already in use left it empty, and switching reverse
+  automation on for a zone that already had records generated nothing. Reverse automation
+  reacts to changes, and in both cases there is no change to react to; each now writes what
+  it implies, as a commit of its own. Switching automation off still takes nothing away.
 - Delegating a name that already had records beneath it was accepted, and left those records
   in the zone with nothing ever answering them. A write is now checked against the names a
   new delegation puts out of reach as well as against the names it touches, so the rule holds

@@ -77,8 +77,11 @@ legitimately remain, which D4 leaves to the person.
 Until they existed, `Applier.Reconcile` had been written and tested and was called by
 nothing, so the backfill this record describes never ran.
 
-**The two triggers this record names are still not wired.** Creating a reverse zone for a
-network already in use does not fill it, and enabling `auto_reverse` on a zone that already
-has records does not backfill; both are the explicit command for now. Disabling
-`auto_reverse` triggering the inverse is further off than that, because reconcile only adds
-and what may be removed is the question D4 left open.
+Both triggers this record names are wired: creating a reverse zone fills it, and switching
+`auto_reverse` on for a zone that already has records backfills it. Each is a commit of its
+own beside the change that caused it, so both are in the history and both are revertible.
+
+**Switching `auto_reverse` off does not trigger the inverse**, which this record says it
+should. Reverse automation only ever adds, and what may be taken away is the question D4
+leaves to the person: a generated entry and a detached one are indistinguishable to a rule
+that only knows what would be generated today.
