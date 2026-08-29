@@ -27,6 +27,8 @@ export type StreamStatus = components["schemas"]["StreamStatus"];
 export type Conflict = components["schemas"]["Conflict"];
 export type MissingZone = components["schemas"]["MissingZone"];
 export type Settings = components["schemas"]["Settings"];
+export type SecondaryConfig = components["schemas"]["SecondaryConfig"];
+export type SecondaryFormat = components["schemas"]["SecondaryFormat"];
 export type ZoneImported = components["schemas"]["ZoneImported"];
 export type ReverseConflictPolicy = components["schemas"]["ReverseConflictPolicy"];
 

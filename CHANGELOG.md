@@ -106,6 +106,16 @@ public API is unstable and may change without a deprecation period.
 - `POST /zones/{zoneId}/reconcile` writes those entries. A reverse zone created for a network
   already in use has no change to react to and so starts empty, however many addresses are
   already named in it; this is what fills it, in one commit. It only adds.
+- `GET /secondary-config` writes the configuration the other end of a transfer needs, for
+  BIND or for Knot: every zone this server holds, the reverse ones among them, and the
+  transfer key with its secret and its algorithm spelled the way those programs spell it.
+  The address this server is reached on is given rather than worked out, because a server
+  does not know which of its addresses the world uses and a hidden primary is named by no
+  record to ask. The output is deterministic, so regenerating it under configuration
+  management produces no diff when nothing has changed. Beside it comes what will stop the
+  arrangement working: a transfer list nobody is on, a key that was created and never
+  granted anything, a secondary the notifications do not reach. It needs the `admin` scope,
+  because it carries a secret.
 
 #### CLI
 
@@ -123,6 +133,13 @@ public API is unstable and may change without a deprecation period.
   each headed by whether the server would have refused it. It exits zero either way: the
   findings are the answer rather than a failure of the command. `--output json` carries the
   list and the counts a script would otherwise tally itself.
+- `weg secondary config bind|knot` writes the configuration for the second nameserver, so
+  that setting one up stops being a matter of copying a block out of the documentation and
+  filling in the addresses, the key and the algorithm by hand. `--primary` is required, and
+  a refusal offers the host the API was reached at where that is an address a secondary
+  could use. With `--output text` the file goes to standard output unchanged and what will
+  stop the arrangement working goes to standard error, so redirecting it leaves a file with
+  nothing in it to delete again.
 
 #### Web interface
 
@@ -130,6 +147,11 @@ public API is unstable and may change without a deprecation period.
   the server would have refused it. The reverse entries a zone is missing are asked for
   rather than assumed, and can be written from the same screen; where two names claim one
   address, the answer can be handed to the other one there too.
+- The settings screen writes the configuration the second nameserver needs, beneath the two
+  lists it is the other half of. Pick BIND or Knot, give the address a secondary reaches
+  this server at, and the file comes back with a copy button. Naming the secondary as well
+  is what lets those two lists be checked against it: a key that grants nothing, an address
+  on neither list, and each of them a file that is perfectly formed and does not work.
 - A screen for the transfer keys, beside the settings that name them.
 
 #### Observation
@@ -166,6 +188,9 @@ public API is unstable and may change without a deprecation period.
 - A rollback read its range of commits in the order they were recorded, and an identifier is
   random below the millisecond, so two commits inside one millisecond had no order at all.
   The range follows the serials now.
+- A request refused for want of the `admin` scope said that managing tokens needed it,
+  whatever had been attempted, so a refusal while listing transfer keys pointed at the wrong
+  page. It names what it refused.
 
 ## [0.1.0] - 2026-08-22
 

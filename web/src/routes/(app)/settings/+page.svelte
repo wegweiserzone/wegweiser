@@ -6,7 +6,12 @@
    * effect on the next write (docs/decisions/ D11).
    */
   import { api, ApiError } from "$lib/api";
-  import type { ReverseConflictPolicy, Settings } from "$lib/api";
+  import type {
+    ReverseConflictPolicy,
+    SecondaryConfig,
+    SecondaryFormat,
+    Settings,
+  } from "$lib/api";
   import { session } from "$lib/session.svelte";
   import Button from "$lib/components/Button.svelte";
   import Chip from "$lib/components/Chip.svelte";
@@ -21,8 +26,16 @@
   let savingAllow = $state(false);
   let notify = $state("");
   let savingNotify = $state(false);
+  let format = $state<SecondaryFormat>("bind");
+  let primary = $state("");
+  let farEnd = $state("");
+  let written = $state<SecondaryConfig | null>(null);
+  let writing = $state(false);
+  let notWritten = $state<string | null>(null);
+  let copied = $state(false);
 
   const writable = $derived(session.can("write"));
+  const administers = $derived(session.can("admin"));
 
   $effect(() => {
     void load();
@@ -95,6 +108,61 @@
       savingNotify = false;
     }
   }
+
+  /**
+   * The address a secondary reaches this server at is asked for rather than
+   * worked out. A server does not know which of its addresses the world uses,
+   * and a hidden primary is named by no record to ask (docs/decisions/ D34).
+   */
+  async function writeConfig() {
+    if (!administers || primary.trim() === "") return;
+    writing = true;
+    notWritten = null;
+    copied = false;
+
+    const query: { format: SecondaryFormat; primary: string; secondary?: string } = {
+      format,
+      primary: primary.trim(),
+    };
+    if (farEnd.trim() !== "") query.secondary = farEnd.trim();
+
+    try {
+      written = await api.get("/secondary-config", { query });
+    } catch (err) {
+      written = null;
+      notWritten =
+        err instanceof ApiError
+          ? (err.detail ?? err.title)
+          : "The configuration was not written.";
+    } finally {
+      writing = false;
+    }
+  }
+
+  /**
+   * The file is long enough that selecting it by hand is a chore. Where the
+   * browser refuses the clipboard, say so rather than appearing to have
+   * copied it.
+   */
+  async function copyConfig() {
+    if (written === null) return;
+    try {
+      await navigator.clipboard.writeText(written.content);
+      copied = true;
+    } catch {
+      notWritten = "This browser did not allow the copy. Select the text instead.";
+    }
+  }
+
+  /** The software a configuration can be written for. */
+  const formats: { value: SecondaryFormat; label: string }[] = [
+    { value: "bind", label: "BIND" },
+    { value: "knot", label: "Knot" },
+  ];
+
+  /** formatLabel names the software the way it writes its own name. */
+  const formatLabel = (value: SecondaryFormat) =>
+    formats.find((f) => f.value === value)?.label ?? value;
 
   /**
    * split takes a list the way somebody types one. Commas only: an entry may
@@ -281,6 +349,103 @@
           {/each}
         {/if}
       </p>
+    {/if}
+  </section>
+
+  <section class="flex max-w-3xl flex-col gap-4">
+    <div class="flex flex-col gap-1">
+      <h2 class="sign text-[11px] text-ink-faint">The configuration the other end needs</h2>
+      <p class="text-[12px] text-ink-mute">
+        The two lists above are this server's half of the arrangement. This is the other
+        half, written out for the software running on the second nameserver: every zone
+        here, the reverse ones among them, with the transfer key, its secret and its
+        algorithm spelled the way that program spells it. It is a file to move. This server
+        does not install it, and does not reach the machine it belongs on.
+      </p>
+    </div>
+
+    {#if !administers}
+      <Notice tone="signal" title="Not allowed">
+        The file carries a transfer key's secret, so writing it needs a token with the admin
+        scope, the same as reading that secret does.
+      </Notice>
+    {:else}
+      <div class="flex flex-wrap items-end gap-3">
+        <div class="min-w-56 flex-1">
+          <Field
+            label="This server's address"
+            bind:value={primary}
+            disabled={writing}
+            placeholder="192.0.2.1"
+          />
+        </div>
+        <div class="min-w-56 flex-1">
+          <Field
+            label="The secondary's address"
+            bind:value={farEnd}
+            disabled={writing}
+            placeholder="198.51.100.53"
+          />
+        </div>
+      </div>
+      <p class="text-[12px] text-ink-mute">
+        The first is where a secondary reaches this server, and it has to be given: a server
+        does not know which of its addresses the world uses, and a hidden primary is named by
+        no record to ask. The second is optional and goes nowhere in the file. Naming it is
+        what lets the two lists above be checked against it rather than only described.
+      </p>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex gap-px overflow-hidden rounded-sm border border-line">
+          {#each formats as f (f.value)}
+            <button
+              type="button"
+              onclick={() => (format = f.value)}
+              aria-pressed={format === f.value}
+              class="sign cursor-pointer bg-surface px-3 py-1.5 text-[11px] text-ink-mute
+                     transition-colors hover:bg-raised aria-pressed:bg-signal-lo
+                     aria-pressed:text-signal"
+            >
+              {f.label}
+            </button>
+          {/each}
+        </div>
+        <Button
+          weight="primary"
+          disabled={writing || primary.trim() === ""}
+          onclick={writeConfig}
+        >
+          {writing ? "Writing…" : "Write it"}
+        </Button>
+      </div>
+
+      {#if notWritten}
+        <Notice tone="crit" title="The configuration was not written">{notWritten}</Notice>
+      {/if}
+
+      {#if written}
+        {#if written.warnings.length > 0}
+          <Notice tone="warn" title="The file is written; the arrangement is not finished">
+            <ul class="flex list-disc flex-col gap-1 pl-4">
+              {#each written.warnings as warning (warning)}
+                <li>{warning}</li>
+              {/each}
+            </ul>
+          </Notice>
+        {/if}
+
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-3">
+            <span class="sign text-[11px] text-ink-faint">
+              For {formatLabel(written.format)}
+            </span>
+            <Button onclick={copyConfig}>{copied ? "Copied" : "Copy"}</Button>
+          </div>
+          <pre
+            class="num max-h-96 overflow-auto rounded-sm border border-line bg-surface p-4
+                   text-[12px] leading-relaxed text-ink">{written.content}</pre>
+        </div>
+      {/if}
     {/if}
   </section>
 </div>
