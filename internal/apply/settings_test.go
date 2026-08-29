@@ -1,6 +1,7 @@
 package apply_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -341,5 +342,72 @@ func TestASettingThatIsNotJSONIsRefused(t *testing.T) {
 	}
 	if !errors.Is(err, zone.ErrInvalid) {
 		t.Errorf("error = %v, want one wrapping zone.ErrInvalid", err)
+	}
+}
+
+// A transfer key travels whole, secret included: a node without the material
+// cannot recompute a MAC and so cannot answer a signed request at all (D28).
+func TestATransferKeyTravelsInABatch(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	secret := make([]byte, zone.HMACSHA256.SecretBytes())
+	for i := range secret {
+		secret[i] = byte(i)
+	}
+
+	b, key, err := f.a.PlanCreateKey(
+		zone.MustParseName("secondary.example.com."), zone.HMACSHA256, secret)
+	if err != nil {
+		t.Fatalf("PlanCreateKey: %v", err)
+	}
+	if b.Empty() {
+		t.Fatal("a batch carrying a key reports itself as empty")
+	}
+	if key.ID == "" || key.CreatedAt.IsZero() {
+		t.Error("the plan left the identifier or the moment for whoever writes it to invent")
+	}
+
+	encoded, err := json.Marshal(b)
+	if err != nil {
+		t.Fatalf("marshalling the batch: %v", err)
+	}
+	var travelled apply.Batch
+	if uerr := json.Unmarshal(encoded, &travelled); uerr != nil {
+		t.Fatalf("unmarshalling the batch: %v", uerr)
+	}
+	if aerr := f.a.ApplyBatch(t.Context(), &travelled); aerr != nil {
+		t.Fatalf("ApplyBatch: %v", aerr)
+	}
+
+	got, err := f.s.TSIGKeyByName(t.Context(), zone.MustParseName("secondary.example.com."))
+	if err != nil {
+		t.Fatalf("TSIGKeyByName: %v", err)
+	}
+	if got.ID != key.ID {
+		t.Errorf("the key arrived as %s, want %s: one key, one identity", got.ID, key.ID)
+	}
+	if !bytes.Equal(got.Secret, secret) {
+		t.Error("the secret did not survive the journey, so this node cannot verify with it")
+	}
+	if !got.CreatedAt.Equal(key.CreatedAt) {
+		t.Errorf("the key is dated %s here and %s where it was planned",
+			got.CreatedAt, key.CreatedAt)
+	}
+
+	// And revoking it takes the secret with it, on whichever node applies it.
+	rb, err := f.a.PlanRevokeKey(key.ID)
+	if err != nil {
+		t.Fatalf("PlanRevokeKey: %v", err)
+	}
+	if aerr := f.a.ApplyBatch(t.Context(), rb); aerr != nil {
+		t.Fatalf("ApplyBatch: %v", aerr)
+	}
+	revoked, err := f.s.TSIGKeyByID(t.Context(), key.ID)
+	if err != nil {
+		t.Fatalf("TSIGKeyByID: %v", err)
+	}
+	if len(revoked.Secret) != 0 {
+		t.Error("a revoked key still carries its secret")
 	}
 }

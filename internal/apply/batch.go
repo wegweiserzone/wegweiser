@@ -50,6 +50,10 @@ type Batch struct {
 	// data and produce no commit, so a batch can carry these and nothing else
 	// (D32).
 	Settings []SettingChange
+
+	// Keys are the changes to the keys a secondary signs with, for the same
+	// reason and with the same consequence.
+	Keys []KeyOp
 }
 
 // zoneOp returns the batch's change to a zone itself, or nil.
@@ -67,7 +71,8 @@ func (b *Batch) zoneOp(zid zone.ZoneID) *ZoneOp {
 // A commit is not the test on its own. Everything that touches a zone produces
 // one, and a setting touches no zone.
 func (b *Batch) Empty() bool {
-	return b == nil || (len(b.Commits) == 0 && len(b.Settings) == 0)
+	return b == nil ||
+		(len(b.Commits) == 0 && len(b.Settings) == 0 && len(b.Keys) == 0)
 }
 
 // applied reports whether the journal already holds this batch.
@@ -135,6 +140,9 @@ func (b *Batch) write(ctx context.Context, tx store.Tx) error {
 		if err := tx.PutSetting(ctx, c.Key, c.Value); err != nil {
 			return err
 		}
+	}
+	if err := b.writeKeys(ctx, tx); err != nil {
+		return err
 	}
 
 	for _, op := range b.Zones {

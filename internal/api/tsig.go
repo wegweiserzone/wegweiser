@@ -8,7 +8,6 @@ import (
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/dns"
-	"github.com/wegweiserzone/wegweiser/internal/id"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
@@ -65,17 +64,17 @@ func (s *Server) CreateTSIGKey(
 		return nil, err
 	}
 
-	key := store.TSIGKey{ID: store.TSIGKeyID(id.New()), Name: name, Algorithm: alg, Secret: secret}
-	if uerr := s.store.Update(ctx, func(tx store.Tx) error {
-		return tx.CreateTSIGKey(ctx, &key)
-	}); uerr != nil {
-		return nil, uerr
+	// Through the applier: a key is replicated state, and a node that does not
+	// have it cannot answer a request signed with it at all (D32).
+	key, err := s.applier.CreateKey(ctx, name, alg, secret)
+	if err != nil {
+		return nil, err
 	}
 
 	s.publishKeys(ctx)
 
 	return gen.CreateTSIGKey201JSONResponse{
-		Key:    tsigKeyToAPI(&key),
+		Key:    tsigKeyToAPI(key),
 		Secret: base64.StdEncoding.EncodeToString(key.Secret),
 	}, nil
 }
@@ -114,9 +113,7 @@ func (s *Server) RevokeTSIGKey(
 		return nil, err
 	}
 
-	if err := s.store.Update(ctx, func(tx store.Tx) error {
-		return tx.RevokeTSIGKey(ctx, store.TSIGKeyID(req.KeyId), s.now())
-	}); err != nil {
+	if err := s.applier.RevokeKey(ctx, store.TSIGKeyID(req.KeyId)); err != nil {
 		return nil, err
 	}
 	s.publishKeys(ctx)

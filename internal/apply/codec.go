@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wegweiserzone/wegweiser/internal/journal"
+	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
@@ -23,6 +24,25 @@ type wireBatch struct {
 	ZoneOps  []wireZoneOp  `json:"zoneOps,omitempty"`
 	Commits  []wireCommit  `json:"commits,omitempty"`
 	Settings []wireSetting `json:"settings,omitempty"`
+	Keys     []wireKeyOp   `json:"keys,omitempty"`
+}
+
+// wireKeyOp is one change to a transfer key as it travels.
+type wireKeyOp struct {
+	Kind  KeyOpKind       `json:"kind"`
+	Key   *wireKey        `json:"key,omitempty"`
+	KeyID store.TSIGKeyID `json:"keyId,omitempty"`
+	At    *time.Time      `json:"at,omitempty"`
+}
+
+// wireKey is a transfer key as it travels. The secret is base64 in JSON, which
+// is what encoding/json does with octets and what an operator pastes anyway.
+type wireKey struct {
+	ID        store.TSIGKeyID    `json:"id"`
+	Name      zone.Name          `json:"name"`
+	Algorithm zone.TSIGAlgorithm `json:"algorithm"`
+	Secret    []byte             `json:"secret"`
+	CreatedAt time.Time          `json:"createdAt"`
 }
 
 // wireSetting is one server setting as it travels. The value is carried as the
@@ -226,6 +246,21 @@ func (b *Batch) MarshalJSON() ([]byte, error) {
 	for _, c := range b.Settings {
 		w.Settings = append(w.Settings, wireSetting{Key: c.Key, Value: c.Value})
 	}
+
+	for _, op := range b.Keys {
+		out := wireKeyOp{Kind: op.Kind, KeyID: op.KeyID}
+		if op.Key != nil {
+			out.Key = &wireKey{
+				ID: op.Key.ID, Name: op.Key.Name, Algorithm: op.Key.Algorithm,
+				Secret: op.Key.Secret, CreatedAt: op.Key.CreatedAt,
+			}
+		}
+		if !op.At.IsZero() {
+			at := op.At
+			out.At = &at
+		}
+		w.Keys = append(w.Keys, out)
+	}
 	return json.Marshal(w)
 }
 
@@ -313,10 +348,26 @@ func (b *Batch) UnmarshalJSON(data []byte) error {
 		settings = append(settings, SettingChange{Key: ws.Key, Value: ws.Value})
 	}
 
+	keys := make([]KeyOp, 0, len(w.Keys))
+	for _, wo := range w.Keys {
+		op := KeyOp{Kind: wo.Kind, KeyID: wo.KeyID}
+		if wo.Key != nil {
+			op.Key = &store.TSIGKey{
+				ID: wo.Key.ID, Name: wo.Key.Name, Algorithm: wo.Key.Algorithm,
+				Secret: wo.Key.Secret, CreatedAt: wo.Key.CreatedAt,
+			}
+		}
+		if wo.At != nil {
+			op.At = *wo.At
+		}
+		keys = append(keys, op)
+	}
+
 	b.set = set
 	b.Zones = ops
 	b.Commits = commits
 	b.Settings = settings
+	b.Keys = keys
 	return nil
 }
 
