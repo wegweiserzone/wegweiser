@@ -14,7 +14,7 @@ require (
 	github.com/prometheus/common v0.70.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sys v0.47.0
-	modernc.org/sqlite v1.56.0
+	modernc.org/sqlite v1.57.0
 	sigs.k8s.io/yaml v1.6.0
 )
 
