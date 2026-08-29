@@ -5,6 +5,8 @@ a week or two before I get to it. That is not disinterest.
 
 This document covers the mechanics. The design conventions live in
 [docs/conventions.md](docs/conventions.md), and the reasoning behind them in [docs/](docs/).
+How people are expected to treat each other is in
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Before a large change
 

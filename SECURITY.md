@@ -20,6 +20,17 @@ Please **do not open a public issue.**
 Use GitHub's private reporting:
 [Security → Report a vulnerability](https://github.com/wegweiserzone/wegweiser/security/advisories/new).
 
+That is the route to prefer. It keeps the report, the fix and the advisory in one place, it
+gives you a thread that does not depend on my inbox, and it is where a CVE is requested from
+later.
+
+If you have no GitHub account, or would rather not use one for this,
+**security@wegweiser.zone** reaches the same person. It is a fallback rather than a second
+front door: what arrives there I move into an advisory before anything is fixed, so the
+history ends up in the same place either way. Mail is not confidential in transit, so for
+something that is trivially weaponisable, say that you have found something and let me open
+an advisory to hold the detail.
+
 What helps in a report:
 
 - what an attacker gains, and what access they need before they can start
