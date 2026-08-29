@@ -32,6 +32,7 @@ func newRecordCommand(opts *options) *cobra.Command {
 	cmd.AddCommand(newRecordEnableCommand(opts, &f))
 	cmd.AddCommand(newRecordDisableCommand(opts, &f))
 	cmd.AddCommand(newRecordDetachCommand(opts, &f))
+	cmd.AddCommand(newRecordCanonicalCommand(opts, &f))
 	cmd.AddCommand(newRecordDeleteCommand(opts, &f))
 	return cmd
 }

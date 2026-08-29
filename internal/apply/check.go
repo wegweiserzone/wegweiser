@@ -45,7 +45,10 @@ func (a *Applier) CheckReverse(
 			Severity: zone.SeverityWarning,
 			Scope:    zone.ScopeReverse,
 			Name:     c.ReverseName,
-			Detail:   conflictDetail(c),
+			// The record that would take the entry if somebody asked, which is
+			// what lets a client offer that as one action (D3, D33).
+			Record: c.Source,
+			Detail: conflictDetail(c),
 		})
 	}
 

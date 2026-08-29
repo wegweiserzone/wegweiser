@@ -101,7 +101,8 @@ public API is unstable and may change without a deprecation period.
   it names, taking it from whatever generated one holds it. Several names on one address is
   ordinary and only one of them can be the reverse answer; this is how somebody says which.
   An entry written by hand is left alone, because detaching one is how a person says to
-  leave it alone.
+  leave it alone. A finding that names a record says which, so a client can offer it as one
+  action.
 - `POST /zones/{zoneId}/reconcile` writes those entries. A reverse zone created for a network
   already in use has no change to react to and so starts empty, however many addresses are
   already named in it; this is what fills it, in one commit. It only adds.
@@ -113,6 +114,7 @@ public API is unstable and may change without a deprecation period.
   `key:<name>` after an address.
 - `weg zone reconcile` fills in the reverse entries a zone was missing, and
   `weg zone check --reverse` says what it would do without doing it.
+- `weg record canonical` makes a record the name its address reverses to.
 - `weg zone check` lists what is wrong with a zone as it stands, one block per finding,
   each headed by whether the server would have refused it. It exits zero either way: the
   findings are the answer rather than a failure of the command. `--output json` carries the
@@ -122,7 +124,8 @@ public API is unstable and may change without a deprecation period.
 
 - A Check tab on a zone, listing what is wrong with it as it stands, told apart by whether
   the server would have refused it. The reverse entries a zone is missing are asked for
-  rather than assumed, and can be written from the same screen.
+  rather than assumed, and can be written from the same screen; where two names claim one
+  address, the answer can be handed to the other one there too.
 - A screen for the transfer keys, beside the settings that name them.
 
 #### Observation

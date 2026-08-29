@@ -33,6 +33,8 @@
    */
   let reverse = $state(false);
   let reconciling = $state(false);
+  /** The record whose claim is being written, so one button at a time waits. */
+  let claiming = $state<string | null>(null);
   let reconciled = $state<string | null>(null);
 
   const errors = $derived(findings.filter((f) => f.severity === "error").length);
@@ -66,6 +68,26 @@
             : "The zone could not be checked.";
     } finally {
       running = false;
+    }
+  }
+
+  /**
+   * makeCanonical hands the reverse entry for an address to the record a
+   * finding names. Several names on one address is ordinary and only one of
+   * them can be the reverse answer; this is how somebody says which.
+   */
+  async function makeCanonical(record: string) {
+    claiming = record;
+    trouble = null;
+    try {
+      await api.post("/records/{recordId}/canonical", { path: { recordId: record } });
+      await run();
+      reconciled = "The address now reverses to that name.";
+    } catch (err) {
+      trouble =
+        err instanceof ApiError ? (err.detail ?? err.title) : "The entry could not be handed over.";
+    } finally {
+      claiming = null;
     }
   }
 
@@ -168,6 +190,16 @@
               {finding.severity} · {finding.scope}
             </span>
             {finding.detail}
+            {#snippet actions()}
+              {#if finding.record && writable}
+                <Button
+                  onclick={() => makeCanonical(finding.record!)}
+                  disabled={claiming !== null}
+                >
+                  {claiming === finding.record ? "Handing over…" : "Make this the answer"}
+                </Button>
+              {/if}
+            {/snippet}
           </Notice>
         </li>
       {/each}

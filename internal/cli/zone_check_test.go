@@ -244,3 +244,31 @@ func TestZoneCheckReverseAndReconcile(t *testing.T) {
 		}
 	})
 }
+
+// The answer to a conflict, from the command line: which name an address
+// reverses to is a thing an operator changes (D3, D33).
+func TestRecordCanonicalTakesTheEntry(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+
+	mustRun(t, srv, "zone", "create", "example.com")
+	mustRun(t, srv, "record", "add", "example.com", "ns1", "A", "198.51.100.53")
+	mustRun(t, srv, "zone", "create", "192.0.2.0/24")
+	mustRun(t, srv, "record", "add", "example.com", "www", "A", "192.0.2.10")
+	mustRun(t, srv, "record", "add", "example.com", "mail", "A", "192.0.2.10")
+
+	before := mustRun(t, srv, "record", "list", "2.0.192.in-addr.arpa.")
+	if !strings.Contains(before, "www.example.com.") {
+		t.Fatalf("first-wins did not hold: %s", before)
+	}
+
+	mustRun(t, srv, "record", "canonical", "example.com", "mail", "A", "192.0.2.10")
+
+	after := mustRun(t, srv, "record", "list", "2.0.192.in-addr.arpa.")
+	if !strings.Contains(after, "mail.example.com.") {
+		t.Errorf("the address does not reverse to mail: %s", after)
+	}
+	if strings.Contains(after, "www.example.com.") {
+		t.Errorf("the old entry is still there: %s", after)
+	}
+}

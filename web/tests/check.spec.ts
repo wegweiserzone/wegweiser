@@ -69,3 +69,38 @@ test("a reverse zone the server filled has nothing missing", async ({ page, serv
   await expect(page.getByText("warning · reverse")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Fill them in" })).toHaveCount(0);
 });
+
+test("the name an address reverses to can be changed from the finding", async ({
+  page,
+  server,
+}) => {
+  const fwd = await seed(server, "POST", "/zones", { name: "claim.example" });
+  await seed(server, "POST", `/zones/${fwd.id}/records`, {
+    name: "ns1.claim.example.",
+    type: "A",
+    data: "198.51.100.53",
+  });
+  await seed(server, "POST", "/zones", { name: "203.0.113.0/24" });
+  await seed(server, "POST", `/zones/${fwd.id}/records`, {
+    name: "www.claim.example.",
+    type: "A",
+    data: "203.0.113.10",
+  });
+  // Two names, one address. First wins, so this one gets no entry.
+  await seed(server, "POST", `/zones/${fwd.id}/records`, {
+    name: "mail.claim.example.",
+    type: "A",
+    data: "203.0.113.10",
+  });
+
+  await signIn(page, server);
+  await page.goto(`${server.url}/zones/113.0.203.in-addr.arpa./check`);
+  await page.getByLabel("Include the reverse entries this zone is missing").check();
+  await page.getByRole("button", { name: "Check this zone" }).click();
+
+  await expect(page.getByText(/answered in reverse as www\.claim\.example\./)).toBeVisible();
+  await page.getByRole("button", { name: "Make this the answer" }).click();
+
+  await expect(page.getByText("The address now reverses to that name.")).toBeVisible();
+  await expect(page.getByText(/answered in reverse as mail\.claim\.example\./)).toBeVisible();
+});

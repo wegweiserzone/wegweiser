@@ -78,6 +78,11 @@ type Finding struct {
 	// about the zone.
 	Name Name
 
+	// Record is the record an action on this finding would address, where
+	// there is one. Empty for a finding about a name rather than about a
+	// record, which is most of them.
+	Record RecordID
+
 	// Detail is the sentence a person reads. It is the same text the write path
 	// refuses with, so a zone repaired until the check is quiet is a zone the
 	// write path would accept.

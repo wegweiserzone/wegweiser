@@ -257,3 +257,54 @@ func printRecordChange(opts *options, changed recordChanged, past string) error 
 		return nil
 	})
 }
+
+func newRecordCanonicalCommand(opts *options, f *clientFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "canonical ZONE NAME TYPE [DATA...]",
+		Short: "Make this the name its address reverses to",
+		Long: "Hand the reverse entry for an address to this record.\n\n" +
+			"Several names on one address is ordinary, and only one of them can\n" +
+			"be the answer to a reverse lookup. Where this record is not that one,\n" +
+			"this takes the entry from whatever generated one holds it and writes\n" +
+			"it from here instead. The record itself does not change; the reverse\n" +
+			"zone does, in a commit of its own.\n\n" +
+			"An entry somebody wrote by hand is left alone. Detaching a generated\n" +
+			"record is how a person says to stop maintaining it, and taking it\n" +
+			"back would make detaching mean nothing (docs/decisions/ D4).",
+		Args: usageArgs(cobra.MinimumNArgs(3)),
+		Example: "  weg record canonical example.com mail A 192.0.2.10\n" +
+			"  weg zone check --reverse 2.0.192.in-addr.arpa.   # what claims what",
+
+		RunE: func(c *cobra.Command, args []string) error {
+			return runRecordCanonical(c.Context(), opts, f, args[0], args[1],
+				strings.ToUpper(args[2]), strings.Join(args[3:], " "))
+		},
+		ValidArgsFunction: completeRecordArgs(f, false),
+	}
+}
+
+func runRecordCanonical(
+	ctx context.Context, opts *options, f *clientFlags, zoneName, name, typ, data string,
+) error {
+	client, err := f.client()
+	if err != nil {
+		return err
+	}
+	z, err := findZone(ctx, client, f, zoneName)
+	if err != nil {
+		return err
+	}
+	target, err := resolveRecord(ctx, client, f, z, name, typ, data)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.MakeRecordCanonicalWithResponse(ctx, target.Id)
+	if err != nil {
+		return reachable(err, f.server)
+	}
+	if resp.JSON200 == nil {
+		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
+	}
+	return printRecordChange(opts, recordWritten(resp.JSON200), "now the reverse answer")
+}

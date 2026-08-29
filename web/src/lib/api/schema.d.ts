@@ -1169,6 +1169,12 @@ export interface components {
              */
             name: string;
             /**
+             * @description The record an action on this finding would address, where there is
+             *     one. Absent for a finding about a name rather than about a record,
+             *     which is most of them.
+             */
+            record?: string;
+            /**
              * @description What is wrong, worded as the write path words its refusal, so that
              *     a zone repaired until the check is quiet is one it would accept.
              */

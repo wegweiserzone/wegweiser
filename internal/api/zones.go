@@ -388,6 +388,9 @@ func (s *Server) CheckZone(
 			Name:     f.Name.String(),
 			Detail:   f.Detail,
 		}
+		if f.Record != "" {
+			out.Findings[i].Record = ptr(string(f.Record))
+		}
 	}
 	return gen.CheckZone200JSONResponse(out), nil
 }
