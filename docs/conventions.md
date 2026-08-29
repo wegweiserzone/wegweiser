@@ -92,6 +92,7 @@ internal/config/    Bootstrap settings: file, environment, flags (D11)
 internal/dns/       Query path, handlers, trie, snapshots
 internal/zone/      Zone model, validation, reverse automation
 internal/zonefile/  RFC 1035 §5 presentation format: import and export
+internal/secondary/ Configuration for the other end of a transfer (D34)
 internal/metrics/   Prometheus collectors, fed from the query path's observer
 internal/stream/    Live query stream: per-watcher filters, ring buffer, sampling
 internal/store/     Store interface, sqlite/, and postgres/ when it exists
@@ -131,6 +132,8 @@ release moves things across it rather than retiring it.
 **In:** authoritative UDP and TCP, EDNS0; forward and reverse zone/record management with
 reverse automation; zonefile import/export; outbound zone transfer, whole and incremental,
 to a list of addresses and TSIG keys that starts empty, with NOTIFY to the secondaries named;
+the configuration that end needs, written for BIND and Knot
+([D34](decisions/d34-generated-secondary-configuration.md));
 SQLite persistence with journal; REST API with token auth; CLI core commands; GUI with zone
 overview, record editor and live query stream; Prometheus metrics and `/healthz`;
 single node.
@@ -157,6 +160,10 @@ of data this server is not authoritative for. [D17](decisions/d17-no-recursion.m
 run instead, which is a resolver in front with a stub zone pointed here. Nothing is kept open
 for it, and there is no seam to preserve.
 
+**Also out for good:** installing or reloading configuration on another machine. This server
+writes what the secondary needs and hands it over; [D34](decisions/d34-generated-secondary-configuration.md)
+says why the line is drawn there and not one step further.
+
 ## What comes next
 
 What is wanted, and the seam each one is meant to use. This is intent, not a schedule,
@@ -164,6 +171,7 @@ and the order is roughly what each costs against what it buys.
 
 | | Seam it uses |
 | --- | --- |
+| Asking a secondary whether it is in step | The notify list, which already names where to ask, and the outbound path NOTIFY uses. A serial behind ours is the one fault the generated configuration cannot rule out, and `weg_secondary_serial_lag` is the metric it feeds. D34 defers it. |
 | DNS cookies, then response rate limiting | The message layer, between reading a datagram and resolving it. D23 argues the order. |
 | Clustering | The write path, which D19 shaped as a state machine for this. D24 says what travels between nodes, D25 how many nodes there are. Three to seven voters; below three, zone transfer is the honest answer. |
 | PostgreSQL | The `Store` interface, which is why persistence is an interface at all. |
