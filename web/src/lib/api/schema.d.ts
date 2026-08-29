@@ -701,6 +701,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/secondary-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Write the configuration a secondary needs
+         * @description The zones this server holds, rendered as a configuration file for the
+         *     software running at the other end. It carries the transfer key's secret
+         *     in clear, which is what it is for, so it needs the `admin` scope for the
+         *     same reason reading that secret does.
+         *
+         *     The output is deterministic. Regenerating it produces the same bytes
+         *     when nothing has changed, so it can live under configuration management
+         *     without a diff on every run.
+         *
+         *     What is reported beside it is the arrangement rather than the syntax: a
+         *     transfer list nobody is on, a key that grants nothing, a secondary the
+         *     notifications do not reach. Each of those renders a file that is
+         *     perfectly formed and does not work.
+         */
+        get: operations["getSecondaryConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/commits": {
         parameters: {
             query?: never;
@@ -1430,6 +1462,30 @@ export interface components {
             key: components["schemas"]["TSIGKey"];
             /** @description The shared secret, base64, as every implementation writes it. */
             secret: string;
+        };
+        /**
+         * @description The software a configuration is written for. PowerDNS is absent on
+         *     purpose rather than for want of a template: its zones live in a backend
+         *     rather than in a file, so the equivalent is a list of commands, which is
+         *     a different thing to generate.
+         * @enum {string}
+         */
+        SecondaryFormat: "bind" | "knot";
+        /** @description A configuration file for the other end of a zone transfer. */
+        SecondaryConfig: {
+            format: components["schemas"]["SecondaryFormat"];
+            /**
+             * @description The file itself, ready to be written where the other server reads
+             *     it. It holds the transfer key's secret in clear.
+             */
+            content: string;
+            /**
+             * @description What about this arrangement will not work, in the order it is set up
+             *     in. Empty where nothing is missing. Each entry states what holds;
+             *     offering the fix beside it is a client's job, the way a zone check's
+             *     findings work.
+             */
+            warnings: string[];
         };
         /**
          * @description An address already answers with another name (docs/decisions/ D3). It
@@ -2345,6 +2401,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TSIGKeySecret"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSecondaryConfig: {
+        parameters: {
+            query: {
+                /** @description The software the configuration is written for. */
+                format: components["schemas"]["SecondaryFormat"];
+                /**
+                 * @description Where this server answers a transfer request, as an address with an
+                 *     optional port. It is given rather than worked out: a server does not
+                 *     know which of its addresses the world reaches it on, and a hidden
+                 *     primary is named by no record to ask.
+                 * @example 192.0.2.1
+                 */
+                primary: string;
+                /**
+                 * @description The address the configuration is for. It appears nowhere in the
+                 *     output. Naming it is what lets the transfer and notify lists be
+                 *     checked rather than only described.
+                 * @example 198.51.100.53
+                 */
+                secondary?: string;
+                /**
+                 * @description Which zones to write out, by name. Repeat it for several; leaving it
+                 *     out takes every zone this server holds, reverse zones among them.
+                 */
+                zone?: string[];
+                /**
+                 * @description The name of the TSIG key the secondary signs with. Where it is left
+                 *     out and exactly one key is on the transfer list, that key is meant;
+                 *     where several are, one has to be named.
+                 */
+                key?: string;
+                /**
+                 * @description Whether to write a key block at all. False writes a configuration
+                 *     that signs nothing, for a secondary the transfer list grants by
+                 *     address.
+                 */
+                signed?: boolean;
+                /**
+                 * @description Where the secondary keeps its copies of the zones. Left out, each
+                 *     program is left the place it uses anyway.
+                 */
+                zoneDir?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The configuration, and what is wrong with the arrangement. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecondaryConfig"];
                 };
             };
             default: components["responses"]["Problem"];

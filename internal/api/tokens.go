@@ -13,7 +13,7 @@ import (
 func (s *Server) ListTokens(
 	ctx context.Context, _ gen.ListTokensRequestObject,
 ) (gen.ListTokensResponseObject, error) {
-	if err := requireAdmin(ctx); err != nil {
+	if err := requireAdmin(ctx, "listing tokens"); err != nil {
 		return nil, err
 	}
 
@@ -37,7 +37,7 @@ func (s *Server) ListTokens(
 func (s *Server) CreateToken(
 	ctx context.Context, req gen.CreateTokenRequestObject,
 ) (gen.CreateTokenResponseObject, error) {
-	if err := requireAdmin(ctx); err != nil {
+	if err := requireAdmin(ctx, "minting a token"); err != nil {
 		return nil, err
 	}
 	if req.Body.Name == "" {
@@ -84,7 +84,7 @@ func (s *Server) CreateToken(
 func (s *Server) RevokeToken(
 	ctx context.Context, req gen.RevokeTokenRequestObject,
 ) (gen.RevokeTokenResponseObject, error) {
-	if err := requireAdmin(ctx); err != nil {
+	if err := requireAdmin(ctx, "withdrawing a token"); err != nil {
 		return nil, err
 	}
 
@@ -134,15 +134,17 @@ func hasAdmin(t *store.Token) bool {
 	return false
 }
 
-// requireAdmin refuses a caller that may write but may not administer.
-func requireAdmin(ctx context.Context) error {
+// requireAdmin refuses a caller that may write but may not administer. It is
+// told what was being attempted, because the scope guards several things and a
+// refusal naming the wrong one sends the reader looking in the wrong place.
+func requireAdmin(ctx context.Context, attempted string) error {
 	sub := subjectOf(ctx)
 	if sub == nil || !sub.allows(ScopeAdmin) {
 		return &apiError{
 			status: http.StatusForbidden,
 			kind:   typeForbidden,
 			title:  "Not allowed",
-			detail: "managing tokens needs the \"admin\" scope",
+			detail: attempted + " needs the \"admin\" scope",
 		}
 	}
 	return nil

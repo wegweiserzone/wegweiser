@@ -51,6 +51,11 @@ tags:
       What this server does when nobody has said otherwise. A zone may override
       some of these on itself; what is here is the fallback everything else
       starts from.
+  - name: secondary
+    description: |
+      The configuration the other end of a zone transfer needs. This server
+      writes it and never installs it; docs/decisions/ D34 says where that line
+      is drawn and why.
   - name: health
     description: Whether the server is fit to answer.
   - name: metrics
@@ -908,6 +913,85 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TSIGKeySecret" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /secondary-config:
+    get:
+      operationId: getSecondaryConfig
+      tags: [secondary]
+      summary: Write the configuration a secondary needs
+      description: |
+        The zones this server holds, rendered as a configuration file for the
+        software running at the other end. It carries the transfer key's secret
+        in clear, which is what it is for, so it needs the `admin` scope for the
+        same reason reading that secret does.
+
+        The output is deterministic. Regenerating it produces the same bytes
+        when nothing has changed, so it can live under configuration management
+        without a diff on every run.
+
+        What is reported beside it is the arrangement rather than the syntax: a
+        transfer list nobody is on, a key that grants nothing, a secondary the
+        notifications do not reach. Each of those renders a file that is
+        perfectly formed and does not work.
+      parameters:
+        - name: format
+          in: query
+          required: true
+          description: The software the configuration is written for.
+          schema: { $ref: "#/components/schemas/SecondaryFormat" }
+        - name: primary
+          in: query
+          required: true
+          description: |
+            Where this server answers a transfer request, as an address with an
+            optional port. It is given rather than worked out: a server does not
+            know which of its addresses the world reaches it on, and a hidden
+            primary is named by no record to ask.
+          schema: { type: string }
+          example: 192.0.2.1
+        - name: secondary
+          in: query
+          description: |
+            The address the configuration is for. It appears nowhere in the
+            output. Naming it is what lets the transfer and notify lists be
+            checked rather than only described.
+          schema: { type: string }
+          example: 198.51.100.53
+        - name: zone
+          in: query
+          description: |
+            Which zones to write out, by name. Repeat it for several; leaving it
+            out takes every zone this server holds, reverse zones among them.
+          schema:
+            type: array
+            items: { type: string }
+        - name: key
+          in: query
+          description: |
+            The name of the TSIG key the secondary signs with. Where it is left
+            out and exactly one key is on the transfer list, that key is meant;
+            where several are, one has to be named.
+          schema: { type: string }
+        - name: signed
+          in: query
+          description: |
+            Whether to write a key block at all. False writes a configuration
+            that signs nothing, for a secondary the transfer list grants by
+            address.
+          schema: { type: boolean, default: true }
+        - name: zoneDir
+          in: query
+          description: |
+            Where the secondary keeps its copies of the zones. Left out, each
+            program is left the place it uses anyway.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The configuration, and what is wrong with the arrangement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SecondaryConfig" }
         default: { $ref: "#/components/responses/Problem" }
 
   /commits:
@@ -1909,6 +1993,35 @@ components:
         secret:
           type: string
           description: The shared secret, base64, as every implementation writes it.
+
+    SecondaryFormat:
+      type: string
+      description: |
+        The software a configuration is written for. PowerDNS is absent on
+        purpose rather than for want of a template: its zones live in a backend
+        rather than in a file, so the equivalent is a list of commands, which is
+        a different thing to generate.
+      enum: [bind, knot]
+
+    SecondaryConfig:
+      type: object
+      description: A configuration file for the other end of a zone transfer.
+      required: [format, content, warnings]
+      properties:
+        format: { $ref: "#/components/schemas/SecondaryFormat" }
+        content:
+          type: string
+          description: |
+            The file itself, ready to be written where the other server reads
+            it. It holds the transfer key's secret in clear.
+        warnings:
+          type: array
+          description: |
+            What about this arrangement will not work, in the order it is set up
+            in. Empty where nothing is missing. Each entry states what holds;
+            offering the fix beside it is a client's job, the way a zone check's
+            findings work.
+          items: { type: string }
 
     Conflict:
       type: object

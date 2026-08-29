@@ -16,7 +16,7 @@ import (
 func (s *Server) ListTSIGKeys(
 	ctx context.Context, _ gen.ListTSIGKeysRequestObject,
 ) (gen.ListTSIGKeysResponseObject, error) {
-	if err := requireAdmin(ctx); err != nil {
+	if err := requireAdmin(ctx, "listing the transfer keys"); err != nil {
 		return nil, err
 	}
 
@@ -40,7 +40,7 @@ func (s *Server) ListTSIGKeys(
 func (s *Server) CreateTSIGKey(
 	ctx context.Context, req gen.CreateTSIGKeyRequestObject,
 ) (gen.CreateTSIGKeyResponseObject, error) {
-	if err := requireAdmin(ctx); err != nil {
+	if err := requireAdmin(ctx, "creating a transfer key"); err != nil {
 		return nil, err
 	}
 
@@ -83,7 +83,7 @@ func (s *Server) CreateTSIGKey(
 func (s *Server) ReadTSIGKeySecret(
 	ctx context.Context, req gen.ReadTSIGKeySecretRequestObject,
 ) (gen.ReadTSIGKeySecretResponseObject, error) {
-	if err := requireAdmin(ctx); err != nil {
+	if err := requireAdmin(ctx, "reading a key's secret"); err != nil {
 		return nil, err
 	}
 
@@ -109,7 +109,7 @@ func (s *Server) ReadTSIGKeySecret(
 func (s *Server) RevokeTSIGKey(
 	ctx context.Context, req gen.RevokeTSIGKeyRequestObject,
 ) (gen.RevokeTSIGKeyResponseObject, error) {
-	if err := requireAdmin(ctx); err != nil {
+	if err := requireAdmin(ctx, "withdrawing a transfer key"); err != nil {
 		return nil, err
 	}
 
