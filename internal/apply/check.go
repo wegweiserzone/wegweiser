@@ -2,6 +2,7 @@ package apply
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/wegweiserzone/wegweiser/internal/journal"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
@@ -27,15 +28,30 @@ func (a *Applier) CheckReverse(
 	unlock := a.locks.lock(string(zid))
 	defer unlock()
 
-	b, _, err := a.PlanReconcile(ctx, zid, Meta{Source: journal.SourceSystem})
+	b, res, err := a.PlanReconcile(ctx, zid, Meta{Source: journal.SourceSystem})
 	if err != nil {
 		return nil, err
 	}
-	if b.Empty() {
-		return nil, nil
+
+	// The refusals first, because they are the answer to a question the caller
+	// did not know to ask: an entry that is missing because something else
+	// holds the name is not the same as one nobody has written yet (D33).
+	var out []zone.Finding
+	// Indexed rather than ranged by value: a Conflict is a large struct and
+	// this reads a handful of its fields.
+	for i := range res.Conflicts {
+		c := &res.Conflicts[i]
+		out = append(out, zone.Finding{
+			Severity: zone.SeverityWarning,
+			Scope:    zone.ScopeReverse,
+			Name:     c.ReverseName,
+			Detail:   conflictDetail(c),
+		})
 	}
 
-	var out []zone.Finding
+	if b.Empty() {
+		return out, nil
+	}
 	for _, zoneID := range b.set.order {
 		ch := b.set.byZone[zoneID]
 		if ch == nil {
@@ -52,4 +68,16 @@ func (a *Applier) CheckReverse(
 		}
 	}
 	return out, nil
+}
+
+// conflictDetail is the sentence about an address two names claim.
+func conflictDetail(c *Conflict) string {
+	held := "which somebody wrote by hand"
+	if c.Generated {
+		held = "which was generated from another address record"
+	}
+	return fmt.Sprintf(
+		"%s points at %s, and the reverse of that address already names %s, %s. "+
+			"Under this policy the first name keeps it, so nothing was written for %s.",
+		c.SourceName, c.Address, c.Existing, held, c.SourceName)
 }

@@ -902,3 +902,66 @@ func TestCheckReverseWritesNothing(t *testing.T) {
 		t.Errorf("the serial moved to %s, want it left at %s", got, serial)
 	}
 }
+
+// A conflict is a state two records are in, not an event that was recorded, so
+// the check derives it rather than reading it back from anywhere (D33).
+func TestCheckReverseReportsAConflict(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	rev := f.reverseZone("2.0.192.in-addr.arpa.")
+	f.addA("www.example.com.", "192.0.2.10")
+	// The second name loses under first-wins, and gets no entry of its own.
+	f.addA("mail.example.com.", "192.0.2.10")
+
+	found, err := f.a.CheckReverse(t.Context(), rev.ID)
+	if err != nil {
+		t.Fatalf("CheckReverse: %v", err)
+	}
+	if len(found) != 1 {
+		t.Fatalf("got %d findings, want 1: %+v", len(found), found)
+	}
+
+	got := found[0]
+	if got.Severity != zone.SeverityWarning {
+		t.Errorf("severity is %q, want a warning: the write path accepted this", got.Severity)
+	}
+	for _, want := range []string{"mail.example.com.", "192.0.2.10", "www.example.com."} {
+		if !strings.Contains(got.Detail, want) {
+			t.Errorf("detail is %q, want it to name %q", got.Detail, want)
+		}
+	}
+
+	// And it stops being reported when it stops being true, without anything
+	// having to clear it: the loser is now the only claim on the address.
+	f.mustApply(f.command(apply.RecordOp{
+		Action:   apply.ActionDelete,
+		RecordID: f.recordID("www.example.com.", zone.TypeA),
+	}))
+	after, err := f.a.CheckReverse(t.Context(), rev.ID)
+	if err != nil {
+		t.Fatalf("CheckReverse: %v", err)
+	}
+	for _, finding := range after {
+		if strings.Contains(finding.Detail, "already names") {
+			t.Errorf("the conflict is still reported after the winner went: %+v", finding)
+		}
+	}
+}
+
+// recordID finds the identifier of one record, for a test that has to address
+// it rather than describe it.
+func (f *fixture) recordID(name string, typ zone.RRType) zone.RecordID {
+	f.t.Helper()
+
+	for rec, err := range f.s.IterZoneRecords(f.t.Context(), f.z.ID) {
+		if err != nil {
+			f.t.Fatalf("IterZoneRecords: %v", err)
+		}
+		if rec.Name.String() == name && rec.Type == typ {
+			return rec.ID
+		}
+	}
+	f.t.Fatalf("no %s record at %s", typ, name)
+	return ""
+}

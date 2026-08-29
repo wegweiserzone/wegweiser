@@ -93,8 +93,10 @@ public API is unstable and may change without a deprecation period.
   without deriving it. Both clients used to work it out themselves, from one request per
   name server, and the two implementations were kept in step by hand.
 - `GET /zones/{zoneId}/check?reverse=true` adds what reverse automation would generate for a
-  zone and has not. Separate from the rest of the check because working it out plans the
-  write that would fix it, which holds the zone while it runs.
+  zone and has not, and the addresses two names are claiming at once. Separate from the rest
+  of the check because working it out plans the write that would fix it, which holds the
+  zone while it runs. A conflict is worked out from the records every time rather than
+  stored, so it stops being reported the moment it stops being true.
 - `POST /zones/{zoneId}/reconcile` writes those entries. A reverse zone created for a network
   already in use has no change to react to and so starts empty, however many addresses are
   already named in it; this is what fills it, in one commit. It only adds.

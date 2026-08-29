@@ -1,5 +1,7 @@
 # D3 — PTR conflicts default to first-wins, and are never silent
 
+- Amended by: [D33](d33-a-conflict-is-derived.md)
+
 When a new A/AAAA record points at an address that already has a managed PTR, the existing
 PTR stays. A conflict record is produced, returned by the API, and surfaced in the GUI with a
 one-click "make this the canonical name" action.
