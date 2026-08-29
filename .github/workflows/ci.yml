@@ -188,6 +188,20 @@ jobs:
           fi
           ./bin/weg version
 
+      # Otherwise the image is built for the first time by the release that
+      # pushes it, and a tag is a bad place to find out the Containerfile no
+      # longer works. Same command as the release, one architecture and no
+      # push: this proves the file builds, not that the result is right.
+      - name: The container image still builds
+        if: matrix.goarch == 'amd64'
+        run: |
+          docker buildx build \
+            --file packaging/Containerfile \
+            --platform linux/amd64 \
+            --build-arg "VERSION=ci" \
+            --build-arg "COMMIT=$GITHUB_SHA" \
+            .
+
   fuzz:
     name: Fuzz smoke
     runs-on: ubuntu-latest
