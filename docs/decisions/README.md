@@ -77,3 +77,7 @@ is not an extension of D5, whose subject is unrelated to it.
 - **Wire-format response caching** for hot RRsets is an obvious optimisation and is
   deliberately not designed yet. It only earns its complexity if the allocation target in D12
   turns out unreachable without it.
+- **What D35 means by "under load"** is the one thing that record does not settle. The point
+  at which a query carrying no valid cookie is refused rather than answered has to be derived
+  from something the server already knows, or the knobs D35 refuses arrive through the other
+  door. It is settled when cookies are built, and not before.
