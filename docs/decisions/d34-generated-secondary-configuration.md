@@ -82,3 +82,10 @@ elsewhere is a zone, and it belongs under `weg zone` with a kind of its own rath
 **Asking the secondary whether it worked is not this record.** A serial probe against the
 configured targets, and the lag metric it would feed, is a separate feature with its own
 questions about timeouts and about who does the asking. Nothing here forecloses it.
+
+## Where this stands
+
+The probe this record left open is [D36](d36-probing-a-secondary.md), which answers both
+questions named above: a pair becomes due when its notification finishes rather than on a
+timer, and in a cluster the leader is the one that asks. The decision here is unchanged. This
+server writes what the secondary needs and hands it over, and stops there.

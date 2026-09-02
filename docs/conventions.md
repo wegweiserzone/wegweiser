@@ -179,7 +179,7 @@ and the order is roughly what each costs against what it buys.
 
 | | Seam it uses |
 | --- | --- |
-| Asking a secondary whether it is in step | The notify list, which already names where to ask, and the outbound path NOTIFY uses. A serial behind ours is the one fault the generated configuration cannot rule out, and `weg_secondary_serial_lag` is the metric it feeds. D34 defers it. |
+| Asking a secondary whether it is in step | The notify list, which already names where to ask, and the outbound path NOTIFY uses. A serial behind ours is the one fault the generated configuration cannot rule out, and `weg_secondary_serial_lag` is the metric it feeds. D34 deferred it and D36 settles it. |
 | DNS cookies, and refusing a cookieless client while under load | The message layer, between reading a datagram and resolving it. D23 put cookies first and D35 makes them the whole answer, leaving one thing to work out: what "under load" is derived from, given that it cannot be configured. |
 | Clustering | The write path, which D19 shaped as a state machine for this. D24 says what travels between nodes, D25 how many nodes there are. Three to seven voters; below three, zone transfer is the honest answer. |
 | PostgreSQL | The `Store` interface, which is why persistence is an interface at all. |
