@@ -322,3 +322,120 @@ func TestObserveNotifyCountsWhatBecameOfIt(t *testing.T) {
 		t.Error("the zone reached the exposition as a label value")
 	}
 }
+
+// probe is one answered question, with the fields a test does not care about
+// filled in.
+func probe(z string, outcome dns.ProbeOutcome, lag uint32) dns.ProbeEvent {
+	return dns.ProbeEvent{
+		Zone:    zone.MustParseName(z),
+		Target:  netip.MustParseAddrPort("192.0.2.53:53"),
+		Outcome: outcome,
+		Lag:     lag,
+	}
+}
+
+func TestObserveProbeSummarisesASecondary(t *testing.T) {
+	t.Parallel()
+
+	m := New()
+	m.ObserveProbe(probe("a.example.", dns.ProbeBehind, 3))
+	m.ObserveProbe(probe("b.example.", dns.ProbeBehind, 7))
+	m.ObserveProbe(probe("c.example.", dns.ProbeInStep, 0))
+
+	target := "192.0.2.53:53"
+	if got := testutil.ToFloat64(m.lag.WithLabelValues(target)); got != 7 {
+		t.Errorf("the lag is %v, want the furthest behind zone, 7", got)
+	}
+	if got := testutil.ToFloat64(m.behind.WithLabelValues(target)); got != 2 {
+		t.Errorf("%v zones behind, want 2", got)
+	}
+	if got := testutil.ToFloat64(m.unanswered.WithLabelValues(target)); got != 0 {
+		t.Errorf("%v zones unanswered, want 0", got)
+	}
+
+	// The zone is deliberately not a label here either, for the reason the
+	// notification counter gives.
+	var buf bytes.Buffer
+	if _, err := m.WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	if body := buf.String(); strings.Contains(body, "b.example.") {
+		t.Error("the zone reached the exposition as a label value")
+	}
+}
+
+func TestObserveProbeCatchingUpClearsTheLag(t *testing.T) {
+	t.Parallel()
+
+	m := New()
+	m.ObserveProbe(probe("a.example.", dns.ProbeBehind, 4))
+	m.ObserveProbe(probe("a.example.", dns.ProbeInStep, 0))
+
+	target := "192.0.2.53:53"
+	if got := testutil.ToFloat64(m.lag.WithLabelValues(target)); got != 0 {
+		t.Errorf("the lag is %v after the secondary caught up, want 0", got)
+	}
+	if got := testutil.ToFloat64(m.behind.WithLabelValues(target)); got != 0 {
+		t.Errorf("%v zones behind after the secondary caught up, want 0", got)
+	}
+}
+
+// A secondary that has gone quiet reads zero behind, because nothing is known.
+// The gauge that says so is what stops that looking like health.
+func TestObserveProbeSeparatesSilenceFromBeingInStep(t *testing.T) {
+	t.Parallel()
+
+	m := New()
+	m.ObserveProbe(probe("a.example.", dns.ProbeBehind, 4))
+	m.ObserveProbe(probe("a.example.", dns.ProbeSilent, 0))
+
+	target := "192.0.2.53:53"
+	if got := testutil.ToFloat64(m.behind.WithLabelValues(target)); got != 0 {
+		t.Errorf("%v zones behind, want 0: nothing is known any more", got)
+	}
+	if got := testutil.ToFloat64(m.unanswered.WithLabelValues(target)); got != 1 {
+		t.Errorf("%v zones unanswered, want 1", got)
+	}
+	// The stale distance is gone rather than left standing.
+	if got := testutil.ToFloat64(m.lag.WithLabelValues(target)); got != 0 {
+		t.Errorf("the lag is %v, want 0: the last figure is not evidence", got)
+	}
+}
+
+// A gauge outlives what it describes unless somebody says so, which is what
+// D36 asks the wiring to do when a target leaves the notify list.
+func TestForgetProbeDropsTheSeries(t *testing.T) {
+	t.Parallel()
+
+	m := New()
+	m.ObserveProbe(probe("a.example.", dns.ProbeBehind, 4))
+	m.ForgetProbe(zone.MustParseName("a.example."), netip.MustParseAddrPort("192.0.2.53:53"))
+
+	var buf bytes.Buffer
+	if _, err := m.WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	if body := buf.String(); strings.Contains(body, "weg_secondary_serial_lag{") {
+		t.Errorf("the exposition still carries a lag for a secondary that is gone:\n%s", body)
+	}
+}
+
+func TestObserveProbeCountsWhatItFound(t *testing.T) {
+	t.Parallel()
+
+	m := New()
+	for _, outcome := range []dns.ProbeOutcome{
+		dns.ProbeInStep, dns.ProbeInStep, dns.ProbeBehind, dns.ProbeSilent, dns.ProbeUnordered,
+	} {
+		m.ObserveProbe(probe("a.example.", outcome, 1))
+	}
+
+	for _, tc := range []struct {
+		outcome string
+		want    float64
+	}{{"in_step", 2}, {"behind", 1}, {"silent", 1}, {"unordered", 1}} {
+		if got := testutil.ToFloat64(m.probes.WithLabelValues(tc.outcome)); got != tc.want {
+			t.Errorf("%s = %v, want %v", tc.outcome, got, tc.want)
+		}
+	}
+}

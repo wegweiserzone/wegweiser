@@ -75,3 +75,17 @@ about what the other end is doing.
 The probe sends DNS messages and belongs beside the notifier in `internal/dns`, which is
 already the one part of that package that sends rather than answers. It is control plane:
 nothing here runs on the path of a query (invariant 2).
+
+## Where this stands
+
+The prober is built, and the metrics are not shaped the way the consequences above assumed.
+There is no zone label. `ObserveNotify` had already settled that question in the same file
+and the other way round, because the zone count is what makes a label expensive, and a
+reason that holds for counting notifications holds here. What is exported is per secondary:
+`weg_secondary_serial_lag` is the furthest behind of its zones, `weg_secondary_zones_behind`
+how many they are, and the probe outcomes are counted beside them. Which zone it is, this
+record still owes, and it is owed to the API and the two clients rather than to a scrape.
+
+There are three gauges rather than the two above. A secondary that has gone quiet reports
+nothing behind, because nothing about it is known, and that is indistinguishable from health
+unless something says so: `weg_secondary_zones_unanswered` is what says so.

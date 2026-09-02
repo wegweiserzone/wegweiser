@@ -9,6 +9,8 @@ package metrics
 import (
 	"fmt"
 	"io"
+	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -62,6 +64,19 @@ type Metrics struct {
 
 	notify *prometheus.CounterVec
 
+	probes     *prometheus.CounterVec
+	lag        *prometheus.GaugeVec
+	behind     *prometheus.GaugeVec
+	unanswered *prometheus.GaugeVec
+
+	// pairs is what is known about each zone on each secondary, keyed by the
+	// pair D36 probes. It is held here rather than exported as a series per
+	// zone, for the reason [Metrics.ObserveNotify] gives: the zone count is
+	// what makes a label expensive, and the gauges above are what an operator
+	// alerts on. Which zone it is belongs in an answer somebody asked for.
+	pairMu sync.Mutex
+	pairs  map[lagKey]lagState
+
 	zones   prometheus.Gauge
 	records prometheus.Gauge
 	built   prometheus.Gauge
@@ -92,7 +107,8 @@ type transportMetrics struct {
 // second exporter.
 func New() *Metrics {
 	m := &Metrics{
-		reg: prometheus.NewRegistry(),
+		reg:   prometheus.NewRegistry(),
+		pairs: make(map[lagKey]lagState),
 
 		queries: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace, Subsystem: "dns", Name: "queries_total",
@@ -127,6 +143,28 @@ func New() *Metrics {
 				"including retransmissions, and one answered or abandoned per secondary told.",
 		}, []string{"outcome"}),
 
+		probes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "secondary", Name: "probes_total",
+			Help: "Serial probes and what they found, one per zone asked about per secondary.",
+		}, []string{"outcome"}),
+
+		lag: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "secondary", Name: "serial_lag",
+			Help: "Commits the furthest behind zone on this secondary has yet to see. " +
+				"Zero once every zone it is asked about is in step.",
+		}, []string{"target"}),
+
+		behind: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "secondary", Name: "zones_behind",
+			Help: "Zones this secondary is known to hold an older serial for.",
+		}, []string{"target"}),
+
+		unanswered: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "secondary", Name: "zones_unanswered",
+			Help: "Zones this secondary was asked about and said nothing useful for. " +
+				"A secondary that has gone quiet reads zero behind, and this is where it shows.",
+		}, []string{"target"}),
+
 		zones: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace, Subsystem: "snapshot", Name: "zones",
 			Help: "Zones in the snapshot queries are being answered from.",
@@ -145,6 +183,7 @@ func New() *Metrics {
 
 	m.reg.MustRegister(
 		m.queries, m.dropped, m.truncated, m.duration, m.size, m.notify,
+		m.probes, m.lag, m.behind, m.unanswered,
 		m.zones, m.records, m.built,
 		buildInfo(),
 		collectors.NewGoCollector(),
@@ -206,6 +245,86 @@ func (m *Metrics) Observe(ev dns.Event) {
 // whether the secondaries are hearing at all.
 func (m *Metrics) ObserveNotify(ev dns.NotifyEvent) {
 	m.notify.WithLabelValues(string(ev.Outcome)).Inc()
+}
+
+// lagKey is one secondary and one zone, which is the unit a probe answers for.
+type lagKey struct {
+	target string
+	zone   string
+}
+
+// lagState is the last thing a probe established about one pair. A pair that
+// was asked about and did not come back with a serial is held as not known
+// rather than as in step: the difference is a secondary that has gone quiet,
+// which is exactly what an operator needs to see.
+type lagState struct {
+	lag   uint32
+	known bool
+}
+
+// ObserveProbe records what asking one secondary about one zone found.
+func (m *Metrics) ObserveProbe(ev dns.ProbeEvent) {
+	m.probes.WithLabelValues(string(ev.Outcome)).Inc()
+
+	st := lagState{}
+	switch ev.Outcome {
+	case dns.ProbeBehind:
+		st = lagState{lag: ev.Lag, known: true}
+	case dns.ProbeInStep:
+		st = lagState{known: true}
+	case dns.ProbeAhead, dns.ProbeUnordered, dns.ProbeSilent, dns.ProbeNoSerial:
+		// Nothing was established. A secondary in front of us, one whose
+		// serial RFC 1982 cannot order against ours, and one that said nothing
+		// are alike to a lag figure: there is not one to report.
+	}
+
+	key := lagKey{target: ev.Target.String(), zone: ev.Zone.String()}
+	m.pairMu.Lock()
+	defer m.pairMu.Unlock()
+	m.pairs[key] = st
+	m.republish(key.target)
+}
+
+// ForgetProbe drops a pair that has stopped existing, because the secondary
+// left the notify list or the zone was deleted. A target with nothing left to
+// say about it loses its series rather than keeping the last value it had.
+func (m *Metrics) ForgetProbe(z zone.Name, target netip.AddrPort) {
+	label := target.String()
+
+	m.pairMu.Lock()
+	defer m.pairMu.Unlock()
+	delete(m.pairs, lagKey{target: label, zone: z.String()})
+	m.republish(label)
+}
+
+// republish recomputes one secondary's gauges from what is known about its
+// zones. Called with the lock held.
+func (m *Metrics) republish(target string) {
+	var worst, behind, unanswered, pairs uint32
+	for key, st := range m.pairs {
+		if key.target != target {
+			continue
+		}
+		pairs++
+		switch {
+		case !st.known:
+			unanswered++
+		case st.lag > 0:
+			behind++
+			worst = max(worst, st.lag)
+		}
+	}
+	if pairs == 0 {
+		// The secondary is gone, or holds no zones this server serves. Zero
+		// would say it is in step, which is a different thing from absent.
+		m.lag.DeleteLabelValues(target)
+		m.behind.DeleteLabelValues(target)
+		m.unanswered.DeleteLabelValues(target)
+		return
+	}
+	m.lag.WithLabelValues(target).Set(float64(worst))
+	m.behind.WithLabelValues(target).Set(float64(behind))
+	m.unanswered.WithLabelValues(target).Set(float64(unanswered))
 }
 
 // SetSnapshot records what is being answered from. The wiring calls it after
