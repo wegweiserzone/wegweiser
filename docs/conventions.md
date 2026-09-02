@@ -139,12 +139,20 @@ overview, record editor and live query stream; Prometheus metrics and `/healthz`
 single node.
 
 **Explicitly out:** DNSSEC, Raft cluster, DoT/DoH/DoQ, Postgres backend, views and
-split-horizon, `weg tui`, response rate limiting and DNS cookies ([D23](decisions/d23-reflection-is-bounded.md): the
+split-horizon, `weg tui`, DNS cookies ([D23](decisions/d23-reflection-is-bounded.md): the
 amplification factor is bounded by construction and pinned by a test, and the rate is not
 policed).
 
 Do not build any of it early. Keep the seams so it fits later without a rewrite, especially
 the `Store` interface (for Postgres).
+
+**Out, and something else answers the question instead:** response rate limiting.
+[D35](decisions/d35-cookieless-under-load.md) reaches for cookies rather than a rate: while
+the server is under load, a query carrying no valid cookie is refused instead of answered.
+That is the switch D23 asked for in place of RRL's knobs, and it fails the other way round,
+costing a real client one round trip where a rate limiter drops its queries. Not closed for
+good. What it leaves exposed is clients implementing no cookies at all, and reopening it
+starts with a measurement of how much of that traffic there is.
 
 **Out, and the differentiators say why:** inbound zone transfer, and with it being a
 secondary for a zone somebody else runs. Differentiator 3 names manual primary/secondary
@@ -172,7 +180,7 @@ and the order is roughly what each costs against what it buys.
 | | Seam it uses |
 | --- | --- |
 | Asking a secondary whether it is in step | The notify list, which already names where to ask, and the outbound path NOTIFY uses. A serial behind ours is the one fault the generated configuration cannot rule out, and `weg_secondary_serial_lag` is the metric it feeds. D34 defers it. |
-| DNS cookies, then response rate limiting | The message layer, between reading a datagram and resolving it. D23 argues the order. |
+| DNS cookies, and refusing a cookieless client while under load | The message layer, between reading a datagram and resolving it. D23 put cookies first and D35 makes them the whole answer, leaving one thing to work out: what "under load" is derived from, given that it cannot be configured. |
 | Clustering | The write path, which D19 shaped as a state machine for this. D24 says what travels between nodes, D25 how many nodes there are. Three to seven voters; below three, zone transfer is the honest answer. |
 | PostgreSQL | The `Store` interface, which is why persistence is an interface at all. |
 | User accounts, and LDAP or AD behind them | D5 left the door open: the schema does not preclude users, and `sessionStore` is the seam. Tokens stay, because a program should not need an account. |
