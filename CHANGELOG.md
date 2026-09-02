@@ -8,6 +8,21 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
+### Added
+
+#### Observation
+
+- Whether a secondary is in step is asked rather than assumed. Once a zone has been notified,
+  and at least hourly whether anything changed or not, the server asks every secondary in the
+  notify list what serial it holds. `weg_secondary_serial_lag` is how many commits the
+  furthest behind of that secondary's zones has yet to see, `weg_secondary_zones_behind` how
+  many of them are behind at all, and `weg_secondary_probes_total` counts what the questions
+  found. Nothing is reported while a notification is still outstanding: a secondary that has
+  just been told and has not fetched yet is in flight, not behind.
+- `weg_secondary_zones_unanswered` is how many zones a secondary said nothing useful about.
+  One that has gone quiet reports nothing behind, because nothing about it is known, and
+  without this that is indistinguishable from one that is up to date.
+
 ### Fixed
 
 - `weg config show` reports `dns.maxTransfers`, and names `WEG_MAX_TRANSFERS` among the

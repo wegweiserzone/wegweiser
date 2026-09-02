@@ -22,6 +22,7 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/store/sqlite"
 	"github.com/wegweiserzone/wegweiser/internal/stream"
+	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
 // drainTimeout is how long a shutdown waits for the queries already in flight.
@@ -231,14 +232,31 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 	}
 	srv.SetTransfers(dns.Allow{Prefixes: allow.Prefixes, Keys: allow.Keys})
 
+	prober := dns.NewProber(dns.ProbeConfig{
+		Targets: notifyTargets(notify), Snapshots: srv,
+		OnError: report, Observe: met.ObserveProbe, Forget: met.ForgetProbe,
+	})
 	notifier := dns.NewNotifier(dns.NotifyConfig{
 		Targets: notifyTargets(notify), Keys: keys,
-		OnError: report, Observe: met.ObserveNotify,
+		OnError: report,
+		// Two consumers of one stream of steps: the metrics count them, and
+		// the prober schedules from them. A secondary that has answered a
+		// notification, or been given up on, has had its chance, and that is
+		// when asking what it holds means something (docs/decisions/, D36).
+		Observe: func(ev dns.NotifyEvent) {
+			met.ObserveNotify(ev)
+			prober.Notified(ev)
+		},
 	})
 	if nerr := notifier.Start(); nerr != nil {
 		return nerr
 	}
 	defer func() { err = errors.Join(err, stopNotifier(notifier)) }()
+
+	if perr := prober.Start(); perr != nil {
+		return perr
+	}
+	defer func() { err = errors.Join(err, stopProber(prober)) }()
 
 	if serr := srv.Start(); serr != nil {
 		return serr
@@ -259,7 +277,7 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		Snapshots: snapshots,
 		Transfers: srv,
 		Keyring:   keyPublishers{server: srv, notifier: notifier},
-		Notifier:  notifier,
+		Notifier:  notifyPublishers{notifier: notifier, prober: prober},
 		Metrics:   met,
 		Stream:    tail,
 		UI:        cfg.APIUI.Value,
@@ -349,6 +367,25 @@ func (k keyPublishers) SetKeys(ring dns.Keyring) {
 	k.notifier.SetKeys(ring)
 }
 
+// notifyPublishers hands a new notify list to everything that holds one. The
+// list is who is told a zone changed and who is asked what they hold: D36 takes
+// the second from the first rather than adding a list to keep in step with it.
+type notifyPublishers struct {
+	notifier *dns.Notifier
+	prober   *dns.Prober
+}
+
+// Notify implements [api.Notifier].
+func (n notifyPublishers) Notify(snap *dns.Snapshot, apex zone.Name) {
+	n.notifier.Notify(snap, apex)
+}
+
+// SetTargets implements [api.Notifier].
+func (n notifyPublishers) SetTargets(targets []dns.NotifyTarget) {
+	n.notifier.SetTargets(targets)
+	n.prober.SetTargets(targets)
+}
+
 // readKeyring reads the TSIG keys the query path verifies and signs with.
 //
 // Read once here and republished by the API whenever a key is created or
@@ -380,6 +417,13 @@ func stopNotifier(n *dns.Notifier) error {
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
 	return n.Close(ctx)
+}
+
+// stopProber gives the prober the same grace a shutdown gives the server.
+func stopProber(p *dns.Prober) error {
+	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
+	defer cancel()
+	return p.Close(ctx)
 }
 
 func shutdown(srv *dns.Server) error {
