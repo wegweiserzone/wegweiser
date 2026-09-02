@@ -62,6 +62,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D32** | [What the cluster replicates besides zone data](d32-what-else-the-cluster-replicates.md) |
 | **D33** | [A conflict is derived, not stored](d33-a-conflict-is-derived.md) |
 | **D34** | [The secondary's configuration is generated, not installed](d34-generated-secondary-configuration.md) |
+| **D35** | [Under load, a client without a cookie is refused rather than rate limited](d35-cookieless-under-load.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they

@@ -1,6 +1,7 @@
 # D23 — Reflection is bounded by construction, and the rate is not policed
 
 - Decided: 2026-08-18
+- Amended by: [D35](d35-cookieless-under-load.md)
 
 ## Context
 
