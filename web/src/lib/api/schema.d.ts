@@ -733,6 +733,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/secondary-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Say what each secondary holds
+         * @description One entry per zone per secondary on the notify list, saying what that
+         *     secondary last said its serial was and how that compares with what this
+         *     server publishes now.
+         *
+         *     A secondary is asked once a notification to it has been answered or
+         *     given up on, and at least hourly whether anything changed or not. Until
+         *     the first question about a pair has finished it is reported as unasked,
+         *     which is a state of its own: reporting it as in step would be the one
+         *     thing this is here to stop.
+         *
+         *     Nothing is reported while a notification is outstanding. A secondary
+         *     that has just been told and has not fetched yet is in flight rather than
+         *     behind, and a report that cannot tell those apart is one nobody reads.
+         */
+        get: operations["getSecondaryStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/commits": {
         parameters: {
             query?: never;
@@ -1486,6 +1518,49 @@ export interface components {
              *     findings work.
              */
             warnings: string[];
+        };
+        /**
+         * @description Where one secondary stands on one zone, as of the last question it
+         *     answered (docs/decisions/ D36).
+         */
+        SecondaryStanding: {
+            /** @example example.com. */
+            zone: string;
+            /**
+             * @description The secondary's address, as it appears on the notify list.
+             * @example 192.0.2.53:53
+             */
+            target: string;
+            /**
+             * @description What the last finished question found. `unasked` is a pair the first
+             *     question has not come back for yet. `ahead` is a secondary holding a
+             *     newer serial than this server publishes, which means it took its
+             *     copy from somewhere this server is not, and `unordered` the pair RFC
+             *     1982 §3.2 declines to order. `silent` said nothing in time, and
+             *     `noSerial` answered without one to read.
+             * @enum {string}
+             */
+            state: "unasked" | "inStep" | "behind" | "ahead" | "unordered" | "silent" | "noSerial";
+            /**
+             * Format: int64
+             * @description What the secondary last said it holds. Left out where it has never
+             *     said. It is kept while a secondary is silent, so what is shown is
+             *     the last thing anybody saw rather than nothing at all, and `state`
+             *     is what says the reading is old.
+             */
+            serial?: number;
+            /**
+             * Format: int64
+             * @description How many commits behind that serial is. D2 advances a zone by one
+             *     per commit, so it counts changes rather than a distance. Left out
+             *     unless the state is `behind`.
+             */
+            lag?: number;
+            /**
+             * Format: date-time
+             * @description When the last question finished. Left out where none has.
+             */
+            askedAt?: string;
         };
         /**
          * @description An address already answers with another name (docs/decisions/ D3). It
@@ -2462,6 +2537,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SecondaryConfig"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSecondaryStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every zone asked about, on every secondary. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecondaryStanding"][];
                 };
             };
             default: components["responses"]["Problem"];

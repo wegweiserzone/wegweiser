@@ -9,6 +9,7 @@ import (
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/apply"
+	"github.com/wegweiserzone/wegweiser/internal/dns"
 	"github.com/wegweiserzone/wegweiser/internal/secondary"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
@@ -228,4 +229,63 @@ func keyNames(names []zone.Name) []string {
 		out = append(out, n.String())
 	}
 	return out
+}
+
+// GetSecondaryStatus says where each secondary stands on each zone.
+//
+// A plain read: it carries no secret, only addresses that are already on the
+// notify list, zone names this server is authoritative for, and serials it
+// answers with.
+func (s *Server) GetSecondaryStatus(
+	_ context.Context, _ gen.GetSecondaryStatusRequestObject,
+) (gen.GetSecondaryStatusResponseObject, error) {
+	if s.secondaries == nil {
+		return gen.GetSecondaryStatus200JSONResponse{}, nil
+	}
+
+	standing := s.secondaries.Standing()
+	out := make([]gen.SecondaryStanding, 0, len(standing))
+	for _, st := range standing {
+		entry := gen.SecondaryStanding{
+			Zone:   st.Zone.String(),
+			Target: st.Target.String(),
+			State:  standingState(st.Outcome),
+		}
+		if st.Known {
+			serial := int64(st.Serial.Uint32())
+			entry.Serial = &serial
+		}
+		if st.Outcome == dns.ProbeBehind {
+			lag := int64(st.Lag)
+			entry.Lag = &lag
+		}
+		if !st.At.IsZero() {
+			at := st.At.UTC()
+			entry.AskedAt = &at
+		}
+		out = append(out, entry)
+	}
+	return gen.GetSecondaryStatus200JSONResponse(out), nil
+}
+
+// standingState names what a probe found for the wire. The empty outcome is a
+// pair nothing has come back for yet, which is a state of its own: reporting
+// it as in step would be the one thing this is here to stop.
+func standingState(o dns.ProbeOutcome) gen.SecondaryStandingState {
+	switch o {
+	case dns.ProbeInStep:
+		return gen.SecondaryStandingStateInStep
+	case dns.ProbeBehind:
+		return gen.SecondaryStandingStateBehind
+	case dns.ProbeAhead:
+		return gen.SecondaryStandingStateAhead
+	case dns.ProbeUnordered:
+		return gen.SecondaryStandingStateUnordered
+	case dns.ProbeSilent:
+		return gen.SecondaryStandingStateSilent
+	case dns.ProbeNoSerial:
+		return gen.SecondaryStandingStateNoSerial
+	default:
+		return gen.SecondaryStandingStateUnasked
+	}
 }

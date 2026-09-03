@@ -10,6 +10,13 @@ public API is unstable and may change without a deprecation period.
 
 ### Added
 
+#### API
+
+- `GET /secondary-status` says where each secondary stands: one entry per zone
+  per address on the notify list, with the serial that secondary last reported,
+  how many commits behind it is, and when it was last asked. A pair nothing has
+  come back for yet reads `unasked` rather than passing for up to date.
+
 #### Observation
 
 - Whether a secondary is in step is asked rather than assumed. Once a zone has been notified,

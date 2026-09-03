@@ -9,6 +9,8 @@ import (
 	"hash/maphash"
 	"net"
 	"net/netip"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -173,6 +175,68 @@ type probeState struct {
 	// secondary. It has been told and has not had its chance yet, so a serial
 	// behind ours says nothing (D36).
 	suppressed bool
+
+	// last is what the most recent finished question established, which is
+	// what [Prober.Standing] reports. A pair that has not been asked yet has
+	// the zero outcome, which is a state of its own rather than a good one.
+	last struct {
+		outcome ProbeOutcome
+		serial  zone.Serial
+		// known says whether serial was read from an answer. A secondary that
+		// went quiet keeps the last serial anybody saw, and this is what
+		// stops that being mistaken for a current reading.
+		known bool
+		lag   uint32
+		at    time.Time
+	}
+}
+
+// ProbeStanding is what is known about one zone on one secondary. It is a
+// picture of the moment it was taken and is not held in step with anything.
+type ProbeStanding struct {
+	Zone   zone.Name
+	Target netip.AddrPort
+
+	// Outcome is what the last finished question found, or the empty string
+	// where the pair has not been asked yet.
+	Outcome ProbeOutcome
+
+	// Serial is what the secondary last said it holds, and Known whether it
+	// ever said. A secondary that has gone quiet keeps the last serial it gave
+	// while its outcome says the reading is old.
+	Serial zone.Serial
+	Known  bool
+
+	// Lag is how many commits behind that serial is, where the last question
+	// found the secondary behind.
+	Lag uint32
+
+	// At is when the last question finished.
+	At time.Time
+}
+
+// Standing reports what is known about every pair, ordered by zone and then by
+// secondary so that asking twice reads the same way twice.
+func (p *Prober) Standing() []ProbeStanding {
+	p.mu.Lock()
+	out := make([]ProbeStanding, 0, len(p.pending))
+	for key, st := range p.pending {
+		out = append(out, ProbeStanding{
+			Zone: key.zone, Target: key.addr,
+			Outcome: st.last.outcome,
+			Serial:  st.last.serial, Known: st.last.known,
+			Lag: st.last.lag, At: st.last.at,
+		})
+	}
+	p.mu.Unlock()
+
+	slices.SortFunc(out, func(a, b ProbeStanding) int {
+		if c := strings.Compare(a.Zone.String(), b.Zone.String()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Target.String(), b.Target.String())
+	})
+	return out
 }
 
 // NewProber returns a prober that has not opened its socket yet.
@@ -347,6 +411,9 @@ func (p *Prober) round(now time.Time) time.Duration {
 			// out rather than turning into a stream of questions.
 			st.id, st.deadline = 0, time.Time{}
 			p.retry(st, now)
+			// The serial anybody last saw is kept, and stops being a current
+			// reading: what it holds now is exactly what nobody knows.
+			st.last.outcome, st.last.lag, st.last.at = ProbeSilent, 0, now
 			nextDue = min(nextDue, st.due.Sub(now))
 			silent = append(silent, ProbeEvent{Zone: key.zone, Target: key.addr, Outcome: ProbeSilent})
 
@@ -504,16 +571,22 @@ func (p *Prober) answer(m *wire.Msg, from netip.AddrPort) {
 		return
 	}
 
-	ev := p.compare(key, theirSerial(m))
+	theirs := theirSerial(m)
+	ev := p.compare(key, theirs)
+	now := time.Now()
 
 	p.mu.Lock()
 	st, still := p.pending[key]
 	if still {
 		if ev.Outcome == ProbeInStep {
 			st.backoff = 0
-			st.due = time.Now().Add(p.cfg.Floor)
+			st.due = now.Add(p.cfg.Floor)
 		} else {
-			p.retry(st, time.Now())
+			p.retry(st, now)
+		}
+		st.last.outcome, st.last.lag, st.last.at = ev.Outcome, ev.Lag, now
+		if theirs != nil {
+			st.last.serial, st.last.known = *theirs, true
 		}
 		// A notification went out while this was being worked out, which is
 		// the same reason as above to keep quiet about it.

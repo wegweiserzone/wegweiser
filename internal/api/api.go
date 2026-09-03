@@ -83,6 +83,16 @@ type Notifier interface {
 	SetTargets(targets []dns.NotifyTarget)
 }
 
+// Secondaries reports where each secondary stands on each zone, as the probes
+// have found it. A *dns.Prober is one.
+//
+// It is optional. A server running without one knows nothing about any
+// secondary and says so by having nothing to report, which is the same answer
+// a server whose notify list is empty gives.
+type Secondaries interface {
+	Standing() []dns.ProbeStanding
+}
+
 // Config is what a [Server] needs.
 type Config struct {
 	// Store is the source of truth. It is read directly and written only
@@ -108,6 +118,10 @@ type Config struct {
 	// Keyring is where the TSIG keys are published after one is created or
 	// withdrawn. May be nil, which is what a test without a query path passes.
 	Keyring Keyring
+
+	// Secondaries is where each secondary stands, for the status endpoint.
+	// Optional; without it there is nothing to report.
+	Secondaries Secondaries
 
 	// Notifier tells the secondaries a zone changed, once the snapshot saying
 	// so has been published (docs/decisions/d27-notify.md). May be nil, and then
@@ -140,16 +154,17 @@ type Config struct {
 
 // Server implements the generated API.
 type Server struct {
-	store     store.Store
-	applier   *apply.Applier
-	snapshots Snapshots
-	transfers TransferList
-	keyring   Keyring
-	notifier  Notifier
-	metrics   *metrics.Metrics
-	stream    *stream.Hub
-	onError   func(error)
-	now       func() time.Time
+	store       store.Store
+	applier     *apply.Applier
+	snapshots   Snapshots
+	transfers   TransferList
+	keyring     Keyring
+	notifier    Notifier
+	secondaries Secondaries
+	metrics     *metrics.Metrics
+	stream      *stream.Hub
+	onError     func(error)
+	now         func() time.Time
 
 	limiter  *authLimiter
 	sessions *sessionStore
@@ -187,20 +202,21 @@ func New(cfg Config) (*Server, http.Handler, error) {
 	}
 
 	s := &Server{
-		store:     cfg.Store,
-		applier:   cfg.Applier,
-		snapshots: cfg.Snapshots,
-		transfers: cfg.Transfers,
-		keyring:   cfg.Keyring,
-		notifier:  cfg.Notifier,
-		metrics:   cfg.Metrics,
-		stream:    cfg.Stream,
-		onError:   cfg.OnError,
-		now:       cfg.Now,
-		limiter:   newAuthLimiter(),
-		sessions:  newSessionStore(),
-		tokenUse:  newTokenUse(),
-		done:      make(chan struct{}),
+		store:       cfg.Store,
+		applier:     cfg.Applier,
+		snapshots:   cfg.Snapshots,
+		transfers:   cfg.Transfers,
+		keyring:     cfg.Keyring,
+		notifier:    cfg.Notifier,
+		secondaries: cfg.Secondaries,
+		metrics:     cfg.Metrics,
+		stream:      cfg.Stream,
+		onError:     cfg.OnError,
+		now:         cfg.Now,
+		limiter:     newAuthLimiter(),
+		sessions:    newSessionStore(),
+		tokenUse:    newTokenUse(),
+		done:        make(chan struct{}),
 	}
 	if cfg.UI {
 		ui, err := newWebUI()

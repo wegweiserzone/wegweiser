@@ -272,16 +272,17 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 	}
 
 	apiSrv, handler, err := api.New(api.Config{
-		Store:     st,
-		Applier:   applier,
-		Snapshots: snapshots,
-		Transfers: srv,
-		Keyring:   keyPublishers{server: srv, notifier: notifier},
-		Notifier:  notifyPublishers{notifier: notifier, prober: prober},
-		Metrics:   met,
-		Stream:    tail,
-		UI:        cfg.APIUI.Value,
-		OnError:   report,
+		Store:       st,
+		Applier:     applier,
+		Snapshots:   snapshots,
+		Transfers:   srv,
+		Keyring:     keyPublishers{server: srv, notifier: notifier},
+		Notifier:    notifyPublishers{notifier: notifier, prober: prober},
+		Secondaries: prober,
+		Metrics:     met,
+		Stream:      tail,
+		UI:          cfg.APIUI.Value,
+		OnError:     report,
 	})
 	if err != nil {
 		return err

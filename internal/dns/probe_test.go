@@ -391,3 +391,61 @@ func TestProbeAsksForTheStartOfAuthorityWithoutRecursion(t *testing.T) {
 		t.Errorf("it asks %s %s, want %s SOA", q.Name, wire.TypeToString[q.Qtype], apex)
 	}
 }
+
+func TestProbeStandingReportsWhatWasFound(t *testing.T) {
+	t.Parallel()
+
+	z, snap := ixfrZone(t, 12)
+	sec := newAnswerer(t, 9, false)
+	c := new(probeLog)
+
+	p := startProber(t, ProbeConfig{
+		Targets:   []NotifyTarget{{Addr: sec.addr}},
+		Snapshots: holder{snap},
+		Observe:   c.observe,
+		Floor:     20 * time.Millisecond,
+	})
+
+	settled(t, c)
+	standing := p.Standing()
+	if len(standing) != 1 {
+		t.Fatalf("Standing reports %d pairs, want one", len(standing))
+	}
+
+	got := standing[0]
+	if !got.Zone.Equal(z.Name) || got.Target != sec.addr {
+		t.Errorf("it reports %s at %s, want %s at %s", got.Zone, got.Target, z.Name, sec.addr)
+	}
+	if got.Outcome != ProbeBehind {
+		t.Errorf("the outcome is %s, want %s", got.Outcome, ProbeBehind)
+	}
+	if !got.Known || got.Serial != zone.NewSerial(9) {
+		t.Errorf("it holds serial %v (known %v), want 9", got.Serial, got.Known)
+	}
+	if got.Lag != 3 {
+		t.Errorf("it is %d commits behind, want 3", got.Lag)
+	}
+	if got.At.IsZero() {
+		t.Error("the reading carries no time")
+	}
+}
+
+// A pair the sweep has scheduled but not yet asked about is a state of its own,
+// and reporting it as in step would be the one lie this feature exists to stop.
+func TestProbeStandingSaysWhenNothingHasBeenAskedYet(t *testing.T) {
+	t.Parallel()
+
+	_, snap := ixfrZone(t, 12)
+	sec := newAnswerer(t, 12, false)
+
+	p := startProber(t, ProbeConfig{
+		Targets:   []NotifyTarget{{Addr: sec.addr}},
+		Snapshots: holder{snap},
+		Floor:     time.Hour,
+	})
+
+	waitFor(t, "the pair is known", func() bool { return len(p.Standing()) == 1 })
+	if got := p.Standing()[0]; got.Outcome != "" || got.Known {
+		t.Errorf("an unasked pair reports outcome %q (known %v), want neither", got.Outcome, got.Known)
+	}
+}

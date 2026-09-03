@@ -3,11 +3,15 @@ package api
 import (
 	"io"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/dns"
+	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
 // secondaryConfig asks for the configuration the other end of a transfer needs.
@@ -305,5 +309,92 @@ func TestSecondaryConfigNamesAPortOnlyWhenItIsNotTheOneMeant(t *testing.T) {
 	moved := h.secondaryConfig(t, q)
 	if !strings.Contains(moved.Content, "address: 2001:db8::1@5353") {
 		t.Errorf("the port is missing:\n%s", moved.Content)
+	}
+}
+
+// standing is a fixed answer from the prober, so that the mapping onto the wire
+// is what the test is about rather than the asking.
+type standing []dns.ProbeStanding
+
+func (s standing) Standing() []dns.ProbeStanding { return s }
+
+// secondaryStatus asks where the secondaries stand.
+func (h *harness) secondaryStatus(t *testing.T) []gen.SecondaryStanding {
+	t.Helper()
+
+	var out []gen.SecondaryStanding
+	h.decode(h.do(http.MethodGet, "/secondary-status", nil), http.StatusOK, &out)
+	return out
+}
+
+func TestSecondaryStatusSaysWhereEachOneStands(t *testing.T) {
+	t.Parallel()
+
+	target := netip.MustParseAddrPort("192.0.2.53:53")
+	asked := time.Date(2026, 9, 2, 10, 0, 0, 0, time.UTC)
+	h := newHarness(t, func(c *Config) {
+		c.Secondaries = standing{
+			{
+				Zone: zone.MustParseName("behind.example."), Target: target,
+				Outcome: dns.ProbeBehind, Serial: zone.NewSerial(9), Known: true,
+				Lag: 3, At: asked,
+			},
+			{
+				Zone: zone.MustParseName("current.example."), Target: target,
+				Outcome: dns.ProbeInStep, Serial: zone.NewSerial(12), Known: true,
+				At: asked,
+			},
+			{
+				Zone: zone.MustParseName("unasked.example."), Target: target,
+			},
+		}
+	})
+
+	got := h.secondaryStatus(t)
+	if len(got) != 3 {
+		t.Fatalf("the status holds %d entries, want three", len(got))
+	}
+
+	behind := got[0]
+	if behind.State != gen.SecondaryStandingStateBehind {
+		t.Errorf("the first is %s, want behind", behind.State)
+	}
+	if behind.Lag == nil || *behind.Lag != 3 {
+		t.Errorf("it is %v commits behind, want 3", behind.Lag)
+	}
+	if behind.Serial == nil || *behind.Serial != 9 {
+		t.Errorf("it holds serial %v, want 9", behind.Serial)
+	}
+	if behind.AskedAt == nil || !behind.AskedAt.Equal(asked) {
+		t.Errorf("it was asked at %v, want %v", behind.AskedAt, asked)
+	}
+	if behind.Target != target.String() {
+		t.Errorf("the target is %s, want %s", behind.Target, target)
+	}
+
+	// A lag belongs to a secondary that is behind, and to no other state.
+	if current := got[1]; current.State != gen.SecondaryStandingStateInStep || current.Lag != nil {
+		t.Errorf("the second is %s carrying lag %v, want inStep carrying none", current.State, current.Lag)
+	}
+
+	// Nothing has come back for the third, and saying it is in step would be
+	// the one thing this endpoint exists to stop.
+	unasked := got[2]
+	if unasked.State != gen.SecondaryStandingStateUnasked {
+		t.Errorf("the third is %s, want unasked", unasked.State)
+	}
+	if unasked.Serial != nil || unasked.AskedAt != nil {
+		t.Errorf("it carries serial %v asked at %v, want neither", unasked.Serial, unasked.AskedAt)
+	}
+}
+
+// A server running without a prober knows nothing about any secondary, which
+// is the same answer one with an empty notify list gives.
+func TestSecondaryStatusIsEmptyWithoutAProber(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	if got := h.secondaryStatus(t); len(got) != 0 {
+		t.Errorf("the status holds %d entries, want none", len(got))
 	}
 }
