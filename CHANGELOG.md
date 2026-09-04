@@ -24,6 +24,11 @@ public API is unstable and may change without a deprecation period.
 
 #### Web interface
 
+- The history opens on what people did. One change to an address record writes
+  the reverse entry too, in a zone nobody named, and those commits were listed
+  as peers of the change that caused them. Everything brings them back, marked
+  as having followed and set below the change they came from.
+
 - A Secondaries section, listing every zone on every address the notify list
   names, with the state each one is in, the serial it last reported and when it
   was last asked. Being in step is the only quiet state; a zone nothing has come
@@ -70,6 +75,12 @@ public API is unstable and may change without a deprecation period.
   reverse entries, and the zone transfer.
 
 ### Fixed
+
+- A filter in the interface that takes several values now sends them. A query
+  parameter given a list was joined with commas into a single value, which the
+  server reads as one name that matches nothing, so such a filter came back
+  empty rather than wrong. Only single-valued filters existed until now, which
+  is why nothing had shown it.
 
 - A change and the reverse entries it causes are recorded at one time rather
   than at several a fraction of a millisecond apart. One command was accepted at

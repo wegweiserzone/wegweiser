@@ -258,7 +258,18 @@ export class Client {
 
     const url = new URL(fill(String(path), sent?.path), location.origin);
     for (const [key, value] of Object.entries(sent?.query ?? {})) {
-      if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+      if (value === undefined || value === null) continue;
+      // An array is repeated rather than joined, which is what the spec's
+      // default style for a query parameter means. String(["a", "b"]) would
+      // send one value spelled "a,b", and a server reading it as one value
+      // matches nothing at all rather than failing.
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item !== undefined && item !== null) url.searchParams.append(key, String(item));
+        }
+        continue;
+      }
+      url.searchParams.set(key, String(value));
     }
 
     const response = await this.#fetch(method, url, {
