@@ -61,6 +61,14 @@ public API is unstable and may change without a deprecation period.
 
 ### Fixed
 
+- A rollback no longer fails on a zone whose reverse entries live in an RFC 2317
+  delegation. Putting one back means rebuilding a chain two links long, the
+  entry in the classless child and the delegation the parent carries, and the
+  rows were being written in an order the provenance link does not allow, so
+  the change was refused with an error naming nothing an operator could act on.
+  Any change rebuilding such a chain could hit it, not only a rollback; the
+  order only happened to come out right for the shape an ordinary edit makes.
+
 - `weg config show` reports `dns.maxTransfers`, and names `WEG_MAX_TRANSFERS` among the
   environment variables it lists. The setting has been read from the file, the environment
   and the flag since it existed; the one command whose job is to say what a server would

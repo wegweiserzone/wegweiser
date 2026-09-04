@@ -254,16 +254,21 @@ func (cs *changeSet) ordered(pick func(*changes) []zone.Record, dependentsFirst 
 				continue
 			}
 			out = append(out, r)
-			if r.ManagedBy == "" {
+			if dependentsFirst {
+				// Only what hangs off something releases anything here, and
+				// the root of a chain hangs off nothing.
+				if r.ManagedBy != "" {
+					waiting[r.ManagedBy]--
+				}
 				continue
 			}
-			if dependentsFirst {
-				waiting[r.ManagedBy]--
-			} else {
-				for _, other := range all {
-					if other.ManagedBy == r.ID {
-						waiting[other.ID]--
-					}
+			// What is released is whatever hangs off r, which has nothing to
+			// do with what r itself hangs off. The root of every chain is a
+			// record with no link of its own, so a check for one here would
+			// leave exactly the chains this exists to order still waiting.
+			for _, other := range all {
+				if other.ManagedBy == r.ID {
+					waiting[other.ID]--
 				}
 			}
 		}

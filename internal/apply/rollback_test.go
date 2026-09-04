@@ -400,3 +400,49 @@ func TestRollbackAcrossRecordsAndTheSOA(t *testing.T) {
 		t.Errorf("events = %v, want the SOA leading the deletions", lines)
 	}
 }
+
+// A rollback that has to put a reverse entry back into an RFC 2317 child, and
+// with it the delegation the parent carries, is a chain two links long being
+// rebuilt in one batch (D7). The order those rows go in is what the provenance
+// link requires, and getting it wrong is a foreign key violation rather than a
+// wrong answer.
+func TestRollbackAcrossAClasslessDelegation(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+
+	parent := f.reverseZone("2.0.192.in-addr.arpa.")
+	child := f.reverseZone("0/25.2.0.192.in-addr.arpa.")
+
+	// Inside the delegated range, so the entry lands in the child and the
+	// parent gets the CNAME leading to it.
+	f.mustApply(f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("www.example.com.", zone.TypeA, 3600, "192.0.2.10"),
+	}))
+	target := f.serial()
+	want := f.records()
+
+	// Out of it again, so both come away and a plain entry is written in the
+	// parent instead.
+	www := f.recordAt("www.example.com.", zone.TypeA, "192.0.2.10")
+	f.mustApply(f.command(apply.RecordOp{
+		Action: apply.ActionUpdate, RecordID: www.ID,
+		Record: f.record("www.example.com.", zone.TypeA, 3600, "192.0.2.200"),
+	}))
+
+	if _, err := f.a.Rollback(t.Context(), f.z.ID, target, testMeta()); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+
+	if got := f.records(); !slices.Equal(got, want) {
+		t.Errorf("the zone holds %v, want the state at serial %s: %v", got, target, want)
+	}
+	if got := f.ptrs(child); !slices.Equal(got,
+		[]string{"10.0/25.2.0.192.in-addr.arpa. -> www.example.com."}) {
+		t.Errorf("the classless child holds %v", got)
+	}
+	if got := f.recordsOfType(parent, zone.TypeCNAME); !slices.Equal(got,
+		[]string{"10.2.0.192.in-addr.arpa. -> 10.0/25.2.0.192.in-addr.arpa."}) {
+		t.Errorf("the parent holds %v", got)
+	}
+}
