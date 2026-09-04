@@ -89,3 +89,14 @@ record still owes, and it is owed to the API and the two clients rather than to 
 There are three gauges rather than the two above. A secondary that has gone quiet reports
 nothing behind, because nothing about it is known, and that is indistinguishable from health
 unless something says so: `weg_secondary_zones_unanswered` is what says so.
+
+**A notification is answered before the zone has been fetched.** This record made a pair due
+once its notification finished, on the reading that a secondary which answered has had its
+chance. Against BIND 9.20 that is eleven milliseconds too early: it acknowledges the
+notification, then opens the transfer, and a probe fired in that window reads the serial from
+before the change. The backoff corrects it at the next ask, so nothing stays wrong, but the
+first reading after every change is a `behind` that means only that the transfer had not
+finished yet. That is the noise the rule above exists to prevent, produced by the rule
+itself. What it wants is a short wait after the notification finishes rather than none, and
+what that wait should be derived from is not settled here.
+

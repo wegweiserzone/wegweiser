@@ -77,6 +77,10 @@ is not an extension of D5, whose subject is unrelated to it.
 - **Wire-format response caching** for hot RRsets is an obvious optimisation and is
   deliberately not designed yet. It only earns its complexity if the allocation target in D12
   turns out unreachable without it.
+- **How long a probe waits after a notification finishes.** D36 made a pair due the moment
+  its notification was answered, and a real secondary answers before it has fetched, so the
+  first reading after every change says `behind` when it means "not yet". The record says
+  what is wrong with it; what the wait should be derived from is open.
 - **What D35 means by "under load"** is the one thing that record does not settle. The point
   at which a query carrying no valid cookie is refused rather than answered has to be derived
   from something the server already knows, or the knobs D35 refuses arrive through the other
