@@ -61,6 +61,11 @@ public API is unstable and may change without a deprecation period.
 
 ### Fixed
 
+- A change and the reverse entries it causes are recorded at one time rather
+  than at several a fraction of a millisecond apart. One command was accepted at
+  one moment, and the clock was being read once per zone, which gave the history
+  an order between those commits that nothing meant by it.
+
 - A rollback no longer fails on a zone whose reverse entries live in an RFC 2317
   delegation. Putting one back means rebuilding a chain two links long, the
   entry in the classless child and the delegation the parent carries, and the

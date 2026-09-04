@@ -48,7 +48,12 @@ func newFixtureWith(t *testing.T, opts apply.Options) *fixture {
 	}
 
 	f := &fixture{t: t, s: s, now: time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)}
-	opts.Now = func() time.Time { return f.now }
+	// A caller that brought its own clock keeps it. Overwriting one here would
+	// leave a test that asked for a moving clock quietly running on a still
+	// one, and passing whatever it meant to catch.
+	if opts.Now == nil {
+		opts.Now = func() time.Time { return f.now }
+	}
 	f.a = newApplier(t, s, opts)
 
 	z := newZone(t, "example.com.")
@@ -964,4 +969,34 @@ func (f *fixture) recordID(name string, typ zone.RRType) zone.RecordID {
 	}
 	f.t.Fatalf("no %s record at %s", typ, name)
 	return ""
+}
+
+// A command is accepted at a moment, and every commit it produces happened at
+// that moment. Reading the clock once per zone would put a change and the
+// reverse entries it caused microseconds apart, which is an order between them
+// that nothing means by it.
+func TestOneCommandCarriesOneTime(t *testing.T) {
+	t.Parallel()
+
+	// A clock that moves on every reading, so a second one would be visible.
+	tick := time.Date(2026, time.September, 5, 9, 0, 0, 0, time.UTC)
+	f := newFixtureWith(t, apply.Options{Now: func() time.Time {
+		tick = tick.Add(time.Millisecond)
+		return tick
+	}})
+	f.reverseZone("2.0.192.in-addr.arpa.")
+
+	res, err := f.a.Apply(t.Context(), f.command(apply.RecordOp{
+		Action: apply.ActionAdd,
+		Record: f.record("www.example.com.", zone.TypeA, 3600, "192.0.2.10"),
+	}))
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if len(res.Commits) != 2 {
+		t.Fatalf("the change produced %d commits, want the zone and its reverse", len(res.Commits))
+	}
+	if a, b := res.Commits[0].CreatedAt, res.Commits[1].CreatedAt; !a.Equal(b) {
+		t.Errorf("the commits are stamped %s and %s, want one time for one command", a, b)
+	}
 }

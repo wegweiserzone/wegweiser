@@ -358,6 +358,12 @@ func (a *Applier) plan(
 ) (*Batch, error) {
 	b := &Batch{set: cs}
 
+	// One reading for the whole batch. A command was accepted at a moment, and
+	// the commits it produces across zones happened at that moment rather than
+	// at several a microsecond apart; reading the clock per zone also gives
+	// the history an order between them that means nothing.
+	at := a.now()
+
 	for _, zid := range cs.order {
 		ch := cs.byZone[zid]
 		if ch.empty() {
@@ -385,7 +391,7 @@ func (a *Applier) plan(
 			Actor:      zoneMeta.Actor,
 			Comment:    zoneMeta.Comment,
 			Events:     ch.events(),
-			CreatedAt:  a.now(),
+			CreatedAt:  at,
 		}
 		if zid == primary.ID {
 			commit.RevertsTo = revertsTo
