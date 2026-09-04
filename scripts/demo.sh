@@ -86,15 +86,38 @@ start() {
   WEG_TOKEN=$(grep -oE 'weg_[A-Za-z0-9_-]+' "$DIR/log" | head -1)
   export WEG_TOKEN
 
-  weg() { ./bin/weg "$@" >/dev/null; }
+  # The advisory notes the CLI writes to standard error are for somebody
+  # setting a server up rather than for somebody watching one fill itself, so
+  # they go to the log. A failure goes there too, and is then shown: `set -e`
+  # would otherwise end the demonstration without saying what stopped it.
+  weg() {
+    if ! ./bin/weg "$@" >/dev/null 2>>"$DIR/log"; then
+      echo "the demo stopped at: weg $*" >&2
+      tail -3 "$DIR/log" >&2
+      exit 1
+    fi
+  }
 
-  # A forward zone and the two reverse zones it will write into. Creating the
-  # reverse zones is deliberate: they are offered, never conjured (D6).
+  local host=${DNS%:*} port=${DNS##*:}
+
+  # --- the network --------------------------------------------------------
+  # A forward zone and the reverse zones it writes into. The reverse zones are
+  # created rather than conjured: they are offered, never invented (D6).
   weg zone create example.com --ttl 3600
   weg zone create internal.lan --ttl 300
   weg zone create staging.example.com --ttl 60
   weg zone create 0.168.192.in-addr.arpa
   weg zone create 8.b.d.0.1.0.0.2.ip6.arpa
+
+  # A slice of that /24, delegated the way RFC 2317 describes. A host inside it
+  # gets its reverse entry here, and the parent gets the CNAME pointing at it,
+  # without anybody writing either one (D7).
+  weg zone create 192.168.0.192/26
+
+  # example.com answers for its own name server, so its check comes back clean.
+  # staging is left without one on purpose: it is the zone with something to
+  # find.
+  weg record add example.com ns1 A 192.168.0.2
 
   weg record add example.com @      A     192.168.0.10
   weg record add example.com @      AAAA  2001:db8::10
@@ -109,19 +132,86 @@ start() {
 
   weg record add internal.lan nas A 192.168.0.71
   weg record add internal.lan pbx A 192.168.0.80
+  weg record add internal.lan cam A 192.168.0.200
 
+  # --- what makes it worth looking at -------------------------------------
+  # A second name on one address. The record is written and the reverse entry
+  # is not, and both the write and the zone check say so rather than one name
+  # quietly taking the address from the other (D3).
+  weg record add example.com smtp A 192.168.0.25
 
-  local host=${DNS%:*} port=${DNS##*:}
+  # A change, and the regret. The rollback writes forward to a new serial
+  # rather than rewinding to an old one, because a secondary that has already
+  # seen serial 14 will never ask for it again (D2). The history screen is
+  # where this reads.
+  local before
+  before=$(./bin/weg zone show example.com | awk '/^serial/{print $2}')
+  weg record update example.com vpn A 192.168.0.99 --data 192.168.0.250 \
+    --comment "move the vpn endpoint"
+  weg zone rollback example.com "$before" --yes --comment "it was not the vpn"
+
+  # --- the other end of a transfer ----------------------------------------
+  # A key, the transfer list it has to reach to grant anything, and the list of
+  # who is told when a zone changes. Nobody is on either list until somebody is
+  # named (D26, D27), which is why a demonstration has to name one.
+  weg tsig create ns2.example.com.
+  weg settings set --transfer-allow "key:ns2.example.com." --notify 192.168.0.53
+
+  # A token that may read and nothing else, so the tokens screen shows what
+  # scopes are for.
+  weg token create reader --scope read
+
+  # --- something to have answered -----------------------------------------
+  # Without this the first screen a demonstration opens is empty. A spread
+  # rather than a flood: two transports, several types, and the three response
+  # codes an authoritative server has to tell apart.
+  if command -v dig >/dev/null; then
+    ask() { dig +tries=1 +timeout=1 "@$host" -p "$port" "$@" >/dev/null 2>&1 || true; }
+    ask www.example.com A
+    ask example.com MX
+    ask example.com TXT
+    ask mail.example.com AAAA
+    ask nas.internal.lan A
+    ask anything.dev.example.com A
+    ask example.com ANY
+    ask example.com AXFR +tcp
+    ask -x 192.168.0.25
+    ask -x 192.168.0.200
+    ask -x 2001:db8::10
+    # A name in a zone this server holds, and one in a zone it does not:
+    # NXDOMAIN and REFUSED are different answers and the overview separates
+    # them (D17).
+    ask nope.example.com A
+    ask notmine.test A
+  fi
+
   cat <<READY
 
   open    http://$API/
   token   $WEG_TOKEN
 
+  The zones a small network has, and the reverse entries nobody wrote.
+
+    Zones          192.168.0.200 reverses inside 192/26.0.168.192.in-addr.arpa.,
+                   and the /24 above it holds the CNAME that leads there. The
+                   other hosts reverse in the /24 directly.
+    example.com    check it: smtp and mail share an address, so one of them has
+                   the reverse entry and the check says which.
+    History        an edit and the rollback that undid it, both written
+                   forward. Open the rollback and diff it.
+    Secondaries    192.168.0.53 is on the notify list and nobody runs it, so
+                   every zone reads unasked. Set one up writes the file BIND or
+                   Knot would need.
+    Overview       what the queries below did.
+
   queries dig +short @$host -p $port www.example.com
           dig +short @$host -p $port -x 192.168.0.25    # the PTR nobody wrote
+          dig +short @$host -p $port -x 192.168.0.200   # and one through a CNAME
 
   cli     export WEG_SERVER=http://$API WEG_TOKEN=$WEG_TOKEN
           ./bin/weg zone list
+          ./bin/weg secondary status
+          ./bin/weg zone check example.com --reverse
 
   stop    make demo-stop
 READY
