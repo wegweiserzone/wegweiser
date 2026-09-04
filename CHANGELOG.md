@@ -47,6 +47,18 @@ public API is unstable and may change without a deprecation period.
   One that has gone quiet reports nothing behind, because nothing about it is known, and
   without this that is indistinguishable from one that is up to date.
 
+### Changed
+
+#### Web interface
+
+- Writing the configuration a secondary needs has moved from Settings to
+  Secondaries, where the CLI has always kept it as `weg secondary config`. It is
+  a tool rather than a setting, so it opens as a dialog from that page's bar
+  instead of sitting on the settings screen.
+- Settings is the three server-wide settings and nothing else, in a centred
+  column, each in a panel of its own and grouped under what it belongs to: the
+  reverse entries, and the zone transfer.
+
 ### Fixed
 
 - `weg config show` reports `dns.maxTransfers`, and names `WEG_MAX_TRANSFERS` among the

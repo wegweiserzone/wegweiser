@@ -9,13 +9,16 @@
    */
   import { goto } from "$app/navigation";
   import { api, ApiError, NetworkError } from "$lib/api";
-  import type { SecondaryStanding } from "$lib/api";
+  import type { SecondaryConfig, SecondaryFormat, SecondaryStanding } from "$lib/api";
   import { ago, exact } from "$lib/format";
+  import { session } from "$lib/session.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import Button from "$lib/components/Button.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import Empty from "$lib/components/Empty.svelte";
+  import Field from "$lib/components/Field.svelte";
   import Notice from "$lib/components/Notice.svelte";
+  import Dialog from "$lib/components/Dialog.svelte";
   import Table from "$lib/components/Table.svelte";
   import type { Column } from "$lib/components/Table.svelte";
 
@@ -70,6 +73,76 @@
   let loading = $state(true);
   let trouble = $state<string | null>(null);
 
+  /**
+   * The other half of the job this page is for: the file the second nameserver
+   * needs. In a dialog rather than on the page, because what brings somebody
+   * here is the table, and setting a secondary up is an errand with a beginning
+   * and an end.
+   */
+  let setting = $state(false);
+  let format = $state<SecondaryFormat>("bind");
+  let primary = $state("");
+  let farEnd = $state("");
+  let written = $state<SecondaryConfig | null>(null);
+  let writing = $state(false);
+  let notWritten = $state<string | null>(null);
+  let copied = $state(false);
+
+  const administers = $derived(session.can("admin"));
+
+  /** The software a configuration can be written for. */
+  const formats: { value: SecondaryFormat; label: string }[] = [
+    { value: "bind", label: "BIND" },
+    { value: "knot", label: "Knot" },
+  ];
+
+  /** formatLabel names the software the way it writes its own name. */
+  const formatLabel = (value: SecondaryFormat) =>
+    formats.find((f) => f.value === value)?.label ?? value;
+
+  /**
+   * The address a secondary reaches this server at is asked for rather than
+   * worked out. A server does not know which of its addresses the world uses,
+   * and a hidden primary is named by no record to ask (docs/decisions/ D34).
+   */
+  async function writeConfig() {
+    if (!administers || primary.trim() === "") return;
+    writing = true;
+    notWritten = null;
+    copied = false;
+
+    const query: { format: SecondaryFormat; primary: string; secondary?: string } = {
+      format,
+      primary: primary.trim(),
+    };
+    if (farEnd.trim() !== "") query.secondary = farEnd.trim();
+
+    try {
+      written = await api.get("/secondary-config", { query });
+    } catch (err) {
+      written = null;
+      notWritten =
+        err instanceof ApiError ? (err.detail ?? err.title) : "The configuration was not written.";
+    } finally {
+      writing = false;
+    }
+  }
+
+  /**
+   * The file is long enough that selecting it by hand is a chore. Where the
+   * browser refuses the clipboard, say so rather than appearing to have
+   * copied it.
+   */
+  async function copyConfig() {
+    if (written === null) return;
+    try {
+      await navigator.clipboard.writeText(written.content);
+      copied = true;
+    } catch {
+      notWritten = "This browser did not allow the copy. Select the text instead.";
+    }
+  }
+
   const columns: Column[] = [
     { label: "Secondary", width: "14rem" },
     { label: "Zone" },
@@ -110,12 +183,13 @@
 <Bar title="Secondaries">
   {#snippet actions()}
     <Button onclick={load}>Refresh</Button>
+    <Button onclick={() => (setting = true)}>Set one up</Button>
   {/snippet}
 </Bar>
 
-<div class="flex flex-1 flex-col overflow-auto">
+<div class="flex flex-1 flex-col gap-4 overflow-auto py-4">
   {#if trouble}
-    <div class="px-5 pt-4">
+    <div class="max-w-3xl px-5">
       <Notice tone="crit" title="The secondaries could not be listed">
         {trouble}
         {#snippet actions()}
@@ -126,7 +200,7 @@
   {/if}
 
   {#if !loading && !trouble && standing.length > 0 && wanting > 0}
-    <div class="px-5 pt-4">
+    <div class="max-w-3xl px-5">
       <Notice tone="warn" title="{wanting} of {standing.length} not known to be in step">
         A secondary is asked once a notification to it has been answered or given up on, and
         at least hourly whether anything changed or not. Nothing is reported while a
@@ -177,3 +251,95 @@
     {/snippet}
   </Table>
 </div>
+
+<Dialog bind:open={setting} title="Set a secondary up" size="wide">
+  <p class="text-[12px] text-ink-mute">
+    This server's half of the arrangement is the two lists under Settings. This is the other
+    half, written out for the software running on the second nameserver: every zone here, the
+    reverse ones among them, with the transfer key, its secret and its algorithm spelled the
+    way that program spells it. It is a file to move. This server does not install it, and
+    does not reach the machine it belongs on.
+  </p>
+
+  {#if !administers}
+    <Notice tone="signal" title="Not allowed">
+      The file carries a transfer key's secret, so writing it needs a token with the admin
+      scope, the same as reading that secret does.
+    </Notice>
+  {:else}
+    <div class="flex flex-wrap items-end gap-3">
+      <div class="min-w-56 flex-1">
+        <Field
+          label="This server's address"
+          bind:value={primary}
+          disabled={writing}
+          placeholder="192.0.2.1"
+        />
+      </div>
+      <div class="min-w-56 flex-1">
+        <Field
+          label="The secondary's address"
+          bind:value={farEnd}
+          disabled={writing}
+          placeholder="198.51.100.53"
+        />
+      </div>
+    </div>
+    <p class="text-[12px] text-ink-mute">
+      The first is where a secondary reaches this server, and it has to be given: a server
+      does not know which of its addresses the world uses, and a hidden primary is named by no
+      record to ask. The second is optional and goes nowhere in the file. Naming it is what
+      lets the two lists be checked against it rather than only described.
+    </p>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="flex gap-px overflow-hidden rounded-sm border border-line">
+        {#each formats as f (f.value)}
+          <button
+            type="button"
+            onclick={() => (format = f.value)}
+            aria-pressed={format === f.value}
+            class="sign cursor-pointer bg-surface px-3 py-1.5 text-[11px] text-ink-mute
+                   transition-colors hover:bg-raised aria-pressed:bg-signal-lo
+                   aria-pressed:text-signal"
+          >
+            {f.label}
+          </button>
+        {/each}
+      </div>
+      <Button weight="primary" disabled={writing || primary.trim() === ""} onclick={writeConfig}>
+        {writing ? "Writing…" : "Write it"}
+      </Button>
+    </div>
+
+    {#if notWritten}
+      <Notice tone="crit" title="The configuration was not written">{notWritten}</Notice>
+    {/if}
+
+    {#if written}
+      {#if written.warnings.length > 0}
+        <Notice tone="warn" title="The file is written; the arrangement is not finished">
+          <ul class="flex list-disc flex-col gap-1 pl-4">
+            {#each written.warnings as warning (warning)}
+              <li>{warning}</li>
+            {/each}
+          </ul>
+        </Notice>
+      {/if}
+
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center justify-between gap-3">
+          <span class="sign text-[11px] text-ink-faint">For {formatLabel(written.format)}</span>
+          <Button onclick={copyConfig}>{copied ? "Copied" : "Copy"}</Button>
+        </div>
+        <pre
+          class="num max-h-72 overflow-auto rounded-sm border border-line bg-sunken p-4
+                 text-[12px] leading-relaxed text-ink">{written.content}</pre>
+      </div>
+    {/if}
+  {/if}
+
+  {#snippet actions()}
+    <Button weight="quiet" onclick={() => (setting = false)}>Close</Button>
+  {/snippet}
+</Dialog>

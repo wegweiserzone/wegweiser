@@ -7,17 +7,28 @@
   let {
     open = $bindable(false),
     title,
+    size = "default",
     children,
     actions,
     onclose,
   }: {
     open?: boolean;
     title: string;
+    /**
+     * How wide. The default is a question and its answer; wide is for a dialog
+     * that has to show something written rather than ask something.
+     */
+    size?: "default" | "wide";
     children: Snippet;
     actions?: Snippet;
     /** Called however the dialog was dismissed, including by the escape key. */
     onclose?: () => void;
   } = $props();
+
+  const widths: Record<"default" | "wide", string> = {
+    default: "w-[min(30rem,calc(100vw-2rem))]",
+    wide: "w-[min(48rem,calc(100vw-2rem))]",
+  };
 
   let element = $state<HTMLDialogElement | null>(null);
 
@@ -34,9 +45,9 @@
     open = false;
     onclose?.();
   }}
-  class="m-auto w-[min(30rem,calc(100vw-2rem))] rounded-md border border-line bg-surface
-         p-0 text-ink shadow-[var(--shadow-lift)] backdrop:bg-sunken/70
-         backdrop:backdrop-blur-[3px]"
+  class="m-auto max-h-[85vh] rounded-md border border-line bg-surface p-0 text-ink
+         shadow-[var(--shadow-lift)] backdrop:bg-sunken/70 backdrop:backdrop-blur-[3px]
+         {widths[size]}"
 >
   {#if open}
     <div class="flex flex-col">

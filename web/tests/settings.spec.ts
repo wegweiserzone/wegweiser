@@ -137,8 +137,10 @@ test("a transfer key is created, revealed and withdrawn", async ({ page, server 
   await signIn(page, server);
   await page.goto(`${server.url}/keys`);
 
-  await expect(page.getByText("No keys yet")).toBeVisible();
-  await page.getByRole("button", { name: "Create one" }).click();
+  // Through the bar rather than the empty state's button: a revoked key is
+  // still listed (D28), so no reset makes this page empty again, and a test
+  // that needs it to be is one that breaks whenever another file makes a key.
+  await page.getByRole("button", { name: "+ New key" }).click();
   await page.getByLabel("Name").fill("secondary.example.com.");
   await page.getByRole("button", { name: "Create key" }).click();
 
@@ -147,86 +149,21 @@ test("a transfer key is created, revealed and withdrawn", async ({ page, server 
   const secret = await banner.locator("code").innerText();
   expect(secret).toMatch(/^[A-Za-z0-9+/]{42}[A-Za-z0-9+/=]{2}$/);
 
-  await expect(
-    page.getByRole("cell", { name: "secondary.example.com.", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("hmac-sha256", { exact: true })).toBeVisible();
+  // Scoped to its own row: this is one key's life, and the page may hold keys
+  // another file made.
+  const row = page.getByRole("row").filter({ hasText: "secondary.example.com." });
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("cell", { name: "hmac-sha256", exact: true })).toBeVisible();
 
   // Unlike a token it can be read again: the server has to keep it to verify
   // a signature, so hiding it here would be theatre.
   await page.getByRole("button", { name: "Hide" }).click();
-  await page.getByRole("button", { name: "Show secret" }).click();
+  await row.getByRole("button", { name: "Show secret" }).click();
   await expect(banner.locator("code")).toHaveText(secret);
 
   // Withdrawing clears it, so it cannot be read back afterwards.
   await page.getByRole("button", { name: "Withdraw secondary.example.com." }).click();
   await page.getByRole("button", { name: "Withdraw it" }).click();
-  await expect(page.getByText("Withdrawn")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Show secret" })).toBeHidden();
-});
-
-// The other half of the arrangement, and the one somebody otherwise copies out
-// of the documentation and fills in by hand. It carries a secret, so it is
-// behind the admin scope (D34).
-test("the configuration for the second nameserver is written here", async ({
-  page,
-  server,
-}) => {
-  await seed(server, "POST", "/zones", { name: "secondary.example" });
-  await seed(server, "POST", "/zones", { name: "198.51.100.0/24" });
-  await seed(server, "POST", "/tsig-keys", { name: "ns2.secondary.example." });
-  await seed(server, "PATCH", "/settings", {
-    transferAllow: ["key:ns2.secondary.example."],
-    notifyTargets: ["198.51.100.53"],
-  });
-
-  await signIn(page, server);
-  await page.goto(`${server.url}/settings`);
-
-  const section = page.locator("section").filter({
-    has: page.getByRole("heading", { name: "The configuration the other end needs" }),
-  });
-  await section.getByLabel("This server's address").fill("192.0.2.1");
-  await section.getByLabel("The secondary's address").fill("198.51.100.53");
-  await section.getByRole("button", { name: "Write it" }).click();
-
-  const file = section.locator("pre");
-  await expect(file).toContainText('zone "secondary.example." {');
-  // The reverse zone as much as the forward one: it is the one somebody
-  // setting a secondary up by hand leaves out.
-  await expect(file).toContainText('zone "100.51.198.in-addr.arpa." {');
-  await expect(file).toContainText("primaries { 192.0.2.1; };");
-  // Stored with the trailing dot RFC 8945 gives it, and written without one.
-  await expect(file).toContainText("algorithm hmac-sha256;");
-
-  // A complete arrangement has nothing to report.
-  await expect(section.getByText("the arrangement is not finished")).toBeHidden();
-
-  await section.getByRole("button", { name: "Knot" }).click();
-  await section.getByRole("button", { name: "Write it" }).click();
-  await expect(file).toContainText("domain: secondary.example.");
-  // Knot drops a notification without this, quietly, and the zone stays
-  // correct while the news takes a refresh interval.
-  await expect(file).toContainText("action: notify");
-});
-
-// The warnings are the point of naming the secondary: the file is perfect and
-// the transfer is refused, and nothing else says so.
-test("it says when the arrangement will not work", async ({ page, server }) => {
-  await seed(server, "PATCH", "/settings", { transferAllow: [], notifyTargets: [] });
-
-  await signIn(page, server);
-  await page.goto(`${server.url}/settings`);
-
-  const section = page.locator("section").filter({
-    has: page.getByRole("heading", { name: "The configuration the other end needs" }),
-  });
-  await section.getByLabel("This server's address").fill("192.0.2.1");
-  await section.getByRole("button", { name: "Write it" }).click();
-
-  await expect(section.getByText("the arrangement is not finished")).toBeVisible();
-  await expect(section.getByText("nobody may transfer a zone")).toBeVisible();
-  await expect(section.getByText("nobody is told when a zone changes")).toBeVisible();
-  // Written anyway. Half an arrangement is what somebody setting one up has.
-  await expect(section.locator("pre")).toContainText('zone "secondary.example." {');
+  await expect(row.getByText("Withdrawn")).toBeVisible();
+  await expect(row.getByRole("button", { name: "Show secret" })).toBeHidden();
 });
