@@ -229,3 +229,53 @@ func TestRenderRefuses(t *testing.T) {
 		})
 	}
 }
+
+// Knot matches an access rule naming a key only against a signed request, and
+// one naming none only against an unsigned one. Whether a notification carries
+// the key is a setting of its own here, separate from whether a transfer does,
+// so a configuration written from one key has to accept either. With a single
+// rule one of the two arrangements transfers the zone and then drops every
+// notification, which leaves the zone correct and the news a refresh interval
+// late, and nothing anywhere says so.
+func TestKnotTakesANotificationSignedOrNot(t *testing.T) {
+	t.Parallel()
+
+	signed := secondary.Config{
+		Primary: addrPort(t, "192.0.2.1:53"),
+		Zones:   []zone.Name{name(t, "example.com.")},
+		Key: &secondary.Key{
+			Name:      name(t, "ns2.example.com."),
+			Algorithm: zone.HMACSHA256,
+			Secret:    "aG93IG5vdyBicm93biBjb3c=",
+		},
+	}
+
+	var b strings.Builder
+	if err := secondary.Render(&b, secondary.FormatKnot, signed); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	got := b.String()
+
+	for _, want := range []string{
+		"  - id: wegweiser-notify\n    address: 192.0.2.1\n    action: notify\n",
+		"  - id: wegweiser-notify-signed\n    address: 192.0.2.1\n" +
+			"    key: ns2.example.com.\n    action: notify\n",
+		"    acl: [wegweiser-notify, wegweiser-notify-signed]\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the configuration is missing:\n%s\ngot:\n%s", want, got)
+		}
+	}
+
+	// Without a key there is nothing to sign with, so the second rule would
+	// name a key that the file never defines.
+	open := signed
+	open.Key = nil
+	b.Reset()
+	if err := secondary.Render(&b, secondary.FormatKnot, open); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if strings.Contains(b.String(), "wegweiser-notify-signed") {
+		t.Errorf("an unsigned arrangement was given a rule for a key:\n%s", b.String())
+	}
+}

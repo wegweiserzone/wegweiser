@@ -76,6 +76,14 @@ public API is unstable and may change without a deprecation period.
 
 ### Fixed
 
+- The Knot configuration `weg secondary config knot` writes now accepts a
+  notification that carries the transfer key. Knot matches an access rule naming
+  a key only against a signed request and one naming none only against an
+  unsigned one, and only the second was written, so a secondary set up from a
+  key transferred the zone and then dropped every notification: correct data,
+  a refresh interval late, and nothing anywhere saying so. Both rules are
+  written now. A configuration for an arrangement without a key is unchanged.
+
 - A filter in the interface that takes several values now sends them. A query
   parameter given a list was joined with commas into a single value, which the
   server reads as one name that matches nothing, so such a filter came back

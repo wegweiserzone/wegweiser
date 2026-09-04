@@ -12,6 +12,8 @@ import (
 const (
 	knotRemote = "wegweiser"
 	knotACL    = "wegweiser-notify"
+	// knotACLSigned is the same rule for a notification that carries the key.
+	knotACLSigned = "wegweiser-notify-signed"
 )
 
 // renderKnot writes knot.conf syntax for Knot DNS 3.
@@ -37,15 +39,25 @@ func renderKnot(b *strings.Builder, c Config) {
 	// the zone stays correct and the news takes a refresh interval. Nothing
 	// reports it, which is why it is written whether or not anybody asked.
 	//
-	// The address is the whole rule even where there is a key. An ACL naming
-	// one demands a signature, and whether a notification carries one is a
-	// separate setting here from whether a transfer is signed, so a rule that
-	// insisted would drop the notifications of an arrangement that is set up
-	// correctly.
+	// Two rules where there is a key, because one cannot cover both cases. A
+	// rule naming a key matches only a signed request, and a rule naming none
+	// matches only an unsigned one. Whether a notification is signed is a
+	// separate setting here from whether a transfer is, so a secondary
+	// configured from one key has to accept either: with a single rule, one of
+	// the two arrangements fetches the zone and then drops every notification,
+	// and the zone stays correct while the news takes a refresh interval.
+	// Nothing reports that, which is why both are written whether or not
+	// anybody asked.
 	b.WriteString("\nacl:\n")
 	fmt.Fprintf(b, "  - id: %s\n", knotACL)
 	fmt.Fprintf(b, "    address: %s\n", c.Primary.Addr())
 	b.WriteString("    action: notify\n")
+	if c.Key != nil {
+		fmt.Fprintf(b, "  - id: %s\n", knotACLSigned)
+		fmt.Fprintf(b, "    address: %s\n", c.Primary.Addr())
+		fmt.Fprintf(b, "    key: %s\n", c.Key.Name)
+		b.WriteString("    action: notify\n")
+	}
 
 	if c.ZoneDir != "" {
 		b.WriteString("\ntemplate:\n")
@@ -60,7 +72,11 @@ func renderKnot(b *strings.Builder, c Config) {
 	for _, z := range c.Zones {
 		fmt.Fprintf(b, "  - domain: %s\n", z)
 		fmt.Fprintf(b, "    master: %s\n", knotRemote)
-		fmt.Fprintf(b, "    acl: %s\n", knotACL)
+		if c.Key != nil {
+			fmt.Fprintf(b, "    acl: [%s, %s]\n", knotACL, knotACLSigned)
+		} else {
+			fmt.Fprintf(b, "    acl: %s\n", knotACL)
+		}
 	}
 }
 
