@@ -45,7 +45,10 @@ type server struct {
 	store store.Store
 }
 
-func newServer(t *testing.T) server {
+// newServer starts one, with the API configured the way `weg serve` configures
+// it. A tweak adjusts that configuration for a test that needs a dependency
+// this helper has no reason to build, the way the API's own harness does.
+func newServer(t *testing.T, tweak ...func(*api.Config)) server {
 	t.Helper()
 
 	st, err := sqlite.Open(t.Context(), sqlite.Options{Path: filepath.Join(t.TempDir(), "weg.db")})
@@ -81,11 +84,15 @@ func newServer(t *testing.T) server {
 	holder := &snapshots{current: snap}
 
 	hub := stream.NewHub(stream.Options{})
-	apiSrv, handler, err := api.New(api.Config{
+	cfg := api.Config{
 		Store: st, Applier: applier, Snapshots: holder,
 		Metrics: metrics.New(), Stream: hub,
 		OnError: func(err error) { t.Errorf("the server reported a fault: %v", err) },
-	})
+	}
+	for _, adjust := range tweak {
+		adjust(&cfg)
+	}
+	apiSrv, handler, err := api.New(cfg)
 	if err != nil {
 		t.Fatalf("build the API: %v", err)
 	}

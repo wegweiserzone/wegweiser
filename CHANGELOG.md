@@ -17,6 +17,14 @@ public API is unstable and may change without a deprecation period.
   how many commits behind it is, and when it was last asked. A pair nothing has
   come back for yet reads `unasked` rather than passing for up to date.
 
+#### CLI
+
+- `weg secondary status` says what each secondary holds: one line per zone per
+  address on the notify list, with its serial, how many commits behind that
+  leaves it, and when it was last asked. A zone nothing has come back for yet
+  reads `unasked` rather than passing for up to date, and a dash rather than a
+  zero says the same thing in the columns beside it.
+
 #### Observation
 
 - Whether a secondary is in step is asked rather than assumed. Once a zone has been notified,

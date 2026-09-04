@@ -2,8 +2,14 @@ package cli
 
 import (
 	"encoding/json"
+	"net/netip"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/wegweiserzone/wegweiser/internal/api"
+	"github.com/wegweiserzone/wegweiser/internal/dns"
+	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
 func TestSecondaryConfig(t *testing.T) {
@@ -149,5 +155,85 @@ func TestSecondaryConfigForSoftwareNobodyWritesFor(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "no configuration is written for") {
 		t.Errorf("the refusal does not say what is offered instead:\n%s", errOut)
+	}
+}
+
+// standing is a fixed answer from the prober, so that the command is what the
+// test is about rather than the asking.
+type standing []dns.ProbeStanding
+
+func (s standing) Standing() []dns.ProbeStanding { return s }
+
+func TestSecondaryStatus(t *testing.T) {
+	t.Parallel()
+
+	target := netip.MustParseAddrPort("198.51.100.53:53")
+	asked := time.Now().Add(-90 * time.Second)
+	srv := newServer(t, func(c *api.Config) {
+		c.Secondaries = standing{
+			{
+				Zone: zone.MustParseName("example.com."), Target: target,
+				Outcome: dns.ProbeBehind, Serial: zone.NewSerial(9), Known: true,
+				Lag: 3, At: asked,
+			},
+			{
+				Zone: zone.MustParseName("other.example."), Target: target,
+				Outcome: dns.ProbeInStep, Serial: zone.NewSerial(12), Known: true,
+				At: asked,
+			},
+			{Zone: zone.MustParseName("fresh.example."), Target: target},
+		}
+	})
+
+	t.Run("the table says how far behind each one is", func(t *testing.T) {
+		out := mustRun(t, srv, "secondary", "status")
+		for _, want := range []string{
+			"SECONDARY", "ZONE", "STATE", "SERIAL", "BEHIND", "ASKED",
+			"198.51.100.53:53", "example.com.", "in step", "unasked", "1m ago",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("the table is missing %q:\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("a zone nothing came back for is not reported as up to date", func(t *testing.T) {
+		out := mustRun(t, srv, "secondary", "status", "--output", "json")
+
+		var got []secondaryStanding
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("decode: %v\n%s", err, out)
+		}
+		if len(got) != 3 {
+			t.Fatalf("%d entries, want three", len(got))
+		}
+
+		var fresh *secondaryStanding
+		for i := range got {
+			if got[i].Zone == "fresh.example." {
+				fresh = &got[i]
+			}
+		}
+		if fresh == nil {
+			t.Fatalf("the unasked zone is missing:\n%s", out)
+		}
+		if fresh.State != "unasked" {
+			t.Errorf("it reads %q, want unasked", fresh.State)
+		}
+		if fresh.Serial != nil || fresh.Lag != nil || fresh.AskedAt != nil {
+			t.Errorf("it carries serial %v, lag %v, asked %v, want none of them",
+				fresh.Serial, fresh.Lag, fresh.AskedAt)
+		}
+	})
+}
+
+// An empty notify list has nothing to ask, and saying so beats an empty table.
+func TestSecondaryStatusWithNobodyToAsk(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+
+	out := mustRun(t, srv, "secondary", "status")
+	if !strings.Contains(out, "weg settings") {
+		t.Errorf("the empty report does not point at where the list is:\n%s", out)
 	}
 }

@@ -9,10 +9,12 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/cli/output"
 	"github.com/wegweiserzone/wegweiser/internal/secondary"
 )
 
@@ -36,6 +38,7 @@ func newSecondaryCommand(opts *options) *cobra.Command {
 	f.register(cmd)
 
 	cmd.AddCommand(newSecondaryConfigCommand(opts, &f))
+	cmd.AddCommand(newSecondaryStatusCommand(opts, &f))
 	return cmd
 }
 
@@ -231,4 +234,121 @@ func completeSecondaryArgs(f *clientFlags) cobra.CompletionFunc {
 		// is the only argument. Here every argument after the software is one.
 		return completeZones(f)(c, nil, prefix)
 	}
+}
+
+// secondaryStanding is where one secondary stands on one zone, as the command
+// reports it.
+type secondaryStanding struct {
+	Target  string     `json:"target"`
+	Zone    string     `json:"zone"`
+	State   string     `json:"state"`
+	Serial  *int64     `json:"serial,omitempty"`
+	Lag     *int64     `json:"lag,omitempty"`
+	AskedAt *time.Time `json:"askedAt,omitempty"`
+}
+
+func newSecondaryStatusCommand(opts *options, f *clientFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Say what each secondary holds",
+		Long: "One line per zone per secondary on the notify list, with the serial\n" +
+			"that secondary last said it holds and how far behind this server that\n" +
+			"leaves it.\n\n" +
+			"A secondary is asked once a notification to it has been answered or\n" +
+			"given up on, and at least hourly whether anything changed or not.\n" +
+			"Until the first question about a pair has come back it reads unasked,\n" +
+			"which is not the same as up to date.\n\n" +
+			"Who is asked is who is told: `weg settings` holds that list, and an\n" +
+			"empty one has nothing to report here.",
+		Args:    usageArgs(cobra.NoArgs),
+		Example: "  weg secondary status\n  weg secondary status --output json",
+		RunE: func(c *cobra.Command, _ []string) error {
+			return runSecondaryStatus(c.Context(), opts, f)
+		},
+	}
+}
+
+func runSecondaryStatus(ctx context.Context, opts *options, f *clientFlags) error {
+	client, err := f.client()
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.GetSecondaryStatusWithResponse(ctx)
+	if err != nil {
+		return reachable(err, f.server)
+	}
+	if resp.JSON200 == nil {
+		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
+	}
+
+	standing := *resp.JSON200
+	listed := make([]secondaryStanding, 0, len(standing))
+	for i := range standing {
+		st := &standing[i]
+		listed = append(listed, secondaryStanding{
+			Target: st.Target, Zone: st.Zone, State: string(st.State),
+			Serial: st.Serial, Lag: st.Lag, AskedAt: st.AskedAt,
+		})
+	}
+
+	p := opts.Printer()
+	return p.Print(listed, func(w io.Writer) error {
+		if len(listed) == 0 {
+			_, werr := fmt.Fprintln(w,
+				"nothing to report. `weg settings` names who is told when a zone changes, "+
+					"and those are who this asks")
+			return werr
+		}
+
+		t := newTable(w, "SECONDARY", "ZONE", "STATE", "SERIAL", "BEHIND", "ASKED")
+		for i := range listed {
+			st := &listed[i]
+			t.row(st.Target, st.Zone,
+				p.Paint(standingColour(st.State), standingWord(st.State)),
+				optionalNumber(st.Serial), behindColumn(st.Lag), since(st.AskedAt))
+		}
+		return t.flush()
+	})
+}
+
+// standingWord is the state as a reader wants it rather than as the wire
+// spells it.
+func standingWord(state string) string {
+	switch state {
+	case "inStep":
+		return "in step"
+	case "noSerial":
+		return "no serial"
+	default:
+		return state
+	}
+}
+
+// standingColour is green for a secondary holding what this server publishes,
+// and yellow for everything else. Nothing here is red: a zone that is behind,
+// or a secondary that has gone quiet, is a thing to look at rather than a
+// failure of this server.
+func standingColour(state string) output.Color {
+	if state == "inStep" {
+		return output.ColorGreen
+	}
+	return output.ColorYellow
+}
+
+// behindColumn is how far behind, where that is known. A dash rather than a
+// zero everywhere else: zero commits behind and no idea are different answers.
+func behindColumn(lag *int64) string {
+	if lag == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d", *lag)
+}
+
+// optionalNumber writes a number that may not be there.
+func optionalNumber(n *int64) string {
+	if n == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d", *n)
 }
