@@ -7,7 +7,7 @@
   import { page } from "$app/state";
   import { replaceState } from "$app/navigation";
   import { api, ApiError, NetworkError } from "$lib/api";
-  import type { Commit, CommitKind, Conflict, MissingZone, Zone } from "$lib/api";
+  import type { Commit, CommitKind, CommitSource, Conflict, MissingZone, Zone } from "$lib/api";
   import { ago, exact } from "$lib/format";
   import { session } from "$lib/session.svelte";
   import Bar from "$lib/components/Bar.svelte";
@@ -55,6 +55,16 @@
 
   let zoneFilter = $state(page.url.searchParams.get("zone") ?? "");
   let kindFilter = $state<CommitKind | "">("");
+
+  /**
+   * One change to an address record writes the reverse entry too, and that is
+   * a commit in another zone with a journal of its own. Both are true history
+   * and only one of them is something a person did, so the list opens on the
+   * second kind: everything else follows from it and reads as consequence
+   * rather than as another entry to work out.
+   */
+  const byPeople: CommitSource[] = ["api", "cli", "import"];
+  let showFollowed = $state(false);
   let pageIndex = $state(0);
   let pageSize = $state(250);
   let cursors = $state<(string | undefined)[]>([undefined]);
@@ -95,6 +105,7 @@
           cursor: cursors[pageIndex],
           ...(chosenZone ? { zoneId: chosenZone.id } : {}),
           ...(kindFilter ? { kind: [kindFilter] } : {}),
+          ...(showFollowed ? {} : { source: byPeople }),
         },
       });
       commits = answer.items;
@@ -230,6 +241,24 @@
       </select>
     </label>
 
+    <div class="flex gap-px overflow-hidden rounded-sm border border-line">
+      {#each [{ on: false, label: "What people did" }, { on: true, label: "Everything" }] as choice (choice.label)}
+        <button
+          type="button"
+          onclick={() => {
+            showFollowed = choice.on;
+            applyFilters();
+          }}
+          aria-pressed={showFollowed === choice.on}
+          class="sign cursor-pointer bg-surface px-3 py-1.5 text-[11px] text-ink-mute
+                 transition-colors hover:bg-raised aria-pressed:bg-signal-lo
+                 aria-pressed:text-signal"
+        >
+          {choice.label}
+        </button>
+      {/each}
+    </div>
+
     <label class="flex items-center gap-2">
       <span class="sr-only">Kind</span>
       <select
@@ -279,8 +308,9 @@
             onclick={() => choose(commit)}
             aria-current={selected?.id === commit.id ? "true" : undefined}
             class="group relative grid cursor-pointer grid-cols-[5.5rem_minmax(0,1fr)_auto]
-                   items-center gap-3 border-b border-line-soft px-5 py-2.5 text-left
-                   transition-colors hover:bg-surface aria-[current]:bg-raised"
+                   items-center gap-3 border-b border-line-soft py-2.5 pr-5 text-left
+                   transition-colors hover:bg-surface aria-[current]:bg-raised
+                   {commit.source === 'system' ? 'pl-9 opacity-65' : 'pl-5'}"
           >
             <span
               class="absolute top-0 bottom-0 left-0 w-0.5 bg-signal opacity-0
@@ -295,15 +325,21 @@
 
             <span class="flex min-w-0 flex-col gap-0.5">
               <span class="flex items-center gap-2">
-                <Chip tone={kindTone[commit.kind] ?? "neutral"}>
-                  {kindLabel[commit.kind] ?? commit.kind}
-                </Chip>
+                {#if commit.source === "system"}
+                  <!-- The kind of such a commit is always an edit, which says
+                       nothing. What it is, is the consequence of another one. -->
+                  <Chip tone="neutral">Followed</Chip>
+                {:else}
+                  <Chip tone={kindTone[commit.kind] ?? "neutral"}>
+                    {kindLabel[commit.kind] ?? commit.kind}
+                  </Chip>
+                {/if}
                 <span class="num truncate text-[12px]">{commit.zoneName}</span>
               </span>
               <span class="num truncate text-[11px] text-ink-faint">
-                {commit.source}{commit.actor ? ` · ${commit.actor}` : ""}{commit.comment
-                  ? ` · ${commit.comment}`
-                  : ""}
+                {commit.source === "system"
+                  ? (commit.comment ?? "the server's own doing")
+                  : [commit.actor, commit.comment].filter(Boolean).join(" · ")}
               </span>
             </span>
 

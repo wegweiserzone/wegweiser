@@ -87,3 +87,48 @@ test("reverting writes forward rather than rewinding", async ({ page, server }) 
   await expect(page.getByRole("cell", { name: "192.0.2.10" })).toBeVisible();
   await expect(page.getByRole("cell", { name: "192.0.2.25" })).toHaveCount(0);
 });
+
+// One change to an address record writes the reverse entry too, in a zone the
+// person never named. Both are history and only one is something somebody did,
+// so the list opens on that one and the rest read as what followed.
+test("the history opens on what people did, and says what followed", async ({
+  page,
+  server,
+}) => {
+  const reverse = (await seed(server, "POST", "/zones", { name: "192.0.2.0/24" })) as {
+    id: string;
+  };
+  const zone = (await seed(server, "POST", "/zones", { name: "caused.example" })) as {
+    id: string;
+  };
+  await seed(server, "POST", `/zones/${zone.id}/records`, {
+    name: "www.caused.example.",
+    type: "A",
+    data: "192.0.2.77",
+  });
+  expect(reverse.id).toBeTruthy();
+
+  await signIn(page, server);
+  await page.goto(`${server.url}/history`);
+
+  // The reverse zone's commit is the server's own doing and is not listed here.
+  await expect(page.getByRole("button", { name: "What people did" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  // Scoped to the commit rows: the zone dropdown names every zone too, and
+  // matching one of its options would prove nothing about the list. Creating
+  // the reverse zone was something a person did, so what is absent here is not
+  // the zone but the entries the server wrote into it by itself.
+  const rows = page.locator("button").filter({ hasText: /→/ });
+  await expect(rows.filter({ hasText: "Followed" })).toHaveCount(0);
+  await expect(rows.filter({ hasText: "caused.example." }).first()).toBeVisible();
+
+  // Asking for everything brings it back, marked as the consequence it is.
+  await page.getByRole("button", { name: "Everything" }).click();
+  const followed = rows
+    .filter({ hasText: "2.0.192.in-addr.arpa." })
+    .filter({ hasText: "Followed" });
+  await expect(followed.first()).toBeVisible();
+  await expect(page.getByText(/reverse entries kept in step with/).first()).toBeVisible();
+});

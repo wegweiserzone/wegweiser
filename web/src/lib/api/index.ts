@@ -17,6 +17,7 @@ export type Record_ = components["schemas"]["Record"];
 export type RRset = components["schemas"]["RRset"];
 export type Commit = components["schemas"]["Commit"];
 export type CommitKind = components["schemas"]["CommitKind"];
+export type CommitSource = components["schemas"]["CommitSource"];
 export type Event = components["schemas"]["Event"];
 export type Token = components["schemas"]["Token"];
 export type TSIGKey = components["schemas"]["TSIGKey"];
