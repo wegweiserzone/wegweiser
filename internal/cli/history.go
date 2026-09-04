@@ -50,11 +50,12 @@ type commitListed struct {
 
 func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 	var (
-		kinds []string
-		actor string
-		since string
-		until string
-		limit int
+		kinds   []string
+		sources []string
+		actor   string
+		since   string
+		until   string
+		limit   int
 	)
 
 	cmd := &cobra.Command{
@@ -68,6 +69,7 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 		Example: "  weg history list\n" +
 			"  weg history list example.com\n" +
 			"  weg history list example.com --kind rollback\n" +
+			"  weg history list --source api --source cli   # what people did\n" +
 			"  weg history list --since 2026-08-01 --actor alice",
 
 		RunE: func(c *cobra.Command, args []string) error {
@@ -83,6 +85,17 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 					params.Kind = &[]gen.CommitKind{}
 				}
 				*params.Kind = append(*params.Kind, kind)
+			}
+			for _, name := range sources {
+				src := gen.CommitSource(strings.ToLower(name))
+				if !src.Valid() {
+					return usageError{fmt.Errorf(
+						"%q is not a cause; they are api, cli, import and system", name)}
+				}
+				if params.Source == nil {
+					params.Source = &[]gen.CommitSource{}
+				}
+				*params.Source = append(*params.Source, src)
 			}
 			if actor != "" {
 				params.Actor = &actor
@@ -114,11 +127,15 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 	}
 
 	cmd.Flags().StringArrayVar(&kinds, "kind", nil, "only these kinds of commit (repeatable)")
+	cmd.Flags().StringArrayVar(&sources, "source", nil,
+		"only changes with these causes: api, cli, import, system; system is the "+
+			"server's own doing, such as the reverse entries it keeps in step (repeatable)")
 	cmd.Flags().StringVar(&actor, "actor", "", "only what this actor did")
 	cmd.Flags().StringVar(&since, "since", "", "only at or after this time (a date, or a date and time)")
 	cmd.Flags().StringVar(&until, "until", "", "only before this time")
 	cmd.Flags().IntVar(&limit, "limit", 50,
 		"stop after this many commits (0 is all of them)")
+	registerFlagCompletion(cmd, "source", completeStatic("api", "cli", "import", "system"))
 	registerFlagCompletion(cmd, "kind", completeStatic(
 		"edit", "import", "rollback", "zone_create", "zone_update", "zone_delete"))
 	return cmd

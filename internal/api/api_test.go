@@ -2369,3 +2369,49 @@ func TestSettingsChangeTheWritePath(t *testing.T) {
 		t.Errorf("PTR answers %v, want last-wins to have handed the address to the second name", got)
 	}
 }
+
+// commits reads the history through the API, with whatever query is given.
+func (h *harness) commits(t *testing.T, query string) []gen.Commit {
+	t.Helper()
+
+	var page struct {
+		Items []gen.Commit `json:"items"`
+	}
+	h.decode(h.do(http.MethodGet, "/commits"+query, nil), http.StatusOK, &page)
+	return page.Items
+}
+
+// The reverse entries a change causes are the server's own doing, and a reader
+// looking for what people did should be able to leave them out.
+func TestHistoryFiltersByWhatCausedTheChange(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	z := h.createZone("example.com.")
+	h.createZone("2.0.192.in-addr.arpa.")
+	h.createRecord(z.Id, gen.CreateRecord{
+		Name: "www.example.com.", Type: "A", Data: "192.0.2.10",
+	})
+
+	all := h.commits(t, "")
+	people := h.commits(t, "?source=api")
+	system := h.commits(t, "?source=system")
+
+	if len(people)+len(system) != len(all) {
+		t.Errorf("%d by people and %d by the server, out of %d altogether",
+			len(people), len(system), len(all))
+	}
+	if len(system) == 0 {
+		t.Fatal("no commit is the server's own doing, so the reverse entry was not written")
+	}
+	for _, c := range system {
+		if c.Source != gen.CommitSourceSystem {
+			t.Errorf("a commit filtered to system reads %s", c.Source)
+		}
+	}
+	for _, c := range people {
+		if c.Source != gen.CommitSourceApi {
+			t.Errorf("a commit filtered to api reads %s", c.Source)
+		}
+	}
+}

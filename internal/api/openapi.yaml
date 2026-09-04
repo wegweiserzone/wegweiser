@@ -1049,6 +1049,16 @@ paths:
           schema:
             type: array
             items: { $ref: "#/components/schemas/CommitKind" }
+        - name: source
+          in: query
+          description: |
+            Restrict to changes with these causes. `system` is the server's own
+            doing, which in practice means the reverse entries it kept in step
+            with a change somebody made; leaving it out is how a reader sees
+            what people did without the entries that followed.
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/CommitSource" }
         - name: actor
           in: query
           description: Match the recorded actor exactly.

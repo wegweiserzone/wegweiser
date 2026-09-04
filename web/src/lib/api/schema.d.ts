@@ -2574,6 +2574,13 @@ export interface operations {
                 zoneId?: string;
                 /** @description Restrict to commits of these kinds. */
                 kind?: components["schemas"]["CommitKind"][];
+                /**
+                 * @description Restrict to changes with these causes. `system` is the server's own
+                 *     doing, which in practice means the reverse entries it kept in step
+                 *     with a change somebody made; leaving it out is how a reader sees
+                 *     what people did without the entries that followed.
+                 */
+                source?: components["schemas"]["CommitSource"][];
                 /** @description Match the recorded actor exactly. */
                 actor?: string;
                 /** @description Only commits at or after this time. */

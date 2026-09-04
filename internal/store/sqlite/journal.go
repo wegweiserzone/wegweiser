@@ -59,6 +59,15 @@ func (r reader) ListCommits(ctx context.Context, f store.CommitFilter) (store.Pa
 		}
 		w.add(`kind IN (`+strings.Join(marks, ",")+`)`, args...)
 	}
+	if len(f.Sources) > 0 {
+		marks := make([]string, len(f.Sources))
+		args := make([]any, len(f.Sources))
+		for i, src := range f.Sources {
+			marks[i] = "?"
+			args[i] = string(src)
+		}
+		w.add(`source IN (`+strings.Join(marks, ",")+`)`, args...)
+	}
 	if f.Actor != "" {
 		w.add(`actor = ?`, f.Actor)
 	}

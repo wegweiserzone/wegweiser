@@ -90,6 +90,10 @@ type CommitFilter struct {
 
 	ZoneID zone.ZoneID
 	Kinds  []journal.Kind
+	// Sources selects by what caused the change. It is what tells a change
+	// somebody made from the reverse entries the server then kept in step
+	// with it, which carry [journal.SourceSystem].
+	Sources []journal.Source
 	// Actor matches the recorded actor exactly.
 	Actor string
 	// Since and Until bound the commit time, Since inclusive and Until

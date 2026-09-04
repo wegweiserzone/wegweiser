@@ -30,6 +30,12 @@ func (s *Server) ListCommits(
 			f.Kinds = append(f.Kinds, journal.Kind(k))
 		}
 	}
+	if req.Params.Source != nil {
+		f.Sources = make([]journal.Source, 0, len(*req.Params.Source))
+		for _, src := range *req.Params.Source {
+			f.Sources = append(f.Sources, journal.Source(src))
+		}
+	}
 
 	var page store.Page[*journal.Commit]
 	if err := s.store.View(ctx, func(r store.Reader) error {

@@ -173,3 +173,33 @@ func TestParseWhen(t *testing.T) {
 		})
 	}
 }
+
+// Invariant 1: the filter the interface uses is a filter the command has.
+func TestHistoryListFiltersByCause(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+
+	mustRun(t, srv, "zone", "create", "example.com")
+	mustRun(t, srv, "zone", "create", "192.0.2.0/24")
+	mustRun(t, srv, "record", "add", "example.com", "www", "A", "192.0.2.10")
+
+	// The reverse zone's commit is the server's own doing, so asking for what
+	// people did leaves it out.
+	people := mustRun(t, srv, "history", "list", "--source", "cli")
+	if strings.Contains(people, "2.0.192.in-addr.arpa.") {
+		t.Errorf("a change the server made on its own is listed as something a person did:\n%s", people)
+	}
+
+	system := mustRun(t, srv, "history", "list", "--source", "system")
+	if !strings.Contains(system, "2.0.192.in-addr.arpa.") {
+		t.Errorf("the reverse entry the server wrote is not listed:\n%s", system)
+	}
+	if strings.Contains(system, "example.com.  ") {
+		t.Errorf("a change a person made is listed as the server's own:\n%s", system)
+	}
+
+	code, _, errOut := run(t, srv, "history", "list", "--source", "nonsense")
+	if code == ExitOK || !strings.Contains(errOut, "is not a cause") {
+		t.Errorf("an unknown cause was accepted: code %d, stderr: %s", code, errOut)
+	}
+}
