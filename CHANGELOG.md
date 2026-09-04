@@ -12,6 +12,11 @@ public API is unstable and may change without a deprecation period.
 
 #### API
 
+- `GET /commits` takes `source`, so the history can be read for what people did
+  without the reverse entries the server then kept in step with it. The causes
+  are `api`, `cli`, `import` and `system`, and `system` is the server's own
+  doing.
+
 - `GET /secondary-status` says where each secondary stands: one entry per zone
   per address on the notify list, with the serial that secondary last reported,
   how many commits behind it is, and when it was last asked. A pair nothing has
@@ -27,6 +32,11 @@ public API is unstable and may change without a deprecation period.
   than a failure of this server.
 
 #### CLI
+
+- `weg history list --source` narrows the history to what caused a change.
+  `--source cli --source api` is what people did; `--source system` is what the
+  server wrote by itself, which on a zone with reverse automation is most of the
+  entries.
 
 - `weg secondary status` says what each secondary holds: one line per zone per
   address on the notify list, with its serial, how many commits behind that
