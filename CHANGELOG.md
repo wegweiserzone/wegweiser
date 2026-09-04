@@ -17,6 +17,15 @@ public API is unstable and may change without a deprecation period.
   how many commits behind it is, and when it was last asked. A pair nothing has
   come back for yet reads `unasked` rather than passing for up to date.
 
+#### Web interface
+
+- A Secondaries section, listing every zone on every address the notify list
+  names, with the state each one is in, the serial it last reported and when it
+  was last asked. Being in step is the only quiet state; a zone nothing has come
+  back for reads Unasked, and hovering any state says what it means. Nothing
+  here is red: a zone that has not arrived yet is something to look at rather
+  than a failure of this server.
+
 #### CLI
 
 - `weg secondary status` says what each secondary holds: one line per zone per

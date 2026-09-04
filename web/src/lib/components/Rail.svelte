@@ -42,6 +42,11 @@
       icon: "M8 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 12h9M18 12v4M15.5 12v3",
     },
     {
+      href: "/secondaries",
+      label: "Secondaries",
+      icon: "M4 5h7v5H4zM13 14h7v5h-7M11 7.5h6a2 2 0 0 1 2 2v2M8 10v2a2 2 0 0 0 2 2h3",
+    },
+    {
       href: "/keys",
       label: "Keys",
       icon: "M15.5 8.5a3.5 3.5 0 1 0-3.2 3.5L4 20v0h3v-2h2v-2h2l1.3-1.3a3.5 3.5 0 0 0 3.2-6.2M16 7.5h.01",

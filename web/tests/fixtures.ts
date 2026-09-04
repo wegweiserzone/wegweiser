@@ -85,6 +85,13 @@ export async function reset(server: Server): Promise<void> {
   for (const zone of page.items) {
     await context.fetch(`/api/v1/zones/${zone.id}`, { method: "DELETE" });
   }
+
+  // The settings outlive the zones, and a file that leaves one changed decides
+  // what the next file sees. Back to what a fresh server starts with.
+  await context.fetch("/api/v1/settings", {
+    method: "PATCH",
+    data: { reverseConflictPolicy: "first-wins", transferAllow: [], notifyTargets: [] },
+  });
   await context.dispose();
 }
 
