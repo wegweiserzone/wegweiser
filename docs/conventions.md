@@ -133,7 +133,8 @@ release moves things across it rather than retiring it.
 reverse automation; zonefile import/export; outbound zone transfer, whole and incremental,
 to a list of addresses and TSIG keys that starts empty, with NOTIFY to the secondaries named;
 the configuration that end needs, written for BIND and Knot
-([D34](decisions/d34-generated-secondary-configuration.md));
+([D34](decisions/d34-generated-secondary-configuration.md)), and asking those
+secondaries what serial they hold ([D36](decisions/d36-probing-a-secondary.md));
 SQLite persistence with journal; REST API with token auth; CLI core commands; GUI with zone
 overview, record editor and live query stream; Prometheus metrics and `/healthz`;
 single node.
@@ -179,7 +180,6 @@ and the order is roughly what each costs against what it buys.
 
 | | Seam it uses |
 | --- | --- |
-| Asking a secondary whether it is in step | The notify list, which already names where to ask, and the outbound path NOTIFY uses. A serial behind ours is the one fault the generated configuration cannot rule out, and `weg_secondary_serial_lag` is the metric it feeds. D34 deferred it and D36 settles it. |
 | DNS cookies, and refusing a cookieless client while under load | The message layer, between reading a datagram and resolving it. D23 put cookies first and D35 makes them the whole answer, leaving one thing to work out: what "under load" is derived from, given that it cannot be configured. |
 | Clustering | The write path, which D19 shaped as a state machine for this. D24 says what travels between nodes, D25 how many nodes there are. Three to seven voters; below three, zone transfer is the honest answer. |
 | PostgreSQL | The `Store` interface, which is why persistence is an interface at all. |
