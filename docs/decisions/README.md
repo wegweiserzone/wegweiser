@@ -64,6 +64,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D34** | [The secondary's configuration is generated, not installed](d34-generated-secondary-configuration.md) |
 | **D35** | [Under load, a client without a cookie is refused rather than rate limited](d35-cookieless-under-load.md) |
 | **D36** | [A secondary is asked for its serial after it is notified, not on a sweep](d36-probing-a-secondary.md) |
+| **D37** | [Under load is when the readers stop idling](d37-under-load-is-when-the-readers-stop-idling.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they
@@ -81,7 +82,3 @@ is not an extension of D5, whose subject is unrelated to it.
   its notification was answered, and a real secondary answers before it has fetched, so the
   first reading after every change says `behind` when it means "not yet". The record says
   what is wrong with it; what the wait should be derived from is open.
-- **What D35 means by "under load"** is the one thing that record does not settle. The point
-  at which a query carrying no valid cookie is refused rather than answered has to be derived
-  from something the server already knows, or the knobs D35 refuses arrive through the other
-  door. It is settled when cookies are built, and not before.

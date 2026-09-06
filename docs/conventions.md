@@ -180,7 +180,7 @@ and the order is roughly what each costs against what it buys.
 
 | | Seam it uses |
 | --- | --- |
-| DNS cookies, and refusing a cookieless client while under load | The message layer, between reading a datagram and resolving it. D23 put cookies first and D35 makes them the whole answer, leaving one thing to work out: what "under load" is derived from, given that it cannot be configured. |
+| DNS cookies, and refusing a cookieless client while under load | The message layer, between reading a datagram and resolving it. D23 put cookies first, D35 makes them the whole answer, and [D37](decisions/d37-under-load-is-when-the-readers-stop-idling.md) says what "under load" is derived from. |
 | Clustering | The write path, which D19 shaped as a state machine for this. D24 says what travels between nodes, D25 how many nodes there are. Three to seven voters; below three, zone transfer is the honest answer. |
 | PostgreSQL | The `Store` interface, which is why persistence is an interface at all. |
 | User accounts, and LDAP or AD behind them | D5 left the door open: the schema does not preclude users, and `sessionStore` is the seam. Tokens stay, because a program should not need an account. |
