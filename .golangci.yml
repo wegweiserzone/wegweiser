@@ -192,6 +192,15 @@ linters:
         linters:
           - gosec
         text: G703
+      # A cookie timestamp is seconds modulo 2**32 and is compared by the
+      # arithmetic of RFC 1982, where the difference of two of them is a signed
+      # distance rather than a number that fits. The conversion this flags is
+      # what makes a cookie stamped before the space wrapped read as an hour
+      # old instead of as a lifetime in the future.
+      - path: internal/dns/cookie\.go
+        linters:
+          - gosec
+        text: G115
       # Generated API clients and embedded assets are not ours to lint.
       - path: (^|/)(gen|dist)/
         linters:
