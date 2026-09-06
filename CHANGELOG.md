@@ -8,7 +8,21 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+#### DNS
+
+- A query carrying a DNS cookie is answered with one (RFC 7873, RFC 9018). The
+  client opens the exchange, and what comes back is bound to the address that
+  asked, so it is worth nothing from anywhere else. A cookie is kept until it
+  is half an hour old and then quietly replaced, and one issued before the
+  secret last changed is still taken. Nothing is refused for want of a cookie:
+  that comes with the switch D35 describes, and this is the half that
+  identifies a client.
+
+- The secret those cookies are computed under is minted on first start and
+  stored with the other server settings, so it survives a restart and the
+  cookies handed out before it do too.
 
 ## [0.3.0] - 2026-09-04
 

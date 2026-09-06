@@ -166,14 +166,14 @@ func TestResponderEventDoesNotOutliveItsQuery(t *testing.T) {
 	snap := resolveFixture(t)
 	r := NewResponder(DefaultLimits())
 
-	if _, err := r.Respond(snap, packQuery(t, "www.example.com.", zone.TypeA), UDP, nil); err != nil {
+	if _, err := r.Respond(snap, packQuery(t, "www.example.com.", zone.TypeA), testClient, UDP, nil); err != nil {
 		t.Fatalf("respond: %v", err)
 	}
 	if got := r.Observed(); got.Name != "www.example.com." || got.Dropped {
 		t.Fatalf("first event = %q dropped=%v, want the query that was answered", got.Name, got.Dropped)
 	}
 
-	if _, err := r.Respond(snap, []byte{0x2A}, UDP, nil); err == nil {
+	if _, err := r.Respond(snap, []byte{0x2A}, testClient, UDP, nil); err == nil {
 		t.Fatal("a message too short to hold a header was answered")
 	}
 	got := r.Observed()

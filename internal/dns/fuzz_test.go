@@ -152,7 +152,7 @@ func FuzzRespond(f *testing.F) {
 		// scratch and is documented as belonging to a single goroutine, so
 		// sharing one here would test something other than the code.
 		r := NewResponder(DefaultLimits())
-		packed, err := r.Respond(snap, query, tr, make([]byte, wire.MaxMsgSize))
+		packed, err := r.Respond(snap, query, testClient, tr, make([]byte, wire.MaxMsgSize))
 
 		if err != nil {
 			if packed != nil {
@@ -217,7 +217,7 @@ func FuzzRespondQuestion(f *testing.F) {
 		}
 
 		r := NewResponder(DefaultLimits())
-		packed, err := r.Respond(snap, query, UDP, make([]byte, wire.MaxMsgSize))
+		packed, err := r.Respond(snap, query, testClient, UDP, make([]byte, wire.MaxMsgSize))
 		if err != nil {
 			t.Fatalf("a well-formed query was refused a response: %v", err)
 		}

@@ -51,7 +51,7 @@ func respond(t *testing.T, r *Responder, snap *Snapshot, query []byte, tr Transp
 ) (msg *wire.Msg, packed []byte) {
 	t.Helper()
 
-	packed, err := r.Respond(snap, query, tr, make([]byte, wire.MaxMsgSize))
+	packed, err := r.Respond(snap, query, testClient, tr, make([]byte, wire.MaxMsgSize))
 	if err != nil {
 		t.Fatalf("respond: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestRespondDrops(t *testing.T) {
 			t.Parallel()
 
 			r := NewResponder(DefaultLimits())
-			out, err := r.Respond(snap, tt.query, UDP, make([]byte, wire.MaxMsgSize))
+			out, err := r.Respond(snap, tt.query, testClient, UDP, make([]byte, wire.MaxMsgSize))
 			if !errors.Is(err, ErrUnanswerable) {
 				t.Errorf("error = %v, want ErrUnanswerable", err)
 			}
@@ -484,7 +484,7 @@ func TestRespondSmallBuffer(t *testing.T) {
 	snap := resolveFixture(t)
 	r := NewResponder(DefaultLimits())
 
-	packed, err := r.Respond(snap, packQuery(t, "www.example.com.", zone.TypeA), UDP, nil)
+	packed, err := r.Respond(snap, packQuery(t, "www.example.com.", zone.TypeA), testClient, UDP, nil)
 	if err != nil {
 		t.Fatalf("respond: %v", err)
 	}
@@ -644,7 +644,7 @@ func TestRespondAllocations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			query := packQuery(t, tt.qname, tt.qtype)
 			got := testing.AllocsPerRun(100, func() {
-				if _, err := r.Respond(snap, query, UDP, buf); err != nil {
+				if _, err := r.Respond(snap, query, testClient, UDP, buf); err != nil {
 					t.Fatalf("respond: %v", err)
 				}
 			})

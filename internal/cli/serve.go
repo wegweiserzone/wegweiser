@@ -188,6 +188,13 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		return err
 	}
 
+	// A cookie is a hash under a secret this installation minted, so the first
+	// start is where it comes into existence.
+	secrets, err := cookieSecrets(ctx, st, applier)
+	if err != nil {
+		return err
+	}
+
 	srv := dns.NewServer(dns.Config{
 		Addr:          cfg.DNSListen.Value,
 		Limits:        dns.Limits{MaxUDPResponse: cfg.UDPResponseSize.Value},
@@ -198,6 +205,10 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		// server answers comes out of the snapshot (invariant 2).
 		History: applier,
 		Keys:    keys,
+		Cookies: dns.CookieSecrets{
+			Current:  dns.CookieSecret(secrets.Current),
+			Previous: dns.CookieSecret(secrets.Previous),
+		},
 		// Both consumers of the one hook. Composing them is the wiring's job:
 		// the query path answers queries and does not know what anybody wants
 		// to count or watch (architecture §2.9).
@@ -353,6 +364,43 @@ func notifyTargets(in []apply.NotifyTarget) []dns.NotifyTarget {
 		out[i] = dns.NotifyTarget{Addr: t.Addr, Key: t.Key}
 	}
 	return out
+}
+
+// cookieSecrets returns the secrets Server Cookies are computed under, minting
+// the first pair where the database holds none.
+//
+// It happens on the way up rather than at install time because a secret two
+// installations shared would let each hand out cookies the other honours.
+// Writing it through the applier is what makes it a setting like the others,
+// carried between nodes the way D32 says settings are carried, rather than a
+// file beside the database that a second node would never see.
+func cookieSecrets(
+	ctx context.Context, st store.Store, applier *apply.Applier,
+) (apply.CookieSecrets, error) {
+	var secrets apply.CookieSecrets
+	if err := st.View(ctx, func(r store.Reader) error {
+		var verr error
+		secrets, verr = apply.StoredCookieSecrets(ctx, r)
+		return verr
+	}); err != nil {
+		return apply.CookieSecrets{}, err
+	}
+	if !secrets.IsZero() {
+		return secrets, nil
+	}
+
+	minted, err := apply.NewCookieSecrets(time.Now())
+	if err != nil {
+		return apply.CookieSecrets{}, err
+	}
+	change, cerr := apply.CookieSecretsChange(minted)
+	if cerr != nil {
+		return apply.CookieSecrets{}, cerr
+	}
+	if serr := applier.SetSettings(ctx, []apply.SettingChange{change}); serr != nil {
+		return apply.CookieSecrets{}, fmt.Errorf("store the first cookie secret: %w", serr)
+	}
+	return minted, nil
 }
 
 // keyPublishers hands a new keyring to everything that holds one: the query

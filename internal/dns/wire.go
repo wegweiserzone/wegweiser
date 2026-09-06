@@ -1,8 +1,10 @@
 package dns
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -66,6 +68,11 @@ type Responder struct {
 	// next query it answers.
 	keys *atomic.Pointer[keyHolder]
 
+	// cookies is where the server publishes its cookie secrets, and is nil for
+	// a responder nobody wired one into. A pointer for the reason keys is one:
+	// a rotation reaches the next query rather than the next restart.
+	cookies *atomic.Pointer[cookieHolder]
+
 	// signer signs the response to a signed query, and is nil for the ordinary
 	// unsigned one.
 	signer *tsigSigner
@@ -80,6 +87,15 @@ type Responder struct {
 	opt    wire.OPT
 	ede    wire.EDNS0_EDE
 	hasEDE bool
+
+	// cookie is the cookie option of the response and cookieOut the octets in
+	// it; cookieIn is where the query's own is decoded to. hasCookie says
+	// whether one is going back at all, which it is only when the query
+	// brought one.
+	cookie    wire.EDNS0_COOKIE
+	cookieIn  [clientCookieLen + maxServerCookie]byte
+	cookieOut [cookieLen]byte
+	hasCookie bool
 
 	// ev is what the last exchange looked like, for whoever is watching. It is
 	// filled as the exchange goes rather than reconstructed afterwards,
@@ -105,11 +121,17 @@ func NewResponder(limits Limits) *Responder {
 
 // Respond answers query from snap and returns the response as bytes.
 //
+// from is the address the query arrived from. A Server Cookie is computed over
+// it (RFC 9018 §4.4), so a cookie handed to one client is worthless to any
+// other, and an address nobody can forge is the whole point of the exchange.
+//
 // The response is packed into out when it fits; otherwise a new buffer is
 // allocated, so a caller that wants neither should hand over a buffer of the
 // largest message it is willing to send. The returned slice aliases out, and is
 // only valid until the next call.
-func (r *Responder) Respond(snap *Snapshot, query []byte, tr Transport, out []byte) ([]byte, error) {
+func (r *Responder) Respond(
+	snap *Snapshot, query []byte, from netip.Addr, tr Transport, out []byte,
+) ([]byte, error) {
 	// Cleared first: the responder is reused, and an event left over from the
 	// previous query would describe this one wrongly on every path that gives
 	// up before filling it in.
@@ -147,6 +169,12 @@ func (r *Responder) Respond(snap *Snapshot, query []byte, tr Transport, out []by
 		}
 	}
 
+	// The cookie is read before the table below rather than inside it: a
+	// malformed one is one of the answers there, and a well formed one has to
+	// be answered with a cookie whatever the rest of the query turns out to
+	// be.
+	cookieOK := unpackErr != nil || r.readCookie(reqOPT, from)
+
 	// The order is the table in architecture §2.2, and it is an order
 	// rather than a set: a query can be wrong in several ways at once, and the
 	// first answer is the one that tells the client the most about what to fix.
@@ -168,6 +196,12 @@ func (r *Responder) Respond(snap *Snapshot, query []byte, tr Transport, out []by
 	case len(r.req.Question) != 1:
 		r.fail(wire.RcodeFormatError, wire.ExtendedErrorCodeOther,
 			"a query carries exactly one question")
+
+	case !cookieOK:
+		// RFC 7873 §5.2.2: a cookie option of any other length is malformed,
+		// and there is nothing to answer it with but the code that says so.
+		r.fail(wire.RcodeFormatError, wire.ExtendedErrorCodeOther,
+			"the cookie option is not 8 octets, or 16 to 40")
 
 	case reqOPT != nil && reqOPT.Version() != 0:
 		// RFC 6891 §6.1.3: answer the version we do implement rather than
@@ -217,6 +251,7 @@ func (r *Responder) begin() {
 
 	r.ede = wire.EDNS0_EDE{}
 	r.hasEDE = false
+	r.hasCookie = false
 	r.signer = nil
 }
 
@@ -356,6 +391,15 @@ func (r *Responder) finish(reqOPT *wire.OPT, tr Transport, out []byte) ([]byte, 
 		r.opt.Option = r.opt.Option[:0]
 		if r.hasEDE {
 			r.opt.Option = append(r.opt.Option, &r.ede)
+		}
+		if r.hasCookie {
+			// The wire library carries a cookie as hex and decodes it again to
+			// pack the response, so a cookie costs this exchange two
+			// allocations the ones counted in D12 do not include. Both are
+			// inside the library, and the alternative is packing the option
+			// ourselves.
+			r.cookie.Cookie = hex.EncodeToString(r.cookieOut[:])
+			r.opt.Option = append(r.opt.Option, &r.cookie)
 		}
 		r.resp.Extra = append(r.resp.Extra, &r.opt)
 

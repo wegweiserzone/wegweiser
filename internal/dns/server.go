@@ -110,6 +110,11 @@ type Config struct {
 	// none, and then a signed request is refused with BADKEY.
 	Keys Keyring
 
+	// Cookies are the secrets Server Cookies are computed under. Zero means
+	// none have been minted yet, and until one is published the server answers
+	// a query carrying a cookie without one of its own.
+	Cookies CookieSecrets
+
 	// History supplies the record changes between two serials, which is the one
 	// thing an incremental transfer needs and no snapshot holds. Nil answers
 	// every incremental request with a whole zone, which RFC 1995 §2 allows.
@@ -144,6 +149,10 @@ type Server struct {
 	// keys is where a TSIG key is resolved, held the same way: a key is created
 	// and revoked while the server runs.
 	keys atomic.Pointer[keyHolder]
+
+	// cookies is the pair of secrets Server Cookies are computed under,
+	// swapped whole when the control plane rotates them.
+	cookies atomic.Pointer[cookieHolder]
 
 	started atomic.Bool
 	closing atomic.Bool
@@ -203,6 +212,7 @@ func NewServer(cfg Config) *Server {
 	}
 	s.SetTransfers(cfg.Transfers)
 	s.SetKeys(cfg.Keys)
+	s.SetCookieSecrets(cfg.Cookies)
 	return s
 }
 
@@ -401,6 +411,7 @@ func (s *Server) readUDP(conn *net.UDPConn) {
 
 	r := NewResponder(s.cfg.Limits)
 	r.keys = &s.keys
+	r.cookies = &s.cookies
 	in := make([]byte, maxUDPQuery)
 	out := make([]byte, r.limits.MaxUDPResponse)
 
@@ -428,7 +439,7 @@ func (s *Server) answerDatagram(
 ) {
 	start := s.startedAt()
 
-	packed, err := r.Respond(s.current.Load(), query, UDP, out)
+	packed, err := r.Respond(s.current.Load(), query, from.Addr(), UDP, out)
 	if err != nil {
 		// A malformed query is traffic, not a fault. Silence is the answer
 		// RFC 1035 leaves for a message there is nothing safe to reply to, and
@@ -529,6 +540,7 @@ func (s *Server) serveConn(conn *net.TCPConn) {
 
 	r := NewResponder(s.cfg.Limits)
 	r.keys = &s.keys
+	r.cookies = &s.cookies
 	from := remoteAddrPort(conn)
 	var (
 		length [2]byte
@@ -571,7 +583,7 @@ func (s *Server) serveConn(conn *net.TCPConn) {
 			continue
 		}
 
-		packed, err := r.Respond(s.current.Load(), query[:n], TCP, frame[:0])
+		packed, err := r.Respond(s.current.Load(), query[:n], from.Addr(), TCP, frame[:0])
 		if err != nil {
 			// On a stream there is no answering a later query without having
 			// answered this one, and leaving the client waiting says less than

@@ -314,7 +314,7 @@ func BenchmarkRespond(b *testing.B) {
 
 		// The guard is the same one the resolver benchmarks carry: a shape that
 		// measures something other than what it is called is not a measurement.
-		packed, err := r.Respond(snap, s.query, s.tr, out)
+		packed, err := r.Respond(snap, s.query, testClient, s.tr, out)
 		if err != nil {
 			b.Fatalf("%s: %v", s.shape, err)
 		}
@@ -333,7 +333,7 @@ func BenchmarkRespond(b *testing.B) {
 		b.Run(s.shape, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, err := r.Respond(snap, s.query, s.tr, out); err != nil {
+				if _, err := r.Respond(snap, s.query, testClient, s.tr, out); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -638,7 +638,7 @@ func BenchmarkObserve(b *testing.B) {
 	from := netip.MustParseAddrPort("192.0.2.1:53210")
 
 	r := NewResponder(DefaultLimits())
-	packed, err := r.Respond(snap, query, UDP, make([]byte, wire.MaxMsgSize))
+	packed, err := r.Respond(snap, query, testClient, UDP, make([]byte, wire.MaxMsgSize))
 	if err != nil {
 		b.Fatalf("respond: %v", err)
 	}

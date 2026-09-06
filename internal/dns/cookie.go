@@ -4,6 +4,9 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"net/netip"
+	"time"
+
+	wire "github.com/miekg/dns"
 )
 
 // A DNS Cookie is eight octets the client chose, optionally followed by eight
@@ -15,10 +18,12 @@ const (
 	maxServerCookie = 32
 
 	// serverCookieLen is what this server produces: the version, reserved and
-	// timestamp sub-fields and the hash, laid out by RFC 9018 §4.4. With the
-	// client half in front of it, every cookie this server sends is the 24
-	// octets that section fixes.
+	// timestamp sub-fields and the hash, laid out by RFC 9018 §4.4.
 	serverCookieLen = 16
+
+	// cookieLen is therefore every cookie this server sends: the client half
+	// as it arrived and our own behind it, 24 octets in all.
+	cookieLen = clientCookieLen + serverCookieLen
 
 	// cookieVersion is the only version RFC 9018 defines. A cookie arriving
 	// with another one was not written by us, whatever else is true of it.
@@ -42,13 +47,49 @@ const (
 	cookieRenewAge = 1800
 )
 
-// cookieSecret is the key Server Cookies are computed under.
+// CookieSecret is the key Server Cookies are computed under.
 //
 // It is 128 bits because SipHash-2-4 takes a 128-bit key, and RFC 9018 §6
 // leaves no second choice of hash. The secret never leaves this server: a
-// cookie is meaningless anywhere else, which is what makes rotating it a local
-// decision.
-type cookieSecret [16]byte
+// cookie is meaningless anywhere else, which is what makes rotating it a
+// decision this server can take on its own.
+type CookieSecret [16]byte
+
+// CookieSecrets are the secrets this server recognises its own cookies by.
+//
+// Two, because a rotation cannot be instantaneous: a client holds a Server
+// Cookie for up to an hour (RFC 9018 §4.3), and the secret those were built
+// under is still worth checking against. Where they come from and when they
+// change is the control plane's business, not this package's.
+type CookieSecrets struct {
+	// Current is what a cookie handed out now is computed under.
+	Current CookieSecret
+	// Previous is the secret before it, or zero on a server that has never
+	// rotated.
+	Previous CookieSecret
+}
+
+// usable reports whether cookies can be issued at all, which they cannot
+// before the control plane has published a secret.
+func (s CookieSecrets) usable() bool { return s.Current != CookieSecret{} }
+
+// knows reports whether server is a Server Cookie this server produced for
+// this client and address, under either secret.
+//
+// The predecessor is checked second because the overwhelming majority of
+// cookies are current, and checking it at all is what makes a rotation
+// invisible to a client holding one from before it.
+func (s CookieSecrets) knows(client, server []byte, ip netip.Addr) bool {
+	if s.Current.matches(client, server, ip) {
+		return true
+	}
+	return s.Previous != CookieSecret{} && s.Previous.matches(client, server, ip)
+}
+
+// cookieHolder wraps the secrets so they can be swapped atomically, the way
+// the keyring is. A struct cannot be replaced field by field while a query is
+// being answered with it.
+type cookieHolder struct{ secrets CookieSecrets }
 
 // serverCookie returns the Server Cookie for a client cookie, an address and a
 // timestamp.
@@ -56,7 +97,7 @@ type cookieSecret [16]byte
 // The timestamp is seconds since the UNIX epoch modulo 2**32, which is what
 // goes on the wire, and what makes a cookie expire without this server keeping
 // a note about anyone.
-func (s *cookieSecret) serverCookie(client []byte, ip netip.Addr, ts uint32) [serverCookieLen]byte {
+func (s *CookieSecret) serverCookie(client []byte, ip netip.Addr, ts uint32) [serverCookieLen]byte {
 	var out [serverCookieLen]byte
 	// Octets 1 to 3 are reserved and are sent as zero (RFC 9018 §4.4).
 	out[0] = cookieVersion
@@ -70,7 +111,7 @@ func (s *cookieSecret) serverCookie(client []byte, ip netip.Addr, ts uint32) [se
 //
 // It says nothing about age: a cookie can be ours and hours old, and the two
 // questions have different answers (RFC 9018 §4.3 renews one it still accepts).
-func (s *cookieSecret) matches(client, server []byte, ip netip.Addr) bool {
+func (s *CookieSecret) matches(client, server []byte, ip netip.Addr) bool {
 	if len(server) != serverCookieLen || server[0] != cookieVersion {
 		return false
 	}
@@ -91,7 +132,7 @@ func (s *cookieSecret) matches(client, server []byte, ip netip.Addr) bool {
 // meta is the version octet and the three reserved ones as they stand, which
 // for a cookie arriving means as the client returned them. We send them zero,
 // but a server in an anycast set may not, and the hash covers them either way.
-func (s *cookieSecret) hash(client []byte, meta [4]byte, ts uint32, ip netip.Addr) uint64 {
+func (s *CookieSecret) hash(client []byte, meta [4]byte, ts uint32, ip netip.Addr) uint64 {
 	// Twenty octets for an IPv4 client and thirty-two for an IPv6 one, so the
 	// buffer is the larger of the two and never escapes.
 	var buf [32]byte
@@ -148,5 +189,135 @@ func splitCookie(opt []byte) (client, server []byte, ok bool) {
 		return opt[:clientCookieLen], opt[clientCookieLen:], true
 	default:
 		return nil, nil, false
+	}
+}
+
+// cookieNow is the timestamp a cookie minted at t carries: seconds since the
+// UNIX epoch modulo 2**32 (RFC 9018 §4.4). The truncation is the format, not a
+// loss of precision to be sorry about.
+func cookieNow(t time.Time) uint32 { return uint32(t.Unix()) }
+
+// SetCookieSecrets publishes the secrets Server Cookies are computed and
+// checked under, for every query answered from now on.
+//
+// The control plane mints and rotates them; this is where the query path finds
+// out. A rotation reaches the next query rather than the next restart, which
+// is what lets the previous secret be forgotten on a schedule instead of when
+// somebody remembers to restart the server.
+func (s *Server) SetCookieSecrets(secrets CookieSecrets) {
+	s.cookies.Store(&cookieHolder{secrets: secrets})
+}
+
+// readCookie reads the cookie option the query carries, works out what goes
+// back in the response, and reports whether what arrived was well formed.
+//
+// A query carrying no cookie is answered without one. RFC 7873 §5.2 leaves the
+// exchange to the client to open, and a server volunteering 28 octets of
+// option to everybody would be paying the cost of a defence nobody had asked
+// to take part in.
+func (r *Responder) readCookie(reqOPT *wire.OPT, from netip.Addr) bool {
+	if reqOPT == nil {
+		return true
+	}
+	opt := requestCookie(reqOPT)
+	if opt == nil {
+		return true
+	}
+
+	raw, ok := decodeCookieHex(opt.Cookie, r.cookieIn[:])
+	if !ok {
+		return false
+	}
+	client, server, ok := splitCookie(raw)
+	if !ok {
+		return false
+	}
+
+	// Before the control plane has published a secret there is nothing to
+	// compute a cookie with, so the query is answered without one. That is the
+	// same thing a client sees from a server implementing no cookies at all,
+	// which is a case every client already handles.
+	secrets := r.secrets()
+	if !secrets.usable() {
+		return true
+	}
+
+	now := cookieNow(time.Now())
+	var ours, worn bool
+	if secrets.knows(client, server, from) {
+		ts := binary.BigEndian.Uint32(server[4:])
+		ours, worn = cookieUsable(ts, now), cookieWorn(ts, now)
+	}
+
+	if ours && !worn {
+		// Ours, and not old enough to be worth replacing: the client keeps
+		// what it has. RFC 9018 §4.3 asks for a fresh one past half an hour,
+		// which is early enough that a cookie never expires mid-conversation.
+		copy(r.cookieOut[:], raw)
+	} else {
+		copy(r.cookieOut[:], client)
+		issued := secrets.Current.serverCookie(client, from, now)
+		copy(r.cookieOut[clientCookieLen:], issued[:])
+	}
+	r.hasCookie = true
+	return true
+}
+
+// secrets returns what the server has published, or none where nothing has
+// been published yet.
+func (r *Responder) secrets() CookieSecrets {
+	if r.cookies == nil {
+		return CookieSecrets{}
+	}
+	if holder := r.cookies.Load(); holder != nil {
+		return holder.secrets
+	}
+	return CookieSecrets{}
+}
+
+// requestCookie returns the cookie option of a query, or nil where it carries
+// none.
+func requestCookie(opt *wire.OPT) *wire.EDNS0_COOKIE {
+	for _, o := range opt.Option {
+		if cookie, ok := o.(*wire.EDNS0_COOKIE); ok {
+			return cookie
+		}
+	}
+	return nil
+}
+
+// decodeCookieHex decodes the hex the wire library hands a cookie over as into
+// dst, and reports whether it was hex of a length dst holds.
+//
+// The library encodes what it read off the wire and decodes it again to pack a
+// response, which is its interface rather than a choice of ours. Decoding into
+// a buffer the responder already owns is what keeps reading one out of an
+// allocation (D12).
+func decodeCookieHex(s string, dst []byte) ([]byte, bool) {
+	if len(s)%2 != 0 || len(s)/2 > len(dst) {
+		return nil, false
+	}
+	for i := 0; i < len(s); i += 2 {
+		hi, hiOK := unhex(s[i])
+		lo, loOK := unhex(s[i+1])
+		if !hiOK || !loOK {
+			return nil, false
+		}
+		dst[i/2] = hi<<4 | lo
+	}
+	return dst[:len(s)/2], true
+}
+
+// unhex reads one hex digit.
+func unhex(c byte) (byte, bool) {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0', true
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10, true
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10, true
+	default:
+		return 0, false
 	}
 }
