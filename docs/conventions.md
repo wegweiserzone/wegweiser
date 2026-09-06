@@ -135,14 +135,14 @@ to a list of addresses and TSIG keys that starts empty, with NOTIFY to the secon
 the configuration that end needs, written for BIND and Knot
 ([D34](decisions/d34-generated-secondary-configuration.md)), and asking those
 secondaries what serial they hold ([D36](decisions/d36-probing-a-secondary.md));
-SQLite persistence with journal; REST API with token auth; CLI core commands; GUI with zone
-overview, record editor and live query stream; Prometheus metrics and `/healthz`;
-single node.
+SQLite persistence with journal; DNS cookies, with a query carrying none refused while the
+server is under load ([D35](decisions/d35-cookieless-under-load.md),
+[D37](decisions/d37-under-load-is-when-the-readers-stop-idling.md)); REST API with token auth;
+CLI core commands; GUI with zone overview, record editor and live query stream; Prometheus
+metrics and `/healthz`; single node.
 
 **Explicitly out:** DNSSEC, Raft cluster, DoT/DoH/DoQ, Postgres backend, views and
-split-horizon, `weg tui`, DNS cookies ([D23](decisions/d23-reflection-is-bounded.md): the
-amplification factor is bounded by construction and pinned by a test, and the rate is not
-policed).
+split-horizon, `weg tui`.
 
 Do not build any of it early. Keep the seams so it fits later without a rewrite, especially
 the `Store` interface (for Postgres).
@@ -153,7 +153,8 @@ the server is under load, a query carrying no valid cookie is refused instead of
 That is the switch D23 asked for in place of RRL's knobs, and it fails the other way round,
 costing a real client one round trip where a rate limiter drops its queries. Not closed for
 good. What it leaves exposed is clients implementing no cookies at all, and reopening it
-starts with a measurement of how much of that traffic there is.
+starts with a measurement of how much of that traffic there is. That measurement is
+`weg_dns_cookie_refusals_total{client="cookieless"}`, which counts exactly those queries.
 
 **Out, and the differentiators say why:** inbound zone transfer, and with it being a
 secondary for a zone somebody else runs. Differentiator 3 names manual primary/secondary
@@ -180,7 +181,6 @@ and the order is roughly what each costs against what it buys.
 
 | | Seam it uses |
 | --- | --- |
-| DNS cookies, and refusing a cookieless client while under load | The message layer, between reading a datagram and resolving it. D23 put cookies first, D35 makes them the whole answer, and [D37](decisions/d37-under-load-is-when-the-readers-stop-idling.md) says what "under load" is derived from. |
 | Clustering | The write path, which D19 shaped as a state machine for this. D24 says what travels between nodes, D25 how many nodes there are. Three to seven voters; below three, zone transfer is the honest answer. |
 | PostgreSQL | The `Store` interface, which is why persistence is an interface at all. |
 | User accounts, and LDAP or AD behind them | D5 left the door open: the schema does not preclude users, and `sessionStore` is the seam. Tokens stay, because a program should not need an account. |

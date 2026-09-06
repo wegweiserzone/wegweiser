@@ -63,7 +63,8 @@ type Metrics struct {
 	duration  *prometheus.HistogramVec
 	size      *prometheus.HistogramVec
 
-	notify *prometheus.CounterVec
+	notify   *prometheus.CounterVec
+	refusals *prometheus.CounterVec
 
 	probes     *prometheus.CounterVec
 	lag        *prometheus.GaugeVec
@@ -148,6 +149,13 @@ func New() *Metrics {
 				"including retransmissions, and one answered or abandoned per secondary told.",
 		}, []string{"outcome"}),
 
+		refusals: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "dns", Name: "cookie_refusals_total",
+			Help: "Queries refused for want of a valid cookie while the server was under " +
+				"load, by what the client brought: badcookie for one that can come back " +
+				"with the cookie it was handed, cookieless for one that implements none.",
+		}, []string{"client"}),
+
 		probes: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace, Subsystem: "secondary", Name: "probes_total",
 			Help: "Serial probes and what they found, one per zone asked about per secondary.",
@@ -193,7 +201,7 @@ func New() *Metrics {
 	}, m.underLoad)
 
 	m.reg.MustRegister(
-		m.queries, m.dropped, m.truncated, m.duration, m.size, m.notify,
+		m.queries, m.dropped, m.truncated, m.duration, m.size, m.notify, m.refusals,
 		m.probes, m.lag, m.behind, m.unanswered,
 		m.zones, m.records, m.built, underLoad,
 		buildInfo(),
@@ -259,6 +267,12 @@ func (m *Metrics) Observe(ev dns.Event) {
 	}
 
 	m.queries.WithLabelValues(ev.Transport.String(), typeLabel(ev.Type), dns.RcodeName(ev.Rcode)).Inc()
+	if ev.Refused != dns.NotRefused {
+		// Beside the response code rather than instead of it: BADCOOKIE says
+		// what was sent, and this says why, which for a plain REFUSED the
+		// rcode cannot.
+		m.refusals.WithLabelValues(ev.Refused.String()).Inc()
+	}
 	by.duration.Observe(ev.Latency.Seconds())
 	by.size.Observe(float64(ev.Size))
 	if ev.Truncated {

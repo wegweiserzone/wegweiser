@@ -69,3 +69,14 @@ The scope fence names RRL and cookies together in one line, on the strength of D
 both. That line splits. Cookies stay outside it the way clustering and Postgres do, as work
 not started rather than work refused, and cross when they are built. RRL is outside it for a
 different reason now, and the fence says which.
+
+## Where this stands
+
+Built. Cookies are answered, issued and checked (RFC 7873, RFC 9018), the secret rolls over
+hourly, and a query carrying no valid Server Cookie is refused while the server is under
+load. What "under load" is derived from was the question this record left open, and
+[D37](d37-under-load-is-when-the-readers-stop-idling.md) closes it: the datagram readers
+having stopped idling.
+
+The scope fence split the way this record said it would. Cookies are inside it; response rate
+limiting is outside, on the terms above.

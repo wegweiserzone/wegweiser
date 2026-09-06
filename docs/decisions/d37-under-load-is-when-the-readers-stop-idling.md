@@ -42,12 +42,12 @@ prefer another one.
 cookie. That client completed a handshake, which is the proof of address a cookie exists to
 obtain, and the idleness of the datagram readers says nothing about it either way.
 
-**A query carrying no OPT at all is refused with REFUSED, not BADCOOKIE.** RFC 6891 §6.1.1
-forbids an OPT in the response to a request that carried none, and BADCOOKIE is an extended
-code that lives in that OPT. A client speaking no EDNS can be handed no cookie and told
-nothing about cookies, so under load it gets the smallest honest thing this server can say.
-The EDNS client without a valid Server Cookie gets BADCOOKIE with one to come back with,
-which is D35's round trip.
+**A query carrying no cookie option is refused with REFUSED, not BADCOOKIE.** RFC 7873 §5.2.3
+says a server answering BADCOOKIE shall include a cookie option holding the Client Cookie
+copied from the request, and there is none to copy; for a query with no OPT at all,
+RFC 6891 §6.1.1 forbids the option's container as well. A client that can be handed nothing
+gets the smallest honest thing this server can say instead. The client that did bring a
+cookie gets BADCOOKIE with a fresh one to come back with, which is D35's round trip.
 
 **Nothing is counted per source.** No table of addresses, no exemption list, no per-response
 class accounting. One condition about this machine, and one response to it.
@@ -85,5 +85,11 @@ nothing here joins the list in D32.
 
 ## Where this stands
 
-Nothing of it is built. Cookies are not built either, and this record is what that work
-starts from.
+Built, and the switch is closed. `internal/dns/load.go` measures the waiting, one window a
+second, and `weg_dns_under_load` is the state; `Responder.refuseCookieless` is the refusal,
+counted by `weg_dns_cookie_refusals_total` and told apart there by which of D35's two
+clients it turned away. The idleness is measured with two clock reads per datagram, the
+cheaper sampled form having bought nothing measurable: `BenchmarkServerUDP` reads the same
+before and after, at 11.1 µs serial and 1.85 µs parallel.
+
+The BADCOOKIE row D35 asked for is in `TestAmplificationFactor`, at a factor of 1.3.

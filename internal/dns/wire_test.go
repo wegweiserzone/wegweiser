@@ -572,6 +572,9 @@ func TestAmplificationFactor(t *testing.T) {
 		// as measured, rounded up: a change that moves one is a change to how
 		// useful this server is to somebody attacking a third party.
 		worst float64
+		// shape prepares the responder where the case is about something
+		// other than a plain query.
+		shape func(*Responder)
 	}{
 		{
 			// No OPT, so RFC 1035 §4.2.1 caps the response at 512 octets
@@ -598,11 +601,28 @@ func TestAmplificationFactor(t *testing.T) {
 			query: packQuery(t, "a.example.net.", zone.TypeTXT, withEDNS(4096, 0)),
 			worst: 3, // measured 2.1
 		},
+		{
+			// The refusal D35 answers a cookieless client with while the
+			// server is under load. It is the smallest thing this server
+			// sends to a query it understood, and pinning it is what keeps
+			// that true.
+			name: "badcookie under load",
+			query: packQuery(t, "a.example.com.", zone.TypeTXT,
+				withCookie(make([]byte, clientCookieLen))),
+			worst: 2, // measured 1.3
+			shape: func(r *Responder) {
+				r.cookies = cookieHolderFor(CookieSecrets{Current: CookieSecret{0x01}})
+				r.load = meterUnderLoad()
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			r := NewResponder(DefaultLimits())
+			if tc.shape != nil {
+				tc.shape(r)
+			}
 			_, got := respond(t, r, snap, tc.query, UDP)
 
 			ratio := float64(len(got)) / float64(len(tc.query))

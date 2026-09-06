@@ -249,6 +249,7 @@ func (r *Responder) readCookie(reqOPT *wire.OPT, from netip.Addr) bool {
 		ours, worn = cookieUsable(ts, now), cookieWorn(ts, now)
 	}
 
+	r.cookieValid = ours
 	if ours && !worn {
 		// Ours, and not old enough to be worth replacing: the client keeps
 		// what it has. RFC 9018 §4.3 asks for a fresh one past half an hour,
@@ -321,3 +322,42 @@ func unhex(c byte) (byte, bool) {
 		return 0, false
 	}
 }
+
+// refuseCookieless reports whether this query is turned away because the
+// server is under load and the client has not proved its address, and sets the
+// response that says so.
+//
+// The condition is D37's and the response is D35's. It costs a real client one
+// round trip, once: it comes back with the cookie in the refusal and is never
+// refused again. The spoofed source never receives the refusal, so what it
+// bought is a response close in size to the query it forged, which is the
+// point.
+func (r *Responder) refuseCookieless(tr Transport) bool {
+	// A stream client completed a handshake, which is the same proof of
+	// address a cookie exists to obtain (RFC 7873 §5.2.3 says as much: over
+	// TCP, answer normally).
+	if tr != UDP || r.cookieValid || !r.underLoad() {
+		return false
+	}
+
+	if r.hasCookie {
+		r.resp.Rcode = wire.RcodeBadCookie
+		r.ev.Refused = RefusedBadCookie
+	} else {
+		// RFC 6891 §6.1.1 forbids an OPT in the response to a query that
+		// carried none, and BADCOOKIE lives in that OPT. A client speaking no
+		// cookies can be handed nothing, so it gets the smallest honest thing
+		// this server can say.
+		r.resp.Rcode = wire.RcodeRefused
+		r.ev.Refused = RefusedCookieless
+	}
+
+	// No extended error, deliberately. Text explaining the refusal is more
+	// octets aimed at whoever the forged source address belongs to, and the
+	// refusal exists to make that number small (D23).
+	return true
+}
+
+// underLoad reports whether the readers this responder answers for have
+// stopped idling.
+func (r *Responder) underLoad() bool { return r.load != nil && r.load.underLoad() }

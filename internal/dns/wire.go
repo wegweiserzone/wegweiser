@@ -92,10 +92,16 @@ type Responder struct {
 	// it; cookieIn is where the query's own is decoded to. hasCookie says
 	// whether one is going back at all, which it is only when the query
 	// brought one.
-	cookie    wire.EDNS0_COOKIE
-	cookieIn  [clientCookieLen + maxServerCookie]byte
-	cookieOut [cookieLen]byte
-	hasCookie bool
+	cookie      wire.EDNS0_COOKIE
+	cookieIn    [clientCookieLen + maxServerCookie]byte
+	cookieOut   [cookieLen]byte
+	hasCookie   bool
+	cookieValid bool
+
+	// load reports whether the datagram readers are keeping up, and is nil on
+	// a path that is never refused: a stream client has proved its address by
+	// completing a handshake, which is what a cookie is for.
+	load *loadMeter
 
 	// ev is what the last exchange looked like, for whoever is watching. It is
 	// filled as the exchange goes rather than reconstructed afterwards,
@@ -216,6 +222,10 @@ func (r *Responder) Respond(
 		r.fail(wire.RcodeRefused, wire.ExtendedErrorCodeNotSupported,
 			"this server answers questions in class IN only")
 
+	case r.refuseCookieless(tr):
+		// Nothing is resolved: while the server cannot keep up, a client that
+		// has not shown it can receive what it is sent goes first (D35, D37).
+
 	default:
 		r.answer(snap)
 	}
@@ -252,6 +262,8 @@ func (r *Responder) begin() {
 	r.ede = wire.EDNS0_EDE{}
 	r.hasEDE = false
 	r.hasCookie = false
+	r.cookieValid = false
+	r.ev.Refused = NotRefused
 	r.signer = nil
 }
 

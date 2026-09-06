@@ -44,12 +44,53 @@ type Event struct {
 	// TC bit set (RFC 1035 §4.1.1).
 	Truncated bool
 
+	// Refused says the query was turned away for want of a cookie while the
+	// server was under load (D35), and what the client had brought with it.
+	// [NotRefused] on every other exchange, which is nearly all of them.
+	Refused Refusal
+
 	// Dropped is whether nothing was sent at all. Two messages have no safe
 	// reply (architecture §2.2) and a response that cannot be packed
 	// is a fault; either way the client waits for something that is not
 	// coming, which is exactly what an operator is trying to find. Rcode and
 	// Size mean nothing when it is set.
 	Dropped bool
+}
+
+// Refusal says why an exchange was refused for want of a cookie, and tells
+// apart the two clients D35 treats differently: the one that can come back
+// with the cookie it was just handed, and the one that implements no cookies
+// at all and cannot.
+//
+// The second is what D35 names as the case its decision leaves exposed, and
+// counting it is where the measurement it asks for before response rate
+// limiting is reopened would come from.
+type Refusal uint8
+
+const (
+	// NotRefused is every exchange this did not happen to.
+	NotRefused Refusal = iota
+	// RefusedCookieless is a query that carried no cookie option at all.
+	// There is nothing to hand such a client back, so the refusal is a plain
+	// REFUSED.
+	RefusedCookieless
+	// RefusedBadCookie is a query whose Server Cookie was not one of ours, or
+	// had expired. It is answered BADCOOKIE with a fresh cookie in it, so one
+	// retry is the whole cost.
+	RefusedBadCookie
+)
+
+// String names the refusal for a metric label, and is empty for an exchange
+// that was not refused.
+func (r Refusal) String() string {
+	switch r {
+	case RefusedCookieless:
+		return "cookieless"
+	case RefusedBadCookie:
+		return "badcookie"
+	default:
+		return ""
+	}
 }
 
 // String returns "udp" or "tcp", which is what a metric label and a stream

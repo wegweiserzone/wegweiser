@@ -20,6 +20,13 @@ public API is unstable and may change without a deprecation period.
   that comes with the switch D35 describes, and this is the half that
   identifies a client.
 
+- While the server cannot keep up, a query carrying no valid cookie is refused
+  instead of answered. A client that brought a cookie gets BADCOOKIE with a
+  fresh one in it, so coming back once is the whole cost; one that implements
+  no cookies at all gets REFUSED, because there is nothing to hand it. A query
+  over TCP is never refused this way, and neither is anything at all while the
+  server is keeping up.
+
 - The secret those cookies are computed under is minted on first start, stored
   with the other server settings, and rolled over every hour. Nothing about
   that is visible to a client: the secret a cookie was issued under is checked
@@ -31,7 +38,11 @@ public API is unstable and may change without a deprecation period.
 - `weg_dns_under_load` is 1 while the server cannot keep up: while its datagram
   readers never once waited for a query to arrive in the last second. The
   threshold is the machine's own capacity rather than a rate anybody
-  configured, and it is the condition a cookieless query will be refused under.
+  configured, and it is the condition a cookieless query is refused under.
+
+- `weg_dns_cookie_refusals_total` counts what those refusals turned away:
+  `badcookie` for a client that can come back with the cookie it was handed,
+  `cookieless` for one that implements none and cannot.
 
 ## [0.3.0] - 2026-09-04
 

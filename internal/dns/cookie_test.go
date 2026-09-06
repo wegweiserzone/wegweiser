@@ -424,9 +424,7 @@ func responderWithCookies(t *testing.T, secrets CookieSecrets) *Responder {
 	t.Helper()
 
 	r := NewResponder(DefaultLimits())
-	holder := new(atomic.Pointer[cookieHolder])
-	holder.Store(&cookieHolder{secrets: secrets})
-	r.cookies = holder
+	r.cookies = cookieHolderFor(secrets)
 	return r
 }
 
@@ -471,4 +469,142 @@ func responseCookie(t *testing.T, msg *wire.Msg) []byte {
 		t.Fatalf("the cookie in the response is not hex: %v", err)
 	}
 	return raw
+}
+
+// TestRespondRefusesUnderLoad walks D35's switch: while the readers have
+// stopped idling, a client that has not proved its address is turned away, and
+// everybody else is answered as before.
+func TestRespondRefusesUnderLoad(t *testing.T) {
+	t.Parallel()
+
+	secrets := testSecrets(t)
+	client := mustHex(t, "2464c4abcf10c957")
+	held := heldCookie(secrets.Current, client, testClient, 0)
+
+	tests := []struct {
+		name      string
+		query     []byte
+		transport Transport
+		rcode     int
+		refused   Refusal
+		answered  bool
+	}{
+		{
+			name:      "a client that has never been here gets one round trip to pay",
+			query:     packQuery(t, "www.example.com.", zone.TypeA, withCookie(client)),
+			transport: UDP,
+			rcode:     wire.RcodeBadCookie,
+			refused:   RefusedBadCookie,
+		},
+		{
+			name: "so does one holding a cookie that has expired",
+			query: packQuery(t, "www.example.com.", zone.TypeA,
+				withCookie(heldCookie(secrets.Current, client, testClient, -cookieMaxAge-1))),
+			transport: UDP,
+			rcode:     wire.RcodeBadCookie,
+			refused:   RefusedBadCookie,
+		},
+		{
+			name:      "a client holding a cookie of ours is answered",
+			query:     packQuery(t, "www.example.com.", zone.TypeA, withCookie(held)),
+			transport: UDP,
+			rcode:     wire.RcodeSuccess,
+			refused:   NotRefused,
+			answered:  true,
+		},
+		{
+			// Nothing to hand it back, so nothing to say but no.
+			name:      "a client that implements no cookies is refused outright",
+			query:     packQuery(t, "www.example.com.", zone.TypeA, withEDNS(4096, 0)),
+			transport: UDP,
+			rcode:     wire.RcodeRefused,
+			refused:   RefusedCookieless,
+		},
+		{
+			name:      "and so is one that speaks no EDNS either",
+			query:     packQuery(t, "www.example.com.", zone.TypeA),
+			transport: UDP,
+			rcode:     wire.RcodeRefused,
+			refused:   RefusedCookieless,
+		},
+		{
+			// A handshake is the proof a cookie exists to obtain, and
+			// RFC 7873 §5.2.3 says to answer such a query normally.
+			name:      "a stream client is never refused",
+			query:     packQuery(t, "www.example.com.", zone.TypeA, withCookie(client)),
+			transport: TCP,
+			rcode:     wire.RcodeSuccess,
+			refused:   NotRefused,
+			answered:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := responderWithCookies(t, secrets)
+			r.load = meterUnderLoad()
+
+			got, _ := respond(t, r, resolveFixture(t), tt.query, tt.transport)
+
+			if got.Rcode != tt.rcode {
+				t.Errorf("rcode = %s, want %s",
+					wire.RcodeToString[got.Rcode], wire.RcodeToString[tt.rcode])
+			}
+			if answered := len(got.Answer) > 0; answered != tt.answered {
+				t.Errorf("the answer section holds %d records, want answered = %t",
+					len(got.Answer), tt.answered)
+			}
+			if refused := r.Observed().Refused; refused != tt.refused {
+				t.Errorf("the exchange is recorded as %q, want %q", refused, tt.refused)
+			}
+		})
+	}
+}
+
+// TestRefusalCostsOneRoundTrip is the property D35 rests on: the refusal
+// carries the cookie the client needs, so it comes back once and is answered
+// from then on, however long the load lasts.
+func TestRefusalCostsOneRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	r := responderWithCookies(t, testSecrets(t))
+	r.load = meterUnderLoad()
+	snap := resolveFixture(t)
+	client := mustHex(t, "2464c4abcf10c957")
+
+	refusal, _ := respond(t, r, snap,
+		packQuery(t, "www.example.com.", zone.TypeA, withCookie(client)), UDP)
+	if refusal.Rcode != wire.RcodeBadCookie {
+		t.Fatalf("rcode = %s, want BADCOOKIE", wire.RcodeToString[refusal.Rcode])
+	}
+
+	// What the client learned from being refused.
+	handed := responseCookie(t, refusal)
+	if !bytes.Equal(handed[:clientCookieLen], client) {
+		t.Fatalf("the refusal came back with cookie %x, which is not the client's", handed)
+	}
+
+	got, _ := respond(t, r, snap,
+		packQuery(t, "www.example.com.", zone.TypeA, withCookie(handed)), UDP)
+	if got.Rcode != wire.RcodeSuccess || len(got.Answer) == 0 {
+		t.Errorf("the retry with the cookie it was handed got %s and %d records",
+			wire.RcodeToString[got.Rcode], len(got.Answer))
+	}
+}
+
+// meterUnderLoad returns a meter whose last window found no reader idle.
+func meterUnderLoad() *loadMeter {
+	m := newLoadMeter(1)
+	m.under.Store(true)
+	return m
+}
+
+// cookieHolderFor publishes secrets the way a server does, for a responder a
+// test builds by hand.
+func cookieHolderFor(secrets CookieSecrets) *atomic.Pointer[cookieHolder] {
+	holder := new(atomic.Pointer[cookieHolder])
+	holder.Store(&cookieHolder{secrets: secrets})
+	return holder
 }

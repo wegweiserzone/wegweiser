@@ -259,7 +259,7 @@ func (s *Server) Start() error {
 
 	for i, conn := range s.udp {
 		s.wg.Add(1)
-		go s.readUDP(conn, meter.reader(i))
+		go s.readUDP(conn, meter, i)
 	}
 	s.wg.Add(1)
 	go s.acceptTCP()
@@ -421,12 +421,15 @@ func (s *Server) report(err error) {
 //
 // This goroutine owns the socket for its whole life, and with it the buffers
 // and the [Responder]. Nothing is pooled or shared.
-func (s *Server) readUDP(conn *net.UDPConn, load *readerLoad) {
+func (s *Server) readUDP(conn *net.UDPConn, meter *loadMeter, reader int) {
 	defer s.wg.Done()
+
+	load := meter.reader(reader)
 
 	r := NewResponder(s.cfg.Limits)
 	r.keys = &s.keys
 	r.cookies = &s.cookies
+	r.load = meter
 	in := make([]byte, maxUDPQuery)
 	out := make([]byte, r.limits.MaxUDPResponse)
 
