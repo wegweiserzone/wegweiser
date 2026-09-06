@@ -37,9 +37,9 @@ func TestCookieSecretsRoundTripThroughTheStore(t *testing.T) {
 	}
 
 	at := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
-	want, err := apply.NewCookieSecrets(at)
+	want, err := apply.CookieSecrets{}.Rotate(at)
 	if err != nil {
-		t.Fatalf("NewCookieSecrets: %v", err)
+		t.Fatalf("Rotate: %v", err)
 	}
 	change, cerr := apply.CookieSecretsChange(want)
 	if cerr != nil {
@@ -143,5 +143,53 @@ func TestACookieSecretIsWrittenAsHex(t *testing.T) {
 	err = json.Unmarshal([]byte(`"e5e973"`), &s)
 	if !errors.Is(err, zone.ErrInvalid) {
 		t.Errorf("a short secret gave %v, want an invalid-value error", err)
+	}
+}
+
+func TestCookieSecretsRotateOnTheHour(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	start := f.now
+
+	// The first call mints, because a pair that does not exist is due.
+	first, rotated, err := f.a.RotateCookieSecrets(t.Context())
+	if err != nil {
+		t.Fatalf("RotateCookieSecrets: %v", err)
+	}
+	if !rotated || first.Current.IsZero() {
+		t.Fatalf("the first call left the server without a secret: %+v, rotated %t", first, rotated)
+	}
+	if !first.Previous.IsZero() {
+		t.Error("the first secret has a predecessor it never had")
+	}
+
+	// Nothing happens again until an hour has gone by, whoever asks and how
+	// often.
+	f.now = start.Add(apply.CookieRotation - time.Second)
+	again, rotated, err := f.a.RotateCookieSecrets(t.Context())
+	if err != nil {
+		t.Fatalf("RotateCookieSecrets: %v", err)
+	}
+	if rotated || again.Current != first.Current {
+		t.Errorf("the secret changed after %s", apply.CookieRotation-time.Second)
+	}
+
+	f.now = start.Add(apply.CookieRotation)
+	next, rotated, err := f.a.RotateCookieSecrets(t.Context())
+	if err != nil {
+		t.Fatalf("RotateCookieSecrets: %v", err)
+	}
+	if !rotated {
+		t.Fatal("the secret did not change on the hour")
+	}
+	if next.Current == first.Current {
+		t.Error("the rotation minted the secret it replaced")
+	}
+	// The predecessor is what makes a rotation invisible: a client holding a
+	// cookie from the last hour is still holding a cookie this server knows.
+	if next.Previous != first.Current {
+		t.Errorf("the previous secret is %x, want the one just replaced, %x",
+			next.Previous, first.Current)
 	}
 }

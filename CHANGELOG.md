@@ -20,9 +20,11 @@ public API is unstable and may change without a deprecation period.
   that comes with the switch D35 describes, and this is the half that
   identifies a client.
 
-- The secret those cookies are computed under is minted on first start and
-  stored with the other server settings, so it survives a restart and the
-  cookies handed out before it do too.
+- The secret those cookies are computed under is minted on first start, stored
+  with the other server settings, and rolled over every hour. Nothing about
+  that is visible to a client: the secret a cookie was issued under is checked
+  against for an hour after it is replaced, by which time the cookie itself has
+  expired anyway.
 
 ## [0.3.0] - 2026-09-04
 

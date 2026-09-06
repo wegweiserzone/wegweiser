@@ -189,10 +189,11 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 	}
 
 	// A cookie is a hash under a secret this installation minted, so the first
-	// start is where it comes into existence.
-	secrets, err := cookieSecrets(ctx, st, applier)
+	// start is where it comes into existence, and every hour after that is a
+	// rotation.
+	secrets, _, err := applier.RotateCookieSecrets(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("mint the cookie secret: %w", err)
 	}
 
 	srv := dns.NewServer(dns.Config{
@@ -268,6 +269,19 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		return perr
 	}
 	defer func() { err = errors.Join(err, stopProber(prober)) }()
+
+	// The secret turns over for as long as the server runs. Stopped before the
+	// store closes, because it writes through it.
+	rotations, stopRotating := context.WithCancel(ctx)
+	rotating := make(chan struct{})
+	go func() {
+		defer close(rotating)
+		rotateCookies(rotations, applier, srv, report)
+	}()
+	defer func() {
+		stopRotating()
+		<-rotating
+	}()
 
 	if serr := srv.Start(); serr != nil {
 		return serr
@@ -366,41 +380,41 @@ func notifyTargets(in []apply.NotifyTarget) []dns.NotifyTarget {
 	return out
 }
 
-// cookieSecrets returns the secrets Server Cookies are computed under, minting
-// the first pair where the database holds none.
+// rotateCookies keeps the cookie secret turning over for as long as the server
+// runs.
 //
-// It happens on the way up rather than at install time because a secret two
-// installations shared would let each hand out cookies the other honours.
-// Writing it through the applier is what makes it a setting like the others,
-// carried between nodes the way D32 says settings are carried, rather than a
-// file beside the database that a second node would never see.
-func cookieSecrets(
-	ctx context.Context, st store.Store, applier *apply.Applier,
-) (apply.CookieSecrets, error) {
-	var secrets apply.CookieSecrets
-	if err := st.View(ctx, func(r store.Reader) error {
-		var verr error
-		secrets, verr = apply.StoredCookieSecrets(ctx, r)
-		return verr
-	}); err != nil {
-		return apply.CookieSecrets{}, err
-	}
-	if !secrets.IsZero() {
-		return secrets, nil
-	}
+// It sleeps until the pair it holds is due rather than on a cadence of its
+// own, so the schedule is the one in the database and a restart does not push
+// the next rotation an hour out. A failed rotation is reported and retried
+// shortly: the secret in force stays valid, so there is nothing urgent about
+// it, and the cookies handed out under it keep working meanwhile.
+func rotateCookies(
+	ctx context.Context, applier *apply.Applier, srv *dns.Server, report func(error),
+) {
+	const retry = time.Minute
 
-	minted, err := apply.NewCookieSecrets(time.Now())
-	if err != nil {
-		return apply.CookieSecrets{}, err
+	for {
+		wait := retry
+		secrets, rotated, err := applier.RotateCookieSecrets(ctx)
+		switch {
+		case err != nil:
+			report(fmt.Errorf("rotate the cookie secret: %w", err))
+		default:
+			if rotated {
+				srv.SetCookieSecrets(dns.CookieSecrets{
+					Current:  dns.CookieSecret(secrets.Current),
+					Previous: dns.CookieSecret(secrets.Previous),
+				})
+			}
+			wait = max(time.Until(secrets.RotatedAt.Add(apply.CookieRotation)), retry)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
 	}
-	change, cerr := apply.CookieSecretsChange(minted)
-	if cerr != nil {
-		return apply.CookieSecrets{}, cerr
-	}
-	if serr := applier.SetSettings(ctx, []apply.SettingChange{change}); serr != nil {
-		return apply.CookieSecrets{}, fmt.Errorf("store the first cookie secret: %w", serr)
-	}
-	return minted, nil
 }
 
 // keyPublishers hands a new keyring to everything that holds one: the query

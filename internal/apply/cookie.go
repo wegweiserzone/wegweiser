@@ -108,24 +108,70 @@ type CookieSecrets struct {
 // once in a server's life.
 func (s CookieSecrets) IsZero() bool { return s.Current.IsZero() }
 
-// NewCookieSecrets returns the pair a server starts with: one secret, minted
-// now, and no predecessor.
-func NewCookieSecrets(now time.Time) (CookieSecrets, error) {
-	current, err := NewCookieSecret()
-	if err != nil {
-		return CookieSecrets{}, err
-	}
-	return CookieSecrets{Current: current, RotatedAt: now.UTC()}, nil
-}
-
 // Rotate returns the pair that follows this one: a freshly minted secret, with
 // the one it replaces kept as the predecessor.
+//
+// Rotating the zero pair is how the first secret comes into existence, and it
+// leaves no predecessor because there is none to keep.
 func (s CookieSecrets) Rotate(now time.Time) (CookieSecrets, error) {
 	next, err := NewCookieSecret()
 	if err != nil {
 		return CookieSecrets{}, err
 	}
 	return CookieSecrets{Current: next, Previous: s.Current, RotatedAt: now.UTC()}, nil
+}
+
+// CookieRotation is how often the secret changes.
+//
+// It is the hour a Server Cookie is honoured for (RFC 9018 §4.3) rather than a
+// period somebody picked, and the two are the same number for a reason: an
+// hour is the shortest rotation that never takes a cookie away from a client
+// still entitled to use it. The secret a cookie was issued under is the
+// current one for an hour and the predecessor for an hour after that, by which
+// time every cookie built under it has expired on its own.
+const CookieRotation = time.Hour
+
+// Due reports whether the secrets are old enough to be rotated at now. A pair
+// that was never minted is due immediately, which is how the first one comes
+// into existence.
+func (s CookieSecrets) Due(now time.Time) bool {
+	return s.IsZero() || !now.Before(s.RotatedAt.Add(CookieRotation))
+}
+
+// RotateCookieSecrets mints the next secret where the stored pair is due, and
+// returns the pair in force afterwards along with whether it changed.
+//
+// In a cluster this is the leader's to do, for the reason D36 gives about
+// probing a secondary: every node rotating on its own schedule would publish
+// several answers to one fact, and a client would hold a cookie that half the
+// nodes recognise.
+func (a *Applier) RotateCookieSecrets(ctx context.Context) (CookieSecrets, bool, error) {
+	var stored CookieSecrets
+	if err := a.store.View(ctx, func(r store.Reader) error {
+		var verr error
+		stored, verr = StoredCookieSecrets(ctx, r)
+		return verr
+	}); err != nil {
+		return CookieSecrets{}, false, err
+	}
+
+	now := a.now()
+	if !stored.Due(now) {
+		return stored, false, nil
+	}
+
+	next, err := stored.Rotate(now)
+	if err != nil {
+		return CookieSecrets{}, false, err
+	}
+	change, cerr := CookieSecretsChange(next)
+	if cerr != nil {
+		return CookieSecrets{}, false, cerr
+	}
+	if serr := a.SetSettings(ctx, []SettingChange{change}); serr != nil {
+		return CookieSecrets{}, false, serr
+	}
+	return next, true, nil
 }
 
 // StoredCookieSecrets returns the secrets the database holds, or the zero pair
