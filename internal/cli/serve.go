@@ -219,6 +219,10 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		},
 	})
 
+	// What the load gauge reads. The server holds the state and the metrics
+	// hold the scrape, and neither can be built before the other without this.
+	met.SetLoadSource(srv.UnderLoad)
+
 	// Every publish goes through the pair rather than through the server, so
 	// that what the metrics report is what queries are actually answered from,
 	// including this first one, which no write is responsible for.

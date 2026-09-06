@@ -140,6 +140,37 @@ func TestSetSnapshot(t *testing.T) {
 	}
 }
 
+func TestUnderLoadGauge(t *testing.T) {
+	t.Parallel()
+
+	m := New()
+
+	// Nothing has said where the state comes from yet, and a server that is
+	// not answering anything is not one that cannot keep up.
+	if got := m.underLoad(); got != 0 {
+		t.Errorf("under_load = %v before a source was set, want 0", got)
+	}
+
+	under := false
+	m.SetLoadSource(func() bool { return under })
+	if got := m.underLoad(); got != 0 {
+		t.Errorf("under_load = %v while the readers idle, want 0", got)
+	}
+
+	under = true
+	if got := m.underLoad(); got != 1 {
+		t.Errorf("under_load = %v while the readers do not, want 1", got)
+	}
+
+	var buf bytes.Buffer
+	if _, err := m.WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	if !strings.Contains(buf.String(), "weg_dns_under_load 1") {
+		t.Error("the scrape does not carry the load state")
+	}
+}
+
 func TestWriteTo(t *testing.T) {
 	t.Parallel()
 

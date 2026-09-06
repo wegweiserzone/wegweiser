@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -80,6 +81,10 @@ type Metrics struct {
 	zones   prometheus.Gauge
 	records prometheus.Gauge
 	built   prometheus.Gauge
+
+	// load is where the under-load state is read from, published by the
+	// wiring rather than passed in, and nil until it is.
+	load atomic.Pointer[func() bool]
 
 	byTransport [2]transportMetrics
 }
@@ -181,10 +186,16 @@ func New() *Metrics {
 		}),
 	}
 
+	underLoad := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace: namespace, Subsystem: "dns", Name: "under_load",
+		Help: "1 while the datagram readers have stopped idling, which is when a query " +
+			"carrying no valid cookie is refused rather than answered.",
+	}, m.underLoad)
+
 	m.reg.MustRegister(
 		m.queries, m.dropped, m.truncated, m.duration, m.size, m.notify,
 		m.probes, m.lag, m.behind, m.unanswered,
-		m.zones, m.records, m.built,
+		m.zones, m.records, m.built, underLoad,
 		buildInfo(),
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -212,6 +223,23 @@ func buildInfo() prometheus.Collector {
 	}, []string{"version", "commit", "go_version", "platform"})
 	g.WithLabelValues(info.Version, info.Commit, info.GoVersion, info.Platform).Set(1)
 	return g
+}
+
+// SetLoadSource says where the load state is read from, which is the DNS
+// server. It is published after construction because the server is built with
+// this object's observer in it, so neither can be made first.
+//
+// Until it is set, and after a server has stopped, the gauge reads zero: a
+// server answering nothing is not one that cannot keep up.
+func (m *Metrics) SetLoadSource(under func() bool) { m.load.Store(&under) }
+
+// underLoad is what the gauge reads, in the shape Prometheus wants it.
+func (m *Metrics) underLoad() float64 {
+	source := m.load.Load()
+	if source == nil || !(*source)() {
+		return 0
+	}
+	return 1
 }
 
 // Observe records one exchange. It is what a [dns.Server] is given as its

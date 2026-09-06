@@ -26,6 +26,13 @@ public API is unstable and may change without a deprecation period.
   against for an hour after it is replaced, by which time the cookie itself has
   expired anyway.
 
+#### Observation
+
+- `weg_dns_under_load` is 1 while the server cannot keep up: while its datagram
+  readers never once waited for a query to arrive in the last second. The
+  threshold is the machine's own capacity rather than a rate anybody
+  configured, and it is the condition a cookieless query will be refused under.
+
 ## [0.3.0] - 2026-09-04
 
 ### Added
