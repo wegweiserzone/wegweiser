@@ -209,6 +209,14 @@ func New() *Metrics {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 
+	// Both series exist from the start, at zero. D35 says reopening response
+	// rate limiting starts with a measurement of how much cookieless traffic
+	// there is, and a series that appears only once there is some makes "none"
+	// and "not exported" look alike to whoever is doing the measuring.
+	for _, refusal := range []dns.Refusal{dns.RefusedBadCookie, dns.RefusedCookieless} {
+		m.refusals.WithLabelValues(refusal.String())
+	}
+
 	for slot, tr := range map[int]dns.Transport{slotUDP: dns.UDP, slotTCP: dns.TCP} {
 		m.byTransport[slot] = transportMetrics{
 			dropped:   m.dropped.WithLabelValues(tr.String()),
