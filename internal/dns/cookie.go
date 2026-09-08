@@ -323,6 +323,21 @@ func unhex(c byte) (byte, bool) {
 	}
 }
 
+// cookieQuery reports whether this message is a request for a Server Cookie
+// and nothing else.
+//
+// RFC 7873 §5.4 extends the QUERY opcode for a server with cookies: a message
+// with an empty question section and a cookie option is how a client fetches
+// one without having anything to ask, and the reply carries an empty answer
+// section and the cookie. It is the one message this server answers without a
+// question in it, and both halves of the condition are what keeps it from
+// widening into "a query need not ask anything".
+//
+// A cookie option this server cannot answer, because none is well formed or
+// no secret has been published yet, leaves the message with neither a question
+// nor a reason to exist, and the empty question is what the client hears about.
+func (r *Responder) cookieQuery() bool { return len(r.req.Question) == 0 && r.hasCookie }
+
 // refuseCookieless reports whether this query is turned away because the
 // server is under load and the client has not proved its address, and sets the
 // response that says so.

@@ -608,3 +608,105 @@ func cookieHolderFor(secrets CookieSecrets) *atomic.Pointer[cookieHolder] {
 	holder.Store(&cookieHolder{secrets: secrets})
 	return holder
 }
+
+// TestRespondAnswersACookieQuery covers RFC 7873 §5.4: a message with an empty
+// question section and a cookie option is a client fetching a Server Cookie
+// without having anything to ask, and this server answers it.
+func TestRespondAnswersACookieQuery(t *testing.T) {
+	t.Parallel()
+
+	secrets := testSecrets(t)
+	client := mustHex(t, "2464c4abcf10c957")
+	snap := resolveFixture(t)
+
+	t.Run("a cookie and no question", func(t *testing.T) {
+		t.Parallel()
+
+		r := responderWithCookies(t, secrets)
+		got, _ := respond(t, r, snap, packCookieQuery(t, client), UDP)
+
+		if got.Rcode != wire.RcodeSuccess {
+			t.Errorf("rcode = %s, want NOERROR", wire.RcodeToString[got.Rcode])
+		}
+		if len(got.Question) != 0 || len(got.Answer) != 0 || len(got.Ns) != 0 {
+			t.Errorf("the reply carries %d questions, %d answers and %d authority records, "+
+				"want none of any", len(got.Question), len(got.Answer), len(got.Ns))
+		}
+		if got.Authoritative {
+			t.Error("AA is set on a reply to a message that asked nothing")
+		}
+
+		cookie := responseCookie(t, got)
+		if !secrets.knows(cookie[:clientCookieLen], cookie[clientCookieLen:], testClient) {
+			t.Errorf("what came back is not a cookie of ours: %x", cookie)
+		}
+	})
+
+	t.Run("no question and no cookie either", func(t *testing.T) {
+		t.Parallel()
+
+		// The rule this makes an exception to is still the rule: a message
+		// with nothing in it and nothing to answer is malformed.
+		r := responderWithCookies(t, secrets)
+		got, _ := respond(t, r, snap, packQuestionless(t, withEDNS(4096, 0)), UDP)
+
+		if got.Rcode != wire.RcodeFormatError {
+			t.Errorf("rcode = %s, want FORMERR", wire.RcodeToString[got.Rcode])
+		}
+	})
+
+	t.Run("a cookie this server cannot answer yet", func(t *testing.T) {
+		t.Parallel()
+
+		// No secret published, so there is no cookie to hand over and nothing
+		// else in the message to reply to.
+		r := NewResponder(DefaultLimits())
+		got, _ := respond(t, r, snap, packCookieQuery(t, client), UDP)
+
+		if got.Rcode != wire.RcodeFormatError {
+			t.Errorf("rcode = %s, want FORMERR", wire.RcodeToString[got.Rcode])
+		}
+	})
+
+	t.Run("under load it is refused, and still carries the cookie", func(t *testing.T) {
+		t.Parallel()
+
+		r := responderWithCookies(t, secrets)
+		r.load = meterUnderLoad()
+		got, _ := respond(t, r, snap, packCookieQuery(t, client), UDP)
+
+		// D35 charges this client the same round trip as any other, and the
+		// refusal is what it came for: a cookie it can come back with.
+		if got.Rcode != wire.RcodeBadCookie {
+			t.Errorf("rcode = %s, want BADCOOKIE", wire.RcodeToString[got.Rcode])
+		}
+		cookie := responseCookie(t, got)
+		if !secrets.knows(cookie[:clientCookieLen], cookie[clientCookieLen:], testClient) {
+			t.Errorf("the refusal carries no cookie of ours: %x", cookie)
+		}
+	})
+}
+
+// packCookieQuery builds the bytes of the message RFC 7873 §5.4 describes: a
+// cookie option, and no question.
+func packCookieQuery(t *testing.T, cookie []byte) []byte {
+	t.Helper()
+	return packQuestionless(t, withCookie(cookie))
+}
+
+// packQuestionless builds a QUERY with an empty question section.
+func packQuestionless(t *testing.T, shape ...func(*wire.Msg)) []byte {
+	t.Helper()
+
+	m := new(wire.Msg)
+	m.Id = queryID
+	for _, s := range shape {
+		s(m)
+	}
+
+	b, err := m.Pack()
+	if err != nil {
+		t.Fatalf("pack the query: %v", err)
+	}
+	return b
+}

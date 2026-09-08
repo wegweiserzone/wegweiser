@@ -199,7 +199,7 @@ func (r *Responder) Respond(
 		r.fail(wire.RcodeNotImplemented, wire.ExtendedErrorCodeNotSupported,
 			"this server implements the QUERY opcode only")
 
-	case len(r.req.Question) != 1:
+	case len(r.req.Question) != 1 && !r.cookieQuery():
 		r.fail(wire.RcodeFormatError, wire.ExtendedErrorCodeOther,
 			"a query carries exactly one question")
 
@@ -215,7 +215,10 @@ func (r *Responder) Respond(
 		r.fail(wire.RcodeBadVers, wire.ExtendedErrorCodeOther,
 			"this server implements EDNS version 0")
 
-	case zone.Class(r.req.Question[0].Qclass) != zone.ClassIN:
+	// Guarded, because the case above no longer guarantees a question: the
+	// cookie query of RFC 7873 §5.4 reaches here with none, and asks about no
+	// class at all.
+	case len(r.req.Question) == 1 && zone.Class(r.req.Question[0].Qclass) != zone.ClassIN:
 		// TODO: CH is where version.bind and friends live (RFC 4892). Until
 		// they exist there is nothing to say in that class, and saying nothing
 		// is what REFUSED means.
@@ -225,6 +228,10 @@ func (r *Responder) Respond(
 	case r.refuseCookieless(tr):
 		// Nothing is resolved: while the server cannot keep up, a client that
 		// has not shown it can receive what it is sent goes first (D35, D37).
+
+	case r.cookieQuery():
+		// Nothing was asked, so nothing is answered. The cookie the response
+		// carries is what the client came for (RFC 7873 §5.4).
 
 	default:
 		r.answer(snap)

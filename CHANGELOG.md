@@ -20,6 +20,11 @@ public API is unstable and may change without a deprecation period.
   that comes with the switch D35 describes, and this is the half that
   identifies a client.
 
+- A client with nothing to ask can fetch a cookie anyway. A query with an
+  empty question section and a cookie option is answered with an empty answer
+  and a cookie in it (RFC 7873 §5.4). Every other message without exactly one
+  question is still malformed.
+
 - While the server cannot keep up, a query carrying no valid cookie is refused
   instead of answered. A client that brought a cookie gets BADCOOKIE with a
   fresh one in it, so coming back once is the whole cost; one that implements

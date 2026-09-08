@@ -602,6 +602,17 @@ func TestAmplificationFactor(t *testing.T) {
 			worst: 3, // measured 2.1
 		},
 		{
+			// The reply to the cookie query of RFC 7873 §5.4, which answers
+			// no question and is therefore the smallest exchange this server
+			// has that is not an error.
+			name:  "a cookie query",
+			query: packCookieQuery(t, make([]byte, clientCookieLen)),
+			worst: 2, // measured 1.5
+			shape: func(r *Responder) {
+				r.cookies = cookieHolderFor(CookieSecrets{Current: CookieSecret{0x01}})
+			},
+		},
+		{
 			// The refusal D35 answers a cookieless client with while the
 			// server is under load. It is the smallest thing this server
 			// sends to a query it understood, and pinning it is what keeps
