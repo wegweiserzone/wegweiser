@@ -253,13 +253,13 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	meter := newLoadMeter(len(s.udp))
+	meter := newLoadMeter(s.udp, s.report)
 	s.load.Store(meter)
 	go meter.run()
 
-	for i, conn := range s.udp {
+	for _, conn := range s.udp {
 		s.wg.Add(1)
-		go s.readUDP(conn, meter, i)
+		go s.readUDP(conn, meter)
 	}
 	s.wg.Add(1)
 	go s.acceptTCP()
@@ -363,13 +363,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return nil
 	}
 
-	s.closeListeners()
-
-	// The windows stop with the readers they were watching; a meter left
-	// running would go on declaring a server with no sockets overloaded.
+	// Stopped before the sockets close, because a window asks each of them how
+	// many datagrams the kernel dropped, and a closed socket answers that with
+	// a fault rather than a number.
 	if meter := s.load.Swap(nil); meter != nil {
 		meter.close()
 	}
+
+	s.closeListeners()
 
 	s.mu.Lock()
 	for conn := range s.conns {
@@ -421,10 +422,8 @@ func (s *Server) report(err error) {
 //
 // This goroutine owns the socket for its whole life, and with it the buffers
 // and the [Responder]. Nothing is pooled or shared.
-func (s *Server) readUDP(conn *net.UDPConn, meter *loadMeter, reader int) {
+func (s *Server) readUDP(conn *net.UDPConn, meter *loadMeter) {
 	defer s.wg.Done()
-
-	load := meter.reader(reader)
 
 	r := NewResponder(s.cfg.Limits)
 	r.keys = &s.keys
@@ -434,16 +433,7 @@ func (s *Server) readUDP(conn *net.UDPConn, meter *loadMeter, reader int) {
 	out := make([]byte, r.limits.MaxUDPResponse)
 
 	for {
-		// The two clock reads around the receive are what the load signal is
-		// derived from (D37): a reader that never waits here is a reader the
-		// queries are arriving faster than. They cost tens of nanoseconds
-		// against the 9.3 µs D12 measured for an exchange, and the second one
-		// is the moment the exchange began, so nothing observes it twice.
-		load.waiting(time.Now())
 		n, from, err := conn.ReadFromUDPAddrPort(in)
-		read := time.Now()
-		load.woke(read)
-
 		if err != nil {
 			if s.closing.Load() || errors.Is(err, net.ErrClosed) {
 				return
@@ -456,14 +446,15 @@ func (s *Server) readUDP(conn *net.UDPConn, meter *loadMeter, reader int) {
 			return
 		}
 
-		s.answerDatagram(conn, r, in[:n], out, from, read)
+		s.answerDatagram(conn, r, in[:n], out, from)
 	}
 }
 
 // answerDatagram answers one query, or drops it where §2.2 says to drop it.
 func (s *Server) answerDatagram(
-	conn *net.UDPConn, r *Responder, query, out []byte, from netip.AddrPort, start time.Time,
+	conn *net.UDPConn, r *Responder, query, out []byte, from netip.AddrPort,
 ) {
+	start := s.startedAt()
 
 	packed, err := r.Respond(s.current.Load(), query, from.Addr(), UDP, out)
 	if err != nil {

@@ -594,9 +594,11 @@ func TestRefusalCostsOneRoundTrip(t *testing.T) {
 	}
 }
 
-// meterUnderLoad returns a meter whose last window found no reader idle.
+// meterUnderLoad returns a meter whose last window found the kernel dropping
+// queries. It watches no sockets: what the responder asks it is only which
+// state the last window left.
 func meterUnderLoad() *loadMeter {
-	m := newLoadMeter(1)
+	m := newLoadMeter(nil, nil)
 	m.under.Store(true)
 	return m
 }

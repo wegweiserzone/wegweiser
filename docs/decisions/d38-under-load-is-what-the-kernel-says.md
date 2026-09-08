@@ -84,4 +84,14 @@ where the state comes from.
 
 ## Where this stands
 
-Not built. The mechanism D37 prescribes is what is in the tree, and it does not trip.
+Built, and measured against the server that showed up the mechanism it replaces. One reader
+pinned to one core, offered 2.2 million datagrams a second: `weg_dns_under_load` reads 1
+throughout, a query with no cookie is REFUSED, one with a Client Cookie only is BADCOOKIE
+with a Server Cookie in it, a client holding a valid cookie is answered, and TCP is answered
+whatever the load. The state falls back to 0 within a window of the traffic stopping, and
+cookieless queries are answered again.
+
+Refusing is cheaper than answering, which the same run shows: about six million refusals in
+twenty seconds, against a server that answers something over a hundred thousand queries a
+second. `BenchmarkServerUDP` is where it was before D37, at 11.0 µs serial and 1.87 µs
+parallel, because the clock reads that record added are gone again.

@@ -40,8 +40,8 @@ public API is unstable and may change without a deprecation period.
 
 #### Observation
 
-- `weg_dns_under_load` is 1 while the server cannot keep up: while its datagram
-  readers never once waited for a query to arrive in the last second. The
+- `weg_dns_under_load` is 1 while the server cannot keep up: while the kernel
+  is discarding queries on its sockets because nobody got to them in time. The
   threshold is the machine's own capacity rather than a rate anybody
   configured, and it is the condition a cookieless query is refused under.
 

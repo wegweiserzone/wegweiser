@@ -1,74 +1,66 @@
 package dns
 
 import (
+	"net"
+	"syscall"
 	"testing"
-	"time"
+
+	"golang.org/x/sys/unix"
 )
 
-// TestLoadMeter walks the switch of D37 without a load generator, which is
-// half of why the signal is the readers' own idleness rather than a rate: the
-// state can be driven directly.
-func TestLoadMeter(t *testing.T) {
+// TestLoadMeterSeesTheKernelDropping is the switch of D38 closed and opened
+// again, without a load generator: a socket with a small receive buffer that
+// nobody reads from loses datagrams in milliseconds, and losing them is the
+// whole condition.
+func TestLoadMeterSeesTheKernelDropping(t *testing.T) {
 	t.Parallel()
 
-	now := time.Now()
-	m := newLoadMeter(2)
+	conn := smallSocket(t)
+	m := newLoadMeter([]*net.UDPConn{conn}, nil)
 
-	// Nothing has happened at all: both readers are blocked on a receive,
-	// which is what a server nobody is querying looks like.
-	m.reader(0).waiting(now.Add(-time.Minute))
-	m.reader(1).waiting(now.Add(-time.Minute))
-	m.window(now)
+	// Nothing has been sent, so nothing has been dropped.
+	m.window()
 	if m.underLoad() {
-		t.Error("a server waiting for its first query reads as overloaded")
+		t.Fatal("a socket nobody has sent to reads as overloaded")
 	}
 
-	// Both readers answer without ever waiting: datagrams were queued every
-	// time they came back for one.
-	m.reader(0).since.Store(0)
-	m.reader(1).since.Store(0)
-	m.window(now.Add(loadWindow))
+	flood(t, conn)
+	m.window()
 	if !m.underLoad() {
-		t.Error("a window in which no reader waited is not under load")
+		t.Error("the kernel dropped datagrams on this socket and the meter did not notice")
 	}
 
-	// One reader gets a moment to itself, which is enough: something was idle,
-	// so the queries are not arriving faster than they are answered.
-	m.reader(1).waiting(now.Add(loadWindow))
-	m.reader(1).woke(now.Add(loadWindow + time.Millisecond))
-	m.window(now.Add(2 * loadWindow))
+	// The flood is over and the counter stops moving, which is the state
+	// coming back on the next window rather than on a restart.
+	m.window()
 	if m.underLoad() {
-		t.Error("a window with an idle reader in it is still under load")
-	}
-
-	// And back, on the next window that has none.
-	m.window(now.Add(3 * loadWindow))
-	if !m.underLoad() {
-		t.Error("the state did not come back on the next saturated window")
+		t.Error("the state stayed after the drops stopped")
 	}
 }
 
-// TestLoadMeterCountsTheWaitInProgress covers the reader that is blocked for
-// longer than a whole window: it adds nothing to its total, and a meter
-// looking only at totals would call that server overloaded.
-func TestLoadMeterCountsTheWaitInProgress(t *testing.T) {
+// TestLoadMeterSaysNothingWhenTheKernelWillNot covers a kernel that does not
+// answer: the server goes on answering everybody, and hears about it once.
+func TestLoadMeterSaysNothingWhenTheKernelWillNot(t *testing.T) {
 	t.Parallel()
 
-	now := time.Now()
-	m := newLoadMeter(1)
+	conn := smallSocket(t)
+	var faults int
+	m := newLoadMeter([]*net.UDPConn{conn}, func(error) { faults++ })
 
-	m.reader(0).waiting(now.Add(-time.Hour))
-	for i := range 3 {
-		m.window(now.Add(time.Duration(i) * loadWindow))
-		if m.underLoad() {
-			t.Fatalf("window %d: a reader blocked for an hour reads as busy", i)
-		}
+	// A closed socket is the same shape of failure as an option a kernel does
+	// not implement: the counter cannot be read.
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close: %v", err)
 	}
 
-	// The datagram finally arrives, and the wait lands in the total.
-	m.reader(0).woke(now.Add(3 * loadWindow))
-	if waited := m.reader(0).waited.Load(); waited <= 0 {
-		t.Errorf("the wait was not counted: %d ns", waited)
+	for range 3 {
+		m.window()
+		if m.underLoad() {
+			t.Fatal("a meter that cannot read the counter refuses clients anyway")
+		}
+	}
+	if faults != 1 {
+		t.Errorf("the fault was reported %d times, want once", faults)
 	}
 }
 
@@ -90,5 +82,53 @@ func TestServerUnderLoad(t *testing.T) {
 	}
 	if s.UnderLoad() {
 		t.Error("a server that has stopped is under load")
+	}
+}
+
+// smallSocket returns a socket with the smallest receive buffer the kernel
+// will give, so that filling it is a matter of a few hundred datagrams.
+func smallSocket(t *testing.T) *net.UDPConn {
+	t.Helper()
+
+	cfg := net.ListenConfig{
+		Control: func(_, _ string, c syscall.RawConn) error {
+			var setErr error
+			if err := c.Control(func(fd uintptr) {
+				setErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_RCVBUF, 1024)
+			}); err != nil {
+				return err
+			}
+			return setErr
+		},
+	}
+
+	packet, err := cfg.ListenPacket(t.Context(), "udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	conn, ok := packet.(*net.UDPConn)
+	if !ok {
+		t.Fatalf("listening gave a %T", packet)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+// flood sends more at a socket than its receive buffer holds, and nothing
+// reads it, which is what makes the kernel discard the rest.
+func flood(t *testing.T, conn *net.UDPConn) {
+	t.Helper()
+
+	sender, err := net.Dial("udp", conn.LocalAddr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer sender.Close()
+
+	msg := make([]byte, 512)
+	for range 500 {
+		if _, werr := sender.Write(msg); werr != nil {
+			t.Fatalf("write: %v", werr)
+		}
 	}
 }
