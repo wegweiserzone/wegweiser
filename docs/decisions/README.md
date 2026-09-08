@@ -65,6 +65,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D35** | [Under load, a client without a cookie is refused rather than rate limited](d35-cookieless-under-load.md) |
 | **D36** | [A secondary is asked for its serial after it is notified, not on a sweep](d36-probing-a-secondary.md) |
 | **D37** | [Under load is when the readers stop idling](d37-under-load-is-when-the-readers-stop-idling.md) |
+| **D38** | [Under load is what the kernel says it is](d38-under-load-is-what-the-kernel-says.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they

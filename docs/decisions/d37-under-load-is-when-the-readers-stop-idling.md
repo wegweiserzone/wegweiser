@@ -2,6 +2,7 @@
 
 - Decided: 2026-09-06
 - Closes the question left open by [D35](d35-cookieless-under-load.md)
+- Amended by: [D38](d38-under-load-is-what-the-kernel-says.md)
 
 ## Context
 
@@ -85,11 +86,9 @@ nothing here joins the list in D32.
 
 ## Where this stands
 
-Built, and the switch is closed. `internal/dns/load.go` measures the waiting, one window a
-second, and `weg_dns_under_load` is the state; `Responder.refuseCookieless` is the refusal,
-counted by `weg_dns_cookie_refusals_total` and told apart there by which of D35's two
-clients it turned away. The idleness is measured with two clock reads per datagram, the
-cheaper sampled form having bought nothing measurable: `BenchmarkServerUDP` reads the same
-before and after, at 11.1 µs serial and 1.85 µs parallel.
-
-The BADCOOKIE row D35 asked for is in `TestAmplificationFactor`, at a factor of 1.3.
+Built, measured against a real server, and wrong. The readers go on reporting idleness under
+any load at all, because the clock around the receive call measures the call rather than the
+wait, so the switch never closes.
+[D38](d38-under-load-is-what-the-kernel-says.md) has the numbers and replaces the
+derivation. What that record does not touch is the rest of this one: the datagram path only,
+TCP never refused, no per-source accounting, and REFUSED for a query with no cookie option.
