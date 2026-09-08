@@ -36,9 +36,9 @@ live query stream, and a CLI that reaches everything the interface does. Neither
 touches the database: both are clients of the same REST API, and so is anything you write
 yourself.
 
-Also here: authoritative UDP and TCP with EDNS0, zonefile import and export, outbound zone
-transfer to the secondaries you name, signed with TSIG and announced with NOTIFY, SQLite
-persistence, token authentication, Prometheus metrics. Single node.
+Also here: authoritative UDP and TCP with EDNS0, DNS cookies, zonefile import and export,
+outbound zone transfer to the secondaries you name, signed with TSIG and announced with
+NOTIFY, SQLite persistence, token authentication, Prometheus metrics. Single node.
 
 ## What it does not do
 
