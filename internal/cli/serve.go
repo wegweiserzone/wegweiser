@@ -19,7 +19,7 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/config"
 	"github.com/wegweiserzone/wegweiser/internal/dns"
 	"github.com/wegweiserzone/wegweiser/internal/metrics"
-	"github.com/wegweiserzone/wegweiser/internal/store"
+	"github.com/wegweiserzone/wegweiser/internal/publish"
 	"github.com/wegweiserzone/wegweiser/internal/store/sqlite"
 	"github.com/wegweiserzone/wegweiser/internal/stream"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
@@ -165,16 +165,6 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		return fmt.Errorf("bring the database up to date: %w", merr)
 	}
 
-	snap, err := buildSnapshot(ctx, st)
-	if err != nil {
-		return err
-	}
-
-	keys, err := readKeyring(ctx, st)
-	if err != nil {
-		return err
-	}
-
 	p := opts.Printer()
 	log := newLogger(p, cfg.LogLevel.Value)
 	report := faultReporter(log)
@@ -182,18 +172,19 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 	met := metrics.New()
 	tail := stream.NewHub(stream.Options{})
 
+	// The applier tells the publisher what every batch changed, and the
+	// publisher holds the query path that the applier's history feeds, so one
+	// of the two is built first and reaches the other late. Nothing is applied
+	// before pub is set below, and what the store held before then is read by
+	// the first load in any case.
+	var pub *publish.Publisher
+
 	// Reverse automation is on unless a zone says otherwise; see [apply.Options].
-	applier, err := apply.New(st, apply.Options{})
+	applier, err := apply.New(st, apply.Options{
+		OnApplied: func(ctx context.Context, done apply.Applied) { pub.Applied(ctx, done) },
+	})
 	if err != nil {
 		return err
-	}
-
-	// A cookie is a hash under a secret this installation minted, so the first
-	// start is where it comes into existence, and every hour after that is a
-	// rotation.
-	secrets, _, err := applier.RotateCookieSecrets(ctx)
-	if err != nil {
-		return fmt.Errorf("mint the cookie secret: %w", err)
 	}
 
 	srv := dns.NewServer(dns.Config{
@@ -204,12 +195,9 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		OnError:       report,
 		// An incremental transfer replays the journal; everything else the
 		// server answers comes out of the snapshot (invariant 2).
+		// Keys and cookie secrets are copied from the store with everything
+		// else the query path holds, when the publisher first loads.
 		History: applier,
-		Keys:    keys,
-		Cookies: dns.CookieSecrets{
-			Current:  dns.CookieSecret(secrets.Current),
-			Previous: dns.CookieSecret(secrets.Previous),
-		},
 		// Both consumers of the one hook. Composing them is the wiring's job:
 		// the query path answers queries and does not know what anybody wants
 		// to count or watch (architecture §2.9).
@@ -225,35 +213,14 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 
 	// Every publish goes through the pair rather than through the server, so
 	// that what the metrics report is what queries are actually answered from,
-	// including this first one, which no write is responsible for.
+	// including the first one, which no write is responsible for.
 	snapshots := &observedSnapshots{server: srv, metrics: met}
-	snapshots.SetSnapshot(snap)
-
-	// Who may pull a whole zone, and who is told when one changes, live in the
-	// database like the other settings, so they are read once here and
-	// republished by the API whenever they change.
-	var (
-		allow  apply.TransferAllow
-		notify []apply.NotifyTarget
-	)
-	if verr := st.View(ctx, func(r store.Reader) error {
-		var serr error
-		if allow, serr = apply.StoredTransferAllow(ctx, r); serr != nil {
-			return serr
-		}
-		notify, serr = apply.StoredNotifyTargets(ctx, r)
-		return serr
-	}); verr != nil {
-		return verr
-	}
-	srv.SetTransfers(dns.Allow{Prefixes: allow.Prefixes, Keys: allow.Keys})
 
 	prober := dns.NewProber(dns.ProbeConfig{
-		Targets: notifyTargets(notify), Snapshots: srv,
-		OnError: report, Observe: met.ObserveProbe, Forget: met.ForgetProbe,
+		Snapshots: srv,
+		OnError:   report, Observe: met.ObserveProbe, Forget: met.ForgetProbe,
 	})
 	notifier := dns.NewNotifier(dns.NotifyConfig{
-		Targets: notifyTargets(notify), Keys: keys,
 		OnError: report,
 		// Two consumers of one stream of steps: the metrics count them, and
 		// the prober schedules from them. A secondary that has answered a
@@ -264,6 +231,33 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 			prober.Notified(ev)
 		},
 	})
+
+	// What the query path answers from, and every list and secret it keeps
+	// beside that, is copied out of the store here and again after each batch
+	// that touches it, whichever way the batch arrived (docs/decisions/, D41).
+	pub, err = publish.New(publish.Config{
+		Store:     st,
+		Snapshots: snapshots,
+		Transfers: srv,
+		Keyring:   keyPublishers{server: srv, notifier: notifier},
+		Notify:    notifyPublishers{notifier: notifier, prober: prober},
+		Cookies:   srv,
+		OnError:   report,
+	})
+	if err != nil {
+		return err
+	}
+
+	// A cookie is a hash under a secret this installation minted, so the first
+	// start is where it comes into existence, and every hour after that is a
+	// rotation.
+	if _, _, rerr := applier.RotateCookieSecrets(ctx); rerr != nil {
+		return fmt.Errorf("mint the cookie secret: %w", rerr)
+	}
+	if lerr := pub.Load(ctx); lerr != nil {
+		return lerr
+	}
+
 	if nerr := notifier.Start(); nerr != nil {
 		return nerr
 	}
@@ -280,7 +274,7 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 	rotating := make(chan struct{})
 	go func() {
 		defer close(rotating)
-		rotateCookies(rotations, applier, srv, report)
+		rotateCookies(rotations, applier, report)
 	}()
 	defer func() {
 		stopRotating()
@@ -304,8 +298,6 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		Store:       st,
 		Applier:     applier,
 		Snapshots:   snapshots,
-		Transfers:   srv,
-		Keyring:     keyPublishers{server: srv, notifier: notifier},
 		Notifier:    notifyPublishers{notifier: notifier, prober: prober},
 		Secondaries: prober,
 		Metrics:     met,
@@ -342,12 +334,14 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		err = errors.Join(err, httpSrv.Shutdown(drain))
 	}()
 
+	// What the first load built, which is what the server is answering from.
+	first := snapshots.Snapshot()
 	status := serveStatus{
 		Address:    srv.Addr().String(),
 		APIAddress: apiListener.Addr().String(),
 		Database:   cfg.Database.Value,
-		Zones:      snap.Zones(),
-		Records:    snap.Records(),
+		Zones:      first.Zones(),
+		Records:    first.Records(),
 	}
 	if err := p.Print(status, func(w io.Writer) error {
 		_, werr := fmt.Fprintf(w,
@@ -375,15 +369,6 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 
 // shutdown stops the DNS server, giving the queries in flight a deadline of
 // their own: the context that got us here is already cancelled.
-// notifyTargets is the notifier's view of the list the database holds.
-func notifyTargets(in []apply.NotifyTarget) []dns.NotifyTarget {
-	out := make([]dns.NotifyTarget, len(in))
-	for i, t := range in {
-		out[i] = dns.NotifyTarget{Addr: t.Addr, Key: t.Key}
-	}
-	return out
-}
-
 // rotateCookies keeps the cookie secret turning over for as long as the server
 // runs.
 //
@@ -392,24 +377,17 @@ func notifyTargets(in []apply.NotifyTarget) []dns.NotifyTarget {
 // the next rotation an hour out. A failed rotation is reported and retried
 // shortly: the secret in force stays valid, so there is nothing urgent about
 // it, and the cookies handed out under it keep working meanwhile.
-func rotateCookies(
-	ctx context.Context, applier *apply.Applier, srv *dns.Server, report func(error),
-) {
+func rotateCookies(ctx context.Context, applier *apply.Applier, report func(error)) {
 	const retry = time.Minute
 
 	for {
 		wait := retry
-		secrets, rotated, err := applier.RotateCookieSecrets(ctx)
-		switch {
-		case err != nil:
+		// A rotation is a setting written through the applier, so the new
+		// secret reaches the query path the way every other change does.
+		secrets, _, err := applier.RotateCookieSecrets(ctx)
+		if err != nil {
 			report(fmt.Errorf("rotate the cookie secret: %w", err))
-		default:
-			if rotated {
-				srv.SetCookieSecrets(dns.CookieSecrets{
-					Current:  dns.CookieSecret(secrets.Current),
-					Previous: dns.CookieSecret(secrets.Previous),
-				})
-			}
+		} else {
 			wait = max(time.Until(secrets.RotatedAt.Add(apply.CookieRotation)), retry)
 		}
 
@@ -428,7 +406,7 @@ type keyPublishers struct {
 	notifier *dns.Notifier
 }
 
-// SetKeys implements [api.Keyring].
+// SetKeys implements [publish.Keyring].
 func (k keyPublishers) SetKeys(ring dns.Keyring) {
 	k.server.SetKeys(ring)
 	k.notifier.SetKeys(ring)
@@ -447,36 +425,10 @@ func (n notifyPublishers) Notify(snap *dns.Snapshot, apex zone.Name) {
 	n.notifier.Notify(snap, apex)
 }
 
-// SetTargets implements [api.Notifier].
+// SetTargets implements [publish.NotifyList].
 func (n notifyPublishers) SetTargets(targets []dns.NotifyTarget) {
 	n.notifier.SetTargets(targets)
 	n.prober.SetTargets(targets)
-}
-
-// readKeyring reads the TSIG keys the query path verifies and signs with.
-//
-// Read once here and republished by the API whenever a key is created or
-// withdrawn: a signed query has to be verified before it is answered, and a
-// database read there would put a disk on the path of every query
-// (invariant 2). A withdrawn key is left out, because the store no longer
-// holds its secret (docs/decisions/d28-tsig.md).
-func readKeyring(ctx context.Context, st store.Store) (dns.Keyring, error) {
-	var ring dns.Keyring
-	err := st.View(ctx, func(r store.Reader) error {
-		keys, lerr := r.ListTSIGKeys(ctx)
-		if lerr != nil {
-			return lerr
-		}
-		ring = make(dns.Keyring, len(keys))
-		for _, k := range keys {
-			if !k.Active() {
-				continue
-			}
-			ring[k.Name] = dns.TSIGKey{Name: k.Name, Algorithm: k.Algorithm, Secret: k.Secret}
-		}
-		return nil
-	})
-	return ring, err
 }
 
 // stopNotifier gives the notifier the same grace a shutdown gives the server.
@@ -497,22 +449,6 @@ func shutdown(srv *dns.Server) error {
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
 	return srv.Shutdown(ctx)
-}
-
-// buildSnapshot reads the whole database into the form the query path answers
-// from. It runs in one read transaction, so the snapshot is a picture of one
-// moment rather than of several.
-func buildSnapshot(ctx context.Context, st store.Store) (*dns.Snapshot, error) {
-	var snap *dns.Snapshot
-	err := st.View(ctx, func(r store.Reader) error {
-		var berr error
-		snap, berr = dns.Rebuild(ctx, r)
-		return berr
-	})
-	if err != nil {
-		return nil, fmt.Errorf("build the snapshot to answer from: %w", err)
-	}
-	return snap, nil
 }
 
 // newLogger returns the logger the running server reports through.

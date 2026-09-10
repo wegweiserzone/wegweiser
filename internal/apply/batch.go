@@ -59,6 +59,53 @@ type Batch struct {
 	Tokens []TokenOp
 }
 
+// Applied says what a batch changed, for anything that keeps a copy of what the
+// store holds somewhere else.
+//
+// It names what was touched rather than carrying it, so the copy is rebuilt
+// from the store. Two of these handled out of order then still end at the
+// latest state, because by the time either is handled the store holds it.
+type Applied struct {
+	// Zones are the zones the batch changed, each once. A deleted zone is among
+	// them: the store no longer holds it, and that is how a reader learns to
+	// drop it.
+	Zones []AppliedZone
+
+	// Keys is whether the transfer keys changed.
+	Keys bool
+
+	// Settings are the keys of the server settings the batch wrote.
+	Settings []string
+}
+
+// AppliedZone names one zone a batch changed. The name travels beside the
+// identifier because a zone that was deleted can no longer be looked up by it.
+type AppliedZone struct {
+	ID   zone.ZoneID
+	Name zone.Name
+}
+
+// touched reports what the batch changed.
+//
+// The zones are read off the commits. Everything that changes a zone commits,
+// which is what [Batch.Empty] leans on as well.
+func (b *Batch) touched() Applied {
+	var out Applied
+	seen := make(map[zone.ZoneID]struct{}, len(b.Commits))
+	for _, c := range b.Commits {
+		if _, dup := seen[c.ZoneID]; dup {
+			continue
+		}
+		seen[c.ZoneID] = struct{}{}
+		out.Zones = append(out.Zones, AppliedZone{ID: c.ZoneID, Name: c.ZoneName})
+	}
+	out.Keys = len(b.Keys) > 0
+	for _, s := range b.Settings {
+		out.Settings = append(out.Settings, s.Key)
+	}
+	return out
+}
+
 // zoneOp returns the batch's change to a zone itself, or nil.
 func (b *Batch) zoneOp(zid zone.ZoneID) *ZoneOp {
 	for i := range b.Zones {

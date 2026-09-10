@@ -99,6 +99,7 @@ internal/store/     Store interface, sqlite/, and postgres/ when it exists
 internal/journal/   Commit and event types: data only, no persistence
 internal/id/        ULID primary keys, assignable before the write that stores them
 internal/apply/     The write path: commands to events, serials, rollback
+internal/publish/   Copies the store into the data plane, at start and after every batch (D41)
 internal/api/       HTTP handlers, OpenAPI, auth
 internal/cluster/   Raft, membership, health          (not built)
 internal/tui/       Bubble Tea views                  (not built)

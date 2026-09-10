@@ -52,35 +52,21 @@ const maxRequestBody = 1 << 20 // 1 MiB
 // to millions of records.
 const maxImportBody = 32 << 20 // 32 MiB
 
-// Snapshots is the data plane, as far as the API needs to know about it: it
-// reports what is being answered from, and it takes what should be answered
-// from next. A *dns.Server is one.
+// Snapshots is the data plane, as far as the API needs to know about it: what
+// is being answered from. A *dns.Server is one.
 //
-// It is an interface so that the API can be tested without a socket, and so
-// that the coupling stays the one pointer architecture invariant 2 allows.
+// The API only reads it. What is answered from next is published by whatever
+// applied the change, on every node, and a handler is not that
+// (docs/decisions/d41-what-follows-applying-a-batch.md).
 type Snapshots interface {
 	Snapshot() *dns.Snapshot
-	SetSnapshot(*dns.Snapshot)
 }
 
-// TransferList is the data plane's view of who may pull a whole zone. A
-// *dns.Server is one.
-type TransferList interface {
-	SetTransfers(dns.Transfers)
-}
-
-// Keyring is the query path's copy of the TSIG keys. A key has to reach the
-// server that verifies signatures with it, or a secondary configured with one
-// created a moment ago would be refused until the next restart.
-type Keyring interface {
-	SetKeys(dns.Keyring)
-}
-
-// Notifier tells the secondaries that a zone has a new version, and holds the
-// list of who they are. A *dns.Notifier is one.
+// Notifier tells the secondaries that a zone has a new version. A
+// *dns.Notifier is one. Who they are is copied from the store beside
+// everything else the query path holds, not by the API.
 type Notifier interface {
 	Notify(snap *dns.Snapshot, apex zone.Name)
-	SetTargets(targets []dns.NotifyTarget)
 }
 
 // Secondaries reports where each secondary stands on each zone, as the probes
@@ -104,20 +90,10 @@ type Config struct {
 	// is one place a change is decided (architecture invariant 4).
 	Applier *apply.Applier
 
-	// Snapshots is the data plane whose view is republished after every write.
-	// A nil one means the API is running without a query path, which is what a
-	// test does; writes then change the database and nothing else.
+	// Snapshots is what the query path answers from, read for /healthz and
+	// for the version a notification announces. A nil one means the API is
+	// running without a query path, which is what a test does.
 	Snapshots Snapshots
-
-	// Transfers is the query path's list of who may pull a whole zone. The
-	// setting lives in the database, so a change has to reach the server that
-	// enforces it; a *dns.Server is one. May be nil, which is what a test that
-	// runs without a query path passes.
-	Transfers TransferList
-
-	// Keyring is where the TSIG keys are published after one is created or
-	// withdrawn. May be nil, which is what a test without a query path passes.
-	Keyring Keyring
 
 	// Secondaries is where each secondary stands, for the status endpoint.
 	// Optional; without it there is nothing to report.
@@ -157,8 +133,6 @@ type Server struct {
 	store       store.Store
 	applier     *apply.Applier
 	snapshots   Snapshots
-	transfers   TransferList
-	keyring     Keyring
 	notifier    Notifier
 	secondaries Secondaries
 	metrics     *metrics.Metrics
@@ -205,8 +179,6 @@ func New(cfg Config) (*Server, http.Handler, error) {
 		store:       cfg.Store,
 		applier:     cfg.Applier,
 		snapshots:   cfg.Snapshots,
-		transfers:   cfg.Transfers,
-		keyring:     cfg.Keyring,
 		notifier:    cfg.Notifier,
 		secondaries: cfg.Secondaries,
 		metrics:     cfg.Metrics,

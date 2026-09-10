@@ -80,7 +80,7 @@ func (a *Applier) CreateZone(
 }
 
 // fill reconciles a zone and folds what that wrote into res, so the caller
-// republishes both commits and reports both.
+// tells the secondaries about both commits and reports both.
 //
 // A failure here fails the operation it was part of. The zone is created or
 // updated either way, and the alternative is a zone that quietly holds none of

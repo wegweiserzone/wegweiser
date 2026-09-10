@@ -161,7 +161,7 @@ func (s *Server) CreateZone(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	return gen.CreateZone201JSONResponse{
 		Body:    zoneToAPI(&z),
@@ -185,7 +185,7 @@ func (s *Server) UpdateZone(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	return gen.UpdateZone200JSONResponse(zoneToAPI(z)), nil
 }
@@ -271,7 +271,7 @@ func (s *Server) DeleteZone(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 	return gen.DeleteZone204Response{}, nil
 }
 
@@ -405,7 +405,7 @@ func (s *Server) ReconcileZone(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	out := gen.ReconcileResult{
 		Conflicts:    conflictsToAPI(res.Conflicts),

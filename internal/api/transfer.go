@@ -38,7 +38,7 @@ func (s *Server) ImportZone(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	z, err := s.zoneNamed(ctx, content.Origin)
 	if err != nil {

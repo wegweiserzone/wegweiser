@@ -31,6 +31,7 @@ type Applier struct {
 
 	autoReverseDefault bool
 	policy             Policy
+	onApplied          func(context.Context, Applied)
 
 	locks keyedMutex
 }
@@ -52,6 +53,17 @@ type Options struct {
 	// Policy is what to do when an address already answers a reverse lookup
 	// with another name. Empty means [PolicyFirstWins].
 	Policy Policy
+
+	// OnApplied is told what each batch changed, once the change is committed
+	// and before the call that carried it out returns. Whatever keeps the
+	// query path in step with the store hangs here rather than behind the
+	// HTTP handlers, because a node applying a batch from the replicated log
+	// has no handler (docs/decisions/d41-what-follows-applying-a-batch.md).
+	//
+	// It runs on the goroutine that applied the batch, so it may be called
+	// from several at once, and it cannot fail the write: that is committed by
+	// the time it hears of it. Nil tells nobody.
+	OnApplied func(context.Context, Applied)
 }
 
 // New returns an applier writing through s.
@@ -74,6 +86,7 @@ func New(s store.Store, opts Options) (*Applier, error) {
 		now:                opts.Now,
 		autoReverseDefault: autoReverse,
 		policy:             opts.Policy,
+		onApplied:          opts.OnApplied,
 	}, nil
 }
 
@@ -205,7 +218,13 @@ func (a *Applier) ApplyBatchAt(ctx context.Context, b *Batch, at Index) error {
 	if b.Empty() && at == 0 {
 		return nil
 	}
-	return a.store.Update(ctx, func(tx store.Tx) error {
+
+	// Set only by a transaction that wrote the batch, and read only once that
+	// transaction has committed. An entry replayed after a restart was carried
+	// out before, and the copies built on the way up already hold it.
+	var wrote bool
+	err := a.store.Update(ctx, func(tx store.Tx) error {
+		wrote = false
 		if at != 0 {
 			seen, err := tx.AppliedIndex(ctx)
 			if err != nil {
@@ -230,6 +249,7 @@ func (a *Applier) ApplyBatchAt(ctx context.Context, b *Batch, at Index) error {
 				if werr := b.write(ctx, tx); werr != nil {
 					return werr
 				}
+				wrote = true
 			}
 		}
 		if at == 0 {
@@ -237,6 +257,14 @@ func (a *Applier) ApplyBatchAt(ctx context.Context, b *Batch, at Index) error {
 		}
 		return tx.SetAppliedIndex(ctx, uint64(at))
 	})
+	if err != nil {
+		return err
+	}
+
+	if wrote && a.onApplied != nil {
+		a.onApplied(ctx, b.touched())
+	}
+	return nil
 }
 
 // normalize fills in everything the command leaves undetermined.

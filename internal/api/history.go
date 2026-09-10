@@ -86,7 +86,7 @@ func (s *Server) RollbackZone(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	out := gen.RollbackResult{
 		Conflicts:    conflictsToAPI(res.Conflicts),

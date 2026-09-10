@@ -8,7 +8,15 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+#### DNS
+
+- Two changes to different zones made at the same moment no longer leave the
+  server answering one of them as it was before. Each used to install its own
+  copy of what the query path answers from, and the one installed second
+  carried the other zone as it stood before either change. That zone stayed
+  stale until it was next edited or the server restarted.
 
 ## [0.4.0] - 2026-09-09
 

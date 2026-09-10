@@ -52,3 +52,16 @@ no quieter a report.
 
 Single-node behaviour does not change. The same two things happen in the same order for the
 same reasons; only the question of which component owns them is answered differently.
+
+## Where this stands
+
+Built for a single node, which is the half that needs no cluster. The applier tells
+`internal/publish` what each batch changed, the publisher copies it out of the store into
+the query path, and `internal/api` keeps the notification and nothing else.
+
+The consequences above name the snapshot and the commits, and undercount. The query path
+holds four more copies of what the store says: the TSIG keys, who may transfer, who is told
+of a change, and the secrets cookies are computed under. Each keeps a node able to answer,
+so each is every node's by the rule above, and each now travels the same way. The hook is
+told what a batch touched rather than handed the `Result`, because a follower applying an
+entry holds a batch and no result.

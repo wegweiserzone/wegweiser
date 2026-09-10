@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
-	"github.com/wegweiserzone/wegweiser/internal/dns"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
@@ -71,8 +70,6 @@ func (s *Server) CreateTSIGKey(
 		return nil, err
 	}
 
-	s.publishKeys(ctx)
-
 	return gen.CreateTSIGKey201JSONResponse{
 		Key:    tsigKeyToAPI(key),
 		Secret: base64.StdEncoding.EncodeToString(key.Secret),
@@ -116,41 +113,7 @@ func (s *Server) RevokeTSIGKey(
 	if err := s.applier.RevokeKey(ctx, store.TSIGKeyID(req.KeyId)); err != nil {
 		return nil, err
 	}
-	s.publishKeys(ctx)
 	return gen.RevokeTSIGKey204Response{}, nil
-}
-
-// publishKeys hands the query path the keys it verifies and signs with.
-//
-// Read back in full rather than added to what is there: a key is created and
-// withdrawn rarely, and rebuilding the whole ring is one query against a table
-// with a handful of rows. A failure here leaves the server verifying against
-// the ring it had, which is stale rather than wrong, so it is reported and does
-// not fail the request that has already been committed.
-func (s *Server) publishKeys(ctx context.Context) {
-	if s.keyring == nil {
-		return
-	}
-	var ring dns.Keyring
-	if err := s.store.View(ctx, func(r store.Reader) error {
-		keys, lerr := r.ListTSIGKeys(ctx)
-		if lerr != nil {
-			return lerr
-		}
-		ring = make(dns.Keyring, len(keys))
-		for _, k := range keys {
-			if k.Active() {
-				ring[k.Name] = dns.TSIGKey{Name: k.Name, Algorithm: k.Algorithm, Secret: k.Secret}
-			}
-		}
-		return nil
-	}); err != nil {
-		s.report(fmt.Errorf(
-			"the key change is stored but the query path still holds the keys it had; "+
-				"restart to pick it up: %w", err))
-		return
-	}
-	s.keyring.SetKeys(ring)
 }
 
 // tsigSecret is the secret a new key gets: the one the caller sent, or a fresh

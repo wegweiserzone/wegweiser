@@ -39,8 +39,9 @@ func (k TSIGKey) base64Secret() string { return base64.StdEncoding.EncodeToStrin
 //
 // Published rather than looked up. A signed query has to be verified before it
 // is answered, and reading the database there would put a disk on the path of
-// every query (invariant 2). The wiring reads the keys once and republishes
-// them whenever one is created or withdrawn, the way the transfer list works.
+// every query (invariant 2). It is copied out of the store as the server
+// starts and again after every batch that creates or withdraws a key, the way
+// the transfer list is (internal/publish).
 //
 // A key that has been withdrawn is not in it: docs/decisions/d28-tsig.md clears its
 // secret, so there would be nothing to verify against.

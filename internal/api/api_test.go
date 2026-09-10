@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,20 +20,23 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/dns"
 	"github.com/wegweiserzone/wegweiser/internal/metrics"
+	"github.com/wegweiserzone/wegweiser/internal/publish"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/store/sqlite"
 	"github.com/wegweiserzone/wegweiser/internal/stream"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
-// snapshots is a stand-in for the data plane: it holds what the API publishes,
-// so a test can check that a write reached the query path without a socket.
+// snapshots is a stand-in for the data plane: it holds what a write publishes,
+// so a test can check that the write reached the query path without a socket.
+// Atomic, because the publish runs on the goroutine that applied the write and
+// a handler reads it on its own.
 type snapshots struct {
-	current *dns.Snapshot
+	current atomic.Pointer[dns.Snapshot]
 }
 
-func (s *snapshots) Snapshot() *dns.Snapshot     { return s.current }
-func (s *snapshots) SetSnapshot(n *dns.Snapshot) { s.current = n }
+func (s *snapshots) Snapshot() *dns.Snapshot     { return s.current.Load() }
+func (s *snapshots) SetSnapshot(n *dns.Snapshot) { s.current.Store(n) }
 
 // harness is a server, the database behind it, and a token that may use it.
 type harness struct {
@@ -47,6 +51,13 @@ type harness struct {
 
 // newHarness brings up an API over a fresh database, with one admin token.
 func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
+	t.Helper()
+	return startHarness(t, nil, tweak...)
+}
+
+// startHarness is newHarness with a say in which copies of the store the data
+// plane beside the API holds.
+func startHarness(t *testing.T, copies func(*publish.Config), tweak ...func(*Config)) *harness {
 	t.Helper()
 
 	st, err := sqlite.Open(t.Context(), sqlite.Options{
@@ -64,7 +75,26 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 		t.Fatalf("migrate: %v", merr)
 	}
 
-	applier, err := apply.New(st, apply.Options{})
+	// The data plane the API's writes reach. They reach it through the
+	// applier's hook, as they do in `weg serve`; nothing the API does itself
+	// publishes anything.
+	snaps := &snapshots{}
+	copied := publish.Config{
+		Store: st, Snapshots: snaps,
+		OnError: func(err error) { t.Errorf("the publisher reported a fault: %v", err) },
+	}
+	if copies != nil {
+		copies(&copied)
+	}
+	pub, err := publish.New(copied)
+	if err != nil {
+		t.Fatalf("build the publisher: %v", err)
+	}
+	if lerr := pub.Load(t.Context()); lerr != nil {
+		t.Fatalf("build the first snapshot: %v", lerr)
+	}
+
+	applier, err := apply.New(st, apply.Options{OnApplied: pub.Applied})
 	if err != nil {
 		t.Fatalf("build the applier: %v", err)
 	}
@@ -73,17 +103,6 @@ func newHarness(t *testing.T, tweak ...func(*Config)) *harness {
 	if err != nil {
 		t.Fatalf("mint the bootstrap token: %v", err)
 	}
-
-	snaps := &snapshots{}
-	var empty *dns.Snapshot
-	if verr := st.View(t.Context(), func(r store.Reader) error {
-		var berr error
-		empty, berr = dns.Rebuild(t.Context(), r)
-		return berr
-	}); verr != nil {
-		t.Fatalf("build the first snapshot: %v", verr)
-	}
-	snaps.SetSnapshot(empty)
 
 	// A small bound, so that the refusal past it is reachable in a test
 	// without opening sixteen connections. No test here opens more than two
@@ -236,8 +255,8 @@ func TestZoneLifecycle(t *testing.T) {
 	})
 
 	t.Run("the query path answers for it straight away", func(t *testing.T) {
-		// The whole point of republishing: a zone created over HTTP is one the
-		// DNS side answers for, without a restart and without a rebuild.
+		// The whole point of the applier's hook: a zone created over HTTP is one
+		// the DNS side answers for, without a restart and without a rebuild.
 		if got := h.snaps.Snapshot().Zones(); got != 1 {
 			t.Errorf("the snapshot holds %d zones, want the new one", got)
 		}
@@ -2278,7 +2297,7 @@ func TestTransferListReachesTheQueryPath(t *testing.T) {
 	t.Parallel()
 
 	sink := &recordingTransfers{}
-	h := newHarness(t, func(c *Config) { c.Transfers = sink })
+	h := startHarness(t, func(c *publish.Config) { c.Transfers = sink })
 
 	var got gen.Settings
 	h.decode(h.do(http.MethodGet, "/settings", nil), http.StatusOK, &got)

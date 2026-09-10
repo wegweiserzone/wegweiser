@@ -104,7 +104,7 @@ func (s *Server) CreateRecord(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	written, err := s.recordWritten(ctx, rec.ID, res)
 	if err != nil {
@@ -152,7 +152,7 @@ func (s *Server) UpdateRecord(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	written, err := s.recordWritten(ctx, before.ID, res)
 	if err != nil {
@@ -186,7 +186,7 @@ func (s *Server) DetachRecord(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	written, err := s.recordWritten(ctx, rec.ID, res)
 	if err != nil {
@@ -219,7 +219,7 @@ func (s *Server) MakeRecordCanonical(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	written, err := s.recordWritten(ctx, rec.ID, res)
 	if err != nil {
@@ -249,7 +249,7 @@ func (s *Server) DeleteRecord(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	return gen.DeleteRecord204Response{}, nil
 }
@@ -417,7 +417,7 @@ func (s *Server) ReplaceRRsets(
 	if err != nil {
 		return nil, err
 	}
-	s.republish(ctx, res)
+	s.tellSecondaries(res)
 
 	records, err := s.readRRsets(ctx, z.ID, keys)
 	if err != nil {

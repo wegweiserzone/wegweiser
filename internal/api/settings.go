@@ -5,7 +5,6 @@ import (
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/apply"
-	"github.com/wegweiserzone/wegweiser/internal/dns"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 )
 
@@ -60,25 +59,7 @@ func (s *Server) UpdateSettings(
 		return nil, verr
 	}
 
-	// The list is enforced by the query path, which holds its own copy so a
-	// transfer costs no database read. Publishing it here is what makes a
-	// change take effect now rather than at the next restart.
-	if s.transfers != nil {
-		s.transfers.SetTransfers(dns.Allow{Prefixes: cur.allow.Prefixes, Keys: cur.allow.Keys})
-	}
-	if s.notifier != nil {
-		s.notifier.SetTargets(notifyTargets(cur.notify))
-	}
 	return gen.UpdateSettings200JSONResponse(settingsToAPI(cur)), nil
-}
-
-// notifyTargets is the query path's view of the notify list.
-func notifyTargets(in []apply.NotifyTarget) []dns.NotifyTarget {
-	out := make([]dns.NotifyTarget, len(in))
-	for i, t := range in {
-		out[i] = dns.NotifyTarget{Addr: t.Addr, Key: t.Key}
-	}
-	return out
 }
 
 // settings reads everything a client asking about them is told.
