@@ -104,3 +104,12 @@ worth building first, and the roadmap in the conventions is ordered accordingly.
 Non-voting members are a first-class deployment rather than a tuning knob, so `weg cluster
 join` takes the role, `weg cluster status` shows it, and a node that is not a voter says so
 plainly instead of looking like a broken one.
+
+## Where this stands
+
+The arbiter left here as a possibility is settled by [D39](d39-the-witness.md). A witness is
+a Raft voter that keeps the log and applies none of it, it lives in a repository of its own,
+and it is available on every rung of the ladder above so long as witnesses stay a minority
+of the voters. Nothing else in this record moved. The two ways out of a two-node cluster are
+still the two ways out, and the first of them now has a program written for it rather than
+half of this one.

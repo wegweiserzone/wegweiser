@@ -66,6 +66,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D36** | [A secondary is asked for its serial after it is notified, not on a sweep](d36-probing-a-secondary.md) |
 | **D37** | [Under load is when the readers stop idling](d37-under-load-is-when-the-readers-stop-idling.md) |
 | **D38** | [Under load is what the kernel says it is](d38-under-load-is-what-the-kernel-says.md) |
+| **D39** | [A witness is a voter that keeps the log and applies none of it](d39-the-witness.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they
