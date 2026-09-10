@@ -67,6 +67,8 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D37** | [Under load is when the readers stop idling](d37-under-load-is-when-the-readers-stop-idling.md) |
 | **D38** | [Under load is what the kernel says it is](d38-under-load-is-what-the-kernel-says.md) |
 | **D39** | [A witness is a voter that keeps the log and applies none of it](d39-the-witness.md) |
+| **D40** | [A write is forwarded to the leader, never bounced back to the client](d40-a-write-reaches-the-leader.md) |
+| **D41** | [Applying a batch rebuilds the snapshot; telling the secondaries is the leader's](d41-what-follows-applying-a-batch.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they
