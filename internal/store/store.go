@@ -125,6 +125,19 @@ type Reader interface {
 	// and zero when nothing replicated has reached it. Zero is not a position a
 	// log entry can occupy, so it needs no error of its own.
 	AppliedIndex(ctx context.Context) (uint64, error)
+
+	// ExportReplicated streams everything a cluster replicates, which is what a
+	// log snapshot is made of
+	// (docs/decisions/d30-what-a-log-snapshot-contains.md). Call it inside
+	// [Store.View] to have the stream describe one state.
+	//
+	// The items arrive grouped by kind, settings first and then tokens, keys,
+	// zones, records and commits, so that a restore meets a zone before the
+	// records in it. Within the records that is as far as the ordering goes: a
+	// generated record points at the record it was derived from, which may
+	// arrive after it, so a backend that enforces the reference has to hold the
+	// check until the whole stream is in.
+	ExportReplicated(ctx context.Context) iter.Seq2[*Replicated, error]
 }
 
 // Writer is the mutating surface, reachable only through [Store.Update], so
@@ -222,6 +235,21 @@ type Store interface {
 	// View runs fn inside one read transaction, for a caller that needs several
 	// reads to see the same state.
 	View(ctx context.Context, fn func(r Reader) error) error
+
+	// ReplaceReplicated throws away every replicated row this store holds and
+	// rebuilds it from in, in one transaction, together with the log index the
+	// content is current as of.
+	//
+	// It is the only operation here that destroys data it was not asked about,
+	// and it is meant to: restoring a log snapshot replaces what a node holds
+	// rather than merging into it. What survives is what is node-local, minus
+	// the one node-local field that lives on a replicated row, a token's last
+	// use, which is rebuilt as never used.
+	//
+	// The index is written in the same transaction as the content, for the
+	// reason a batch's is (D24): the two disagreeing after a power cut is a
+	// node that quietly holds a state it does not know the age of.
+	ReplaceReplicated(ctx context.Context, index uint64, in iter.Seq2[*Replicated, error]) error
 
 	// Migrate brings the schema up to what this build expects. It returns
 	// [ErrSchemaTooNew] if the database was written by a newer build.

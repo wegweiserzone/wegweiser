@@ -34,6 +34,8 @@ func Run(t *testing.T, open Open) {
 		"TSIGKeys":        testTSIGKeys,
 		"Settings":        testSettings,
 		"AppliedIndex":    testAppliedIndex,
+		"ReplicatedOut":   testReplicatedExport,
+		"ReplicatedIn":    testReplicatedRestore,
 		"Transactions":    testTransactions,
 		"Cursors":         testCursors,
 	}
