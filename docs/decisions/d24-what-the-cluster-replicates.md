@@ -2,7 +2,7 @@
 
 - Decided: 2026-08-22
 - Amends: [D19](d19-journal-as-command-log.md)
-- Amended by: [D32](d32-what-else-the-cluster-replicates.md)
+- Amended by: [D32](d32-what-else-the-cluster-replicates.md), [D43](d43-the-cluster-transport.md)
 
 ## Context
 

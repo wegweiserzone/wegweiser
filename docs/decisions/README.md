@@ -70,6 +70,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D40** | [A write is forwarded to the leader, never bounced back to the client](d40-a-write-reaches-the-leader.md) |
 | **D41** | [Applying a batch rebuilds the snapshot; telling the secondaries is the leader's](d41-what-follows-applying-a-batch.md) |
 | **D42** | [Membership lives in the log, and a node joins by asking a member](d42-membership-lives-in-the-log.md) |
+| **D43** | [The cluster transport is TLS, and the secret is proved inside it](d43-the-cluster-transport.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they
