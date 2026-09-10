@@ -50,6 +50,26 @@ type wireToken struct {
 	RevokedAt time.Time     `json:"revokedAt,omitzero"`
 }
 
+func toWireToken(t *store.Token) *wireToken {
+	if t == nil {
+		return nil
+	}
+	return &wireToken{
+		ID: t.ID, Name: t.Name, Prefix: t.Prefix, Hash: t.Hash, Scopes: t.Scopes,
+		CreatedAt: t.CreatedAt, ExpiresAt: t.ExpiresAt, RevokedAt: t.RevokedAt,
+	}
+}
+
+func (w *wireToken) token() *store.Token {
+	if w == nil {
+		return nil
+	}
+	return &store.Token{
+		ID: w.ID, Name: w.Name, Prefix: w.Prefix, Hash: w.Hash, Scopes: w.Scopes,
+		CreatedAt: w.CreatedAt, ExpiresAt: w.ExpiresAt, RevokedAt: w.RevokedAt,
+	}
+}
+
 // wireKeyOp is one change to a transfer key as it travels.
 type wireKeyOp struct {
 	Kind  KeyOpKind       `json:"kind"`
@@ -66,6 +86,45 @@ type wireKey struct {
 	Algorithm zone.TSIGAlgorithm `json:"algorithm"`
 	Secret    []byte             `json:"secret"`
 	CreatedAt time.Time          `json:"createdAt"`
+
+	// RevokedAt is set only on a key that no longer signs. A batch never
+	// carries such a key whole, only the moment it was revoked; a log snapshot
+	// does, with no secret beside it.
+	RevokedAt time.Time `json:"revokedAt,omitzero"`
+}
+
+func toWireKey(k *store.TSIGKey) *wireKey {
+	if k == nil {
+		return nil
+	}
+	return &wireKey{
+		ID: k.ID, Name: k.Name, Algorithm: k.Algorithm,
+		Secret: k.Secret, CreatedAt: k.CreatedAt, RevokedAt: k.RevokedAt,
+	}
+}
+
+// key turns a key back into one. A revoked key keeps its name and loses its
+// secret (docs/decisions/d28-tsig.md), so exactly one of the two holds.
+func (w *wireKey) key() (*store.TSIGKey, error) {
+	if w == nil {
+		return nil, nil
+	}
+	if w.Name.IsZero() {
+		return nil, fmt.Errorf("%w: key %s arrived without a name", zone.ErrInvalid, w.ID)
+	}
+	if !w.Algorithm.Valid() {
+		return nil, fmt.Errorf("%w: key %s signs with %q, which is not an algorithm this server knows",
+			zone.ErrInvalid, w.Name, w.Algorithm)
+	}
+	if w.RevokedAt.IsZero() == (len(w.Secret) == 0) {
+		return nil, fmt.Errorf(
+			"%w: key %s has a secret until it is revoked and none after, and arrived with both or neither",
+			zone.ErrInvalid, w.Name)
+	}
+	return &store.TSIGKey{
+		ID: w.ID, Name: w.Name, Algorithm: w.Algorithm,
+		Secret: w.Secret, CreatedAt: w.CreatedAt, RevokedAt: w.RevokedAt,
+	}, nil
 }
 
 // wireSetting is one server setting as it travels. The value is carried as the
@@ -74,6 +133,18 @@ type wireKey struct {
 type wireSetting struct {
 	Key   string          `json:"key"`
 	Value json.RawMessage `json:"value"`
+}
+
+// check refuses a setting that names nothing, or holds something that is not
+// JSON, which is what every reader of a setting unmarshals.
+func (w wireSetting) check() error {
+	if w.Key == "" {
+		return fmt.Errorf("%w: a setting names no setting", zone.ErrInvalid)
+	}
+	if !json.Valid(w.Value) {
+		return fmt.Errorf("%w: the value for the setting %q is not JSON", zone.ErrInvalid, w.Key)
+	}
+	return nil
 }
 
 type wireZoneOp struct {
@@ -271,13 +342,7 @@ func (b *Batch) MarshalJSON() ([]byte, error) {
 	}
 
 	for _, op := range b.Keys {
-		out := wireKeyOp{Kind: op.Kind, KeyID: op.KeyID}
-		if op.Key != nil {
-			out.Key = &wireKey{
-				ID: op.Key.ID, Name: op.Key.Name, Algorithm: op.Key.Algorithm,
-				Secret: op.Key.Secret, CreatedAt: op.Key.CreatedAt,
-			}
-		}
+		out := wireKeyOp{Kind: op.Kind, KeyID: op.KeyID, Key: toWireKey(op.Key)}
 		if !op.At.IsZero() {
 			at := op.At
 			out.At = &at
@@ -286,15 +351,7 @@ func (b *Batch) MarshalJSON() ([]byte, error) {
 	}
 
 	for _, op := range b.Tokens {
-		out := wireTokenOp{Kind: op.Kind, TokenID: op.TokenID}
-		if op.Token != nil {
-			out.Token = &wireToken{
-				ID: op.Token.ID, Name: op.Token.Name, Prefix: op.Token.Prefix,
-				Hash: op.Token.Hash, Scopes: op.Token.Scopes,
-				CreatedAt: op.Token.CreatedAt, ExpiresAt: op.Token.ExpiresAt,
-				RevokedAt: op.Token.RevokedAt,
-			}
-		}
+		out := wireTokenOp{Kind: op.Kind, TokenID: op.TokenID, Token: toWireToken(op.Token)}
 		if !op.At.IsZero() {
 			at := op.At
 			out.At = &at
@@ -378,25 +435,19 @@ func (b *Batch) UnmarshalJSON(data []byte) error {
 
 	settings := make([]SettingChange, 0, len(w.Settings))
 	for _, ws := range w.Settings {
-		if ws.Key == "" {
-			return fmt.Errorf("%w: a setting in the batch names no setting", zone.ErrInvalid)
-		}
-		if !json.Valid(ws.Value) {
-			return fmt.Errorf("%w: the value for the setting %q is not JSON",
-				zone.ErrInvalid, ws.Key)
+		if err := ws.check(); err != nil {
+			return err
 		}
 		settings = append(settings, SettingChange{Key: ws.Key, Value: ws.Value})
 	}
 
 	keys := make([]KeyOp, 0, len(w.Keys))
 	for _, wo := range w.Keys {
-		op := KeyOp{Kind: wo.Kind, KeyID: wo.KeyID}
-		if wo.Key != nil {
-			op.Key = &store.TSIGKey{
-				ID: wo.Key.ID, Name: wo.Key.Name, Algorithm: wo.Key.Algorithm,
-				Secret: wo.Key.Secret, CreatedAt: wo.Key.CreatedAt,
-			}
+		k, kerr := wo.Key.key()
+		if kerr != nil {
+			return kerr
 		}
+		op := KeyOp{Kind: wo.Kind, KeyID: wo.KeyID, Key: k}
 		if wo.At != nil {
 			op.At = *wo.At
 		}
@@ -408,15 +459,7 @@ func (b *Batch) UnmarshalJSON(data []byte) error {
 	b.Commits = commits
 	tokens := make([]TokenOp, 0, len(w.Tokens))
 	for _, wo := range w.Tokens {
-		op := TokenOp{Kind: wo.Kind, TokenID: wo.TokenID}
-		if wo.Token != nil {
-			op.Token = &store.Token{
-				ID: wo.Token.ID, Name: wo.Token.Name, Prefix: wo.Token.Prefix,
-				Hash: wo.Token.Hash, Scopes: wo.Token.Scopes,
-				CreatedAt: wo.Token.CreatedAt, ExpiresAt: wo.Token.ExpiresAt,
-				RevokedAt: wo.Token.RevokedAt,
-			}
-		}
+		op := TokenOp{Kind: wo.Kind, TokenID: wo.TokenID, Token: wo.Token.token()}
 		if wo.At != nil {
 			op.At = *wo.At
 		}
