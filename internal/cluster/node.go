@@ -66,6 +66,11 @@ type NodeConfig struct {
 	// retry is how patiently an entry is tried before the member gives up on
 	// it. The zero value is the fixed policy D29 calls for; tests shorten it.
 	retry retryPolicy
+
+	// trailingLogs is how many entries a snapshot leaves behind it. Zero is
+	// Raft's default; a test lowers it to make a late member start from a
+	// snapshot rather than from the log.
+	trailingLogs uint64
 }
 
 // Node is this server's member of a cluster.
@@ -174,6 +179,9 @@ func Start(cfg NodeConfig) (_ *Node, err error) {
 	// its last snapshot onward over it instead of restoring the snapshot first,
 	// which would empty the store only to fill it with what it held.
 	conf.NoSnapshotRestoreOnStart = true
+	if cfg.trailingLogs > 0 {
+		conf.TrailingLogs = cfg.trailingLogs
+	}
 
 	r, err := raft.NewRaft(conf, machine, logs, logs, snaps, trans)
 	if err != nil {

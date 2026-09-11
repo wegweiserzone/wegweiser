@@ -22,6 +22,9 @@ type member struct {
 	store   store.Store
 	applier *apply.Applier
 	addr    string
+	dir     string
+	loads   *loads
+	closed  bool
 }
 
 // memberOptions change how a test member is built.
@@ -30,6 +33,36 @@ type memberOptions struct {
 	store store.Store
 	// onError hears what the member reports; nil fails the test on anything.
 	onError func(error)
+	// dir is Raft's directory; empty is a fresh one. A restart passes the old.
+	dir string
+	// trailingLogs is how many entries a snapshot leaves; zero is Raft's own.
+	trailingLogs uint64
+}
+
+func withTrailingLogs(n uint64) func(*memberOptions) {
+	return func(o *memberOptions) { o.trailingLogs = n }
+}
+
+// stop closes the member before the test ends.
+func (m *member) stop(t *testing.T) {
+	t.Helper()
+	if err := m.node.Close(); err != nil {
+		t.Errorf("close member %s: %v", m.id, err)
+	}
+	m.closed = true
+}
+
+// restart stops m and starts it again on the same Raft directory, applying to
+// st: the same store for an ordinary restart, another one to put an older
+// database back underneath the log. It listens on a new port, which only a
+// member alone in its cluster gets away with.
+func (m *member) restart(t *testing.T, st store.Store) *member {
+	t.Helper()
+	m.stop(t)
+	return startMember(t, m.id, func(o *memberOptions) {
+		o.store = st
+		o.dir = m.dir
+	})
 }
 
 func startMember(t *testing.T, id string, opts ...func(*memberOptions)) *member {
@@ -46,24 +79,32 @@ func startMember(t *testing.T, id string, opts ...func(*memberOptions)) *member 
 	if onError == nil {
 		onError = func(err error) { t.Errorf("member %s: %v", id, err) }
 	}
+	dir := o.dir
+	if dir == "" {
+		dir = t.TempDir()
+	}
 	a := newApplier(t, st)
 	tr, _ := newTransport(t, secretOf(7), 0)
 	mux := serve(t, tr)
+	ld := &loads{}
 
 	n, err := Start(NodeConfig{
-		ID: id, Advertise: mux.Addr().String(), Dir: t.TempDir(),
-		Transport: tr, Mux: mux, Store: st, Applier: a, Loader: &loads{},
-		OnError: onError, retry: quickly,
+		ID: id, Advertise: mux.Addr().String(), Dir: dir,
+		Transport: tr, Mux: mux, Store: st, Applier: a, Loader: ld,
+		OnError: onError, retry: quickly, trailingLogs: o.trailingLogs,
 	})
 	if err != nil {
 		t.Fatalf("Start %s: %v", id, err)
 	}
+	m := &member{
+		id: id, node: n, store: st, applier: a, addr: mux.Addr().String(), dir: dir, loads: ld,
+	}
 	t.Cleanup(func() {
-		if cerr := n.Close(); cerr != nil {
-			t.Errorf("close member %s: %v", id, cerr)
+		if !m.closed {
+			m.stop(t)
 		}
 	})
-	return &member{id: id, node: n, store: st, applier: a, addr: mux.Addr().String()}
+	return m
 }
 
 func waitFor(t *testing.T, what string, ok func() bool) {
