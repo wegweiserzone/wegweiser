@@ -101,7 +101,7 @@ internal/id/        ULID primary keys, assignable before the write that stores t
 internal/apply/     The write path: commands to events, serials, rollback
 internal/publish/   Copies the store into the data plane, at start and after every batch (D41)
 internal/api/       HTTP handlers, OpenAPI, auth
-internal/cluster/   Transport between members (D43); Raft, membership, health not built
+internal/cluster/   Transport (D43), the Raft node and membership; health not built
 internal/tui/       Bubble Tea views                  (not built)
 web/                SvelteKit sources (build output lands in internal/api/dist)
 scripts/            Development helpers, not shipped; `make demo` is the one
