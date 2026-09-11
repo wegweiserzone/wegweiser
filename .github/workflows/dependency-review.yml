@@ -16,7 +16,7 @@ jobs:
 
       # GitHub-owned, so the organisation's "GitHub-owned and verified actions
       # only" policy allows it without an exception.
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: moderate
           # Only what ships. The one advisory this repository has had was for a
