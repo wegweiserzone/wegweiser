@@ -71,3 +71,20 @@ of rotation that an operator had not decided to remove.
 Until [D30](d30-what-a-log-snapshot-contains.md) is built, repairing such a node means
 discarding its store and its Raft log and letting it replay from the beginning. That works
 only for as long as nothing compacts the log, which is exactly what D30 ends.
+
+## Where this stands
+
+The member's half is built, in `internal/cluster`. An entry is tried six times over about a
+minute; one this build cannot read is not tried again, since the answer would not change.
+Leaving is Raft stopping on the member and its port turning Raft streams away, so that the
+others see it gone rather than slow. From then on nothing is applied past the entry it
+stopped at, configuration included, and a write is refused with an error saying this member
+is behind and what went wrong where. A log snapshot the member cannot restore, a witness's
+among them, is a stall of the same kind.
+
+[D30](d30-what-a-log-snapshot-contains.md) is built too, so repair no longer depends on the
+log never having been compacted: remove the member, discard its store and its Raft
+directory, and join it again, and it starts from a snapshot.
+
+The operator's half is not built. `weg cluster status` does not exist yet, there is no
+metric, and `/healthz` has no field for whether the node is current.

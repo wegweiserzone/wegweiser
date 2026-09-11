@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -58,18 +59,28 @@ type NodeConfig struct {
 	// Logger is where Raft's lines go. Nil discards them.
 	Logger *slog.Logger
 
-	// OnError hears about an entry this member could not carry out. May be nil.
+	// OnError hears about an entry this member could not carry out, and about
+	// it leaving the cluster over one. May be nil.
 	OnError func(error)
+
+	// retry is how patiently an entry is tried before the member gives up on
+	// it. The zero value is the fixed policy D29 calls for; tests shorten it.
+	retry retryPolicy
 }
 
 // Node is this server's member of a cluster.
 type Node struct {
-	raft   *raft.Raft
-	logs   *raftboltdb.BoltStore
-	trans  *raft.NetworkTransport
-	id     raft.ServerID
-	addr   raft.ServerAddress
+	raft    *raft.Raft
+	logs    *raftboltdb.BoltStore
+	trans   *raft.NetworkTransport
+	machine *fsm
+	id      raft.ServerID
+	addr    raft.ServerAddress
+	report  func(error)
+
+	ctx    context.Context
 	cancel context.CancelFunc
+	wg     sync.WaitGroup
 }
 
 // Start brings the member up. A member that has never been part of a cluster
@@ -127,7 +138,19 @@ func Start(cfg NodeConfig) (_ *Node, err error) {
 			cancel()
 		}
 	}()
-	machine := &fsm{ctx: ctx, applier: cfg.Applier, store: cfg.Store, loader: cfg.Loader, report: report}
+	// Buffered, so that a member which stalls before anybody is watching still
+	// leaves once somebody is.
+	leaving := make(chan struct{}, 1)
+	machine := &fsm{
+		ctx: ctx, applier: cfg.Applier, store: cfg.Store, loader: cfg.Loader,
+		report: report, retry: cfg.retry,
+		stalled: func(Stall) {
+			select {
+			case leaving <- struct{}{}:
+			default:
+			}
+		},
+	}
 	if cerr := catchUp(ctx, machine, cfg.Store, snaps); cerr != nil {
 		return nil, cerr
 	}
@@ -156,11 +179,39 @@ func Start(cfg NodeConfig) (_ *Node, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("cluster: start Raft: %w", err)
 	}
-	return &Node{
-		raft: r, logs: logs, trans: trans,
-		id: conf.LocalID, addr: raft.ServerAddress(cfg.Advertise), cancel: cancel,
-	}, nil
+	n := &Node{
+		raft: r, logs: logs, trans: trans, machine: machine,
+		id: conf.LocalID, addr: raft.ServerAddress(cfg.Advertise), report: report,
+		ctx: ctx, cancel: cancel,
+	}
+	n.wg.Add(1)
+	go n.watch(leaving)
+	return n, nil
 }
+
+// watch waits for the state machine to give up on an entry, and then leaves.
+func (n *Node) watch(leaving <-chan struct{}) {
+	defer n.wg.Done()
+	select {
+	case <-leaving:
+		n.leave()
+	case <-n.ctx.Done():
+	}
+}
+
+// leave is what a member does once it cannot go on applying the log
+// (docs/decisions/d29-a-node-that-cannot-apply.md). It stops taking part in
+// Raft and turns Raft streams away at its port, so that the others see it gone
+// rather than slow. The query path is not touched, and nothing brings the
+// member back by itself.
+func (n *Node) leave() {
+	if err := errors.Join(n.raft.Shutdown().Error(), n.trans.Close()); err != nil {
+		n.report(fmt.Errorf("cluster: leave the cluster: %w", err))
+	}
+}
+
+// Stalled reports whether this member has stopped applying the log, and where.
+func (n *Node) Stalled() (Stall, bool) { return n.machine.stalledAt() }
 
 // catchUp restores the newest log snapshot when the store is behind it.
 //
@@ -217,6 +268,9 @@ func (n *Node) Remove(id string) error {
 }
 
 func (n *Node) membership(f raft.IndexFuture) error {
+	if s, ok := n.Stalled(); ok {
+		return s.Err()
+	}
 	if err := f.Error(); err != nil {
 		if errors.Is(err, raft.ErrNotLeader) {
 			return ErrNotLeader
@@ -228,7 +282,13 @@ func (n *Node) membership(f raft.IndexFuture) error {
 
 // Propose puts a batch into the log and waits until this member has applied
 // it. Only the leader takes one; anywhere else it fails with [ErrNotLeader].
+//
+// A member that has stalled refuses it with an error saying that this member
+// is behind, rather than that the cluster is.
 func (n *Node) Propose(ctx context.Context, b *apply.Batch) error {
+	if s, ok := n.Stalled(); ok {
+		return s.Err()
+	}
 	if b.Empty() {
 		return nil
 	}
@@ -243,6 +303,9 @@ func (n *Node) Propose(ctx context.Context, b *apply.Batch) error {
 
 	f := n.raft.Apply(data, timeout)
 	if err := f.Error(); err != nil {
+		if s, ok := n.Stalled(); ok {
+			return s.Err()
+		}
 		if errors.Is(err, raft.ErrNotLeader) {
 			return ErrNotLeader
 		}
@@ -267,8 +330,11 @@ func (n *Node) Leader() (id, addr string) {
 // Close stops taking part in the cluster. The query path is not touched: a
 // member that stops is one that stops voting, not one that stops answering.
 func (n *Node) Close() error {
-	err := n.raft.Shutdown().Error()
+	// First, so that an entry being retried gives up now rather than after a
+	// minute, and so that the watch stops waiting for a stall.
 	n.cancel()
+	err := n.raft.Shutdown().Error()
+	n.wg.Wait()
 	return errors.Join(err, n.trans.Close(), n.logs.Close())
 }
 

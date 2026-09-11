@@ -24,9 +24,28 @@ type member struct {
 	addr    string
 }
 
-func startMember(t *testing.T, id string) *member {
+// memberOptions change how a test member is built.
+type memberOptions struct {
+	// store is what the member applies to; nil is a plain one.
+	store store.Store
+	// onError hears what the member reports; nil fails the test on anything.
+	onError func(error)
+}
+
+func startMember(t *testing.T, id string, opts ...func(*memberOptions)) *member {
 	t.Helper()
-	st := newStore(t)
+	var o memberOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	st := o.store
+	if st == nil {
+		st = newStore(t)
+	}
+	onError := o.onError
+	if onError == nil {
+		onError = func(err error) { t.Errorf("member %s: %v", id, err) }
+	}
 	a := newApplier(t, st)
 	tr, _ := newTransport(t, secretOf(7), 0)
 	mux := serve(t, tr)
@@ -34,7 +53,7 @@ func startMember(t *testing.T, id string) *member {
 	n, err := Start(NodeConfig{
 		ID: id, Advertise: mux.Addr().String(), Dir: t.TempDir(),
 		Transport: tr, Mux: mux, Store: st, Applier: a, Loader: &loads{},
-		OnError: func(err error) { t.Errorf("member %s: %v", id, err) },
+		OnError: onError, retry: quickly,
 	})
 	if err != nil {
 		t.Fatalf("Start %s: %v", id, err)
@@ -107,5 +126,61 @@ func TestAChangeReachesEveryMember(t *testing.T) {
 
 	if err := b.node.Propose(t.Context(), zoneBatch(t, b.applier, "other.example.")); !errors.Is(err, ErrNotLeader) {
 		t.Errorf("a proposal to a follower = %v, want it told it is not the leader", err)
+	}
+}
+
+// D29 from the outside: a member that cannot apply an entry leaves, says where
+// it stopped, refuses writes as the one that is behind, and the others carry on.
+func TestAMemberThatCannotApplyLeavesAndTheRestGoOn(t *testing.T) {
+	t.Parallel()
+	flaky := &flakyStore{Store: newStore(t)}
+	heard := &reports{}
+	a, b := startMember(t, "a"), startMember(t, "b")
+	c := startMember(t, "c", func(o *memberOptions) {
+		o.store = flaky
+		o.onError = heard.hear
+	})
+
+	if err := a.node.Bootstrap(); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	waitFor(t, "a to lead", a.node.IsLeader)
+	for _, m := range []*member{b, c} {
+		if err := a.node.AddVoter(m.id, m.addr); err != nil {
+			t.Fatalf("AddVoter %s: %v", m.id, err)
+		}
+	}
+	// Every configuration entry through c before its disk fills, so that what
+	// it stalls on is the zone and nothing earlier.
+	waitFor(t, "c to catch up", func() bool { return appliedIn(t, c.store) >= appliedIn(t, a.store) })
+	flaky.failures.Store(1_000_000)
+
+	if err := a.node.Propose(t.Context(), zoneBatch(t, a.applier, "one.example.")); err != nil {
+		t.Fatalf("Propose while c is failing: %v", err)
+	}
+	waitFor(t, "c to stall", func() bool { _, ok := c.node.Stalled(); return ok })
+
+	// Leaving is Raft stopping on c, not merely c refusing to apply.
+	waitFor(t, "c to leave Raft", func() bool { return c.node.raft.State() == raft.Shutdown })
+
+	s, _ := c.node.Stalled()
+	if !errors.Is(s.Reason, errDiskFull) {
+		t.Errorf("c stalled over %v, want the full disk", s.Reason)
+	}
+	if heard.mentioning("leaving the cluster") != 1 {
+		t.Errorf("c did not say it was leaving; it reported %d things", heard.count())
+	}
+	// Planned where the disk is fine: what is under test is that c refuses it.
+	if err := c.node.Propose(t.Context(), zoneBatch(t, a.applier, "mine.example.")); !errors.Is(err, ErrBehind) {
+		t.Errorf("a write to c = %v, want it refused as the member that is behind", err)
+	}
+
+	// Two of three is still a quorum, and the cluster does not wait for c.
+	if err := a.node.Propose(t.Context(), zoneBatch(t, a.applier, "two.example.")); err != nil {
+		t.Fatalf("Propose after c left: %v", err)
+	}
+	waitFor(t, "both zones to reach b", func() bool { return zonesIn(t, b.store) == 2 })
+	if got := zonesIn(t, c.store); got != 0 {
+		t.Errorf("c holds %d zones, want none past the entry it stopped at", got)
 	}
 }
