@@ -19,6 +19,7 @@ const electionPatience = 15 * time.Second
 type member struct {
 	id      string
 	node    *Node
+	tr      *Transport
 	store   store.Store
 	applier *apply.Applier
 	addr    string
@@ -97,7 +98,7 @@ func startMember(t *testing.T, id string, opts ...func(*memberOptions)) *member 
 		t.Fatalf("Start %s: %v", id, err)
 	}
 	m := &member{
-		id: id, node: n, store: st, applier: a, addr: mux.Addr().String(), dir: dir, loads: ld,
+		id: id, node: n, tr: tr, store: st, applier: a, addr: mux.Addr().String(), dir: dir, loads: ld,
 	}
 	t.Cleanup(func() {
 		if !m.closed {

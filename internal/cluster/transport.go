@@ -29,6 +29,10 @@ const (
 	// StreamForward is a write forwarded to the leader
 	// (docs/decisions/d40-a-write-reaches-the-leader.md).
 	StreamForward StreamKind = 'f'
+
+	// StreamJoin is a node asking to be made a member
+	// (docs/decisions/d44-starting-and-joining.md).
+	StreamJoin StreamKind = 'j'
 )
 
 // String names the kind for a message somebody reads.
@@ -38,12 +42,16 @@ func (k StreamKind) String() string {
 		return "raft"
 	case StreamForward:
 		return "forwarded-write"
+	case StreamJoin:
+		return "join"
 	default:
 		return fmt.Sprintf("unknown (%q)", byte(k))
 	}
 }
 
-func (k StreamKind) known() bool { return k == StreamRaft || k == StreamForward }
+func (k StreamKind) known() bool {
+	return k == StreamRaft || k == StreamForward || k == StreamJoin
+}
 
 // The protocol's constants. They are the contract with every other
 // implementation of it, wegwitness included, and D43 points here rather than
@@ -315,6 +323,7 @@ func (t *Transport) Serve(l net.Listener) *Mux {
 		queues: map[StreamKind]*queue{
 			StreamRaft:    newQueue(),
 			StreamForward: newQueue(),
+			StreamJoin:    newQueue(),
 		},
 		slots:    make(chan struct{}, maxHandshakes),
 		inflight: make(map[net.Conn]struct{}),

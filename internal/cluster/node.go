@@ -79,6 +79,7 @@ type Node struct {
 	logs    *raftboltdb.BoltStore
 	trans   *raft.NetworkTransport
 	machine *fsm
+	joins   net.Listener
 	id      raft.ServerID
 	addr    raft.ServerAddress
 	report  func(error)
@@ -188,12 +189,13 @@ func Start(cfg NodeConfig) (_ *Node, err error) {
 		return nil, fmt.Errorf("cluster: start Raft: %w", err)
 	}
 	n := &Node{
-		raft: r, logs: logs, trans: trans, machine: machine,
+		raft: r, logs: logs, trans: trans, machine: machine, joins: cfg.Mux.Listener(StreamJoin),
 		id: conf.LocalID, addr: raft.ServerAddress(cfg.Advertise), report: report,
 		ctx: ctx, cancel: cancel,
 	}
-	n.wg.Add(1)
+	n.wg.Add(2)
 	go n.watch(leaving)
+	go n.serveJoins(n.joins)
 	return n, nil
 }
 
@@ -341,7 +343,7 @@ func (n *Node) Close() error {
 	// First, so that an entry being retried gives up now rather than after a
 	// minute, and so that the watch stops waiting for a stall.
 	n.cancel()
-	err := n.raft.Shutdown().Error()
+	err := errors.Join(n.raft.Shutdown().Error(), n.joins.Close())
 	n.wg.Wait()
 	return errors.Join(err, n.trans.Close(), n.logs.Close())
 }
