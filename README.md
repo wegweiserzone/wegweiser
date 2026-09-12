@@ -12,6 +12,11 @@
 
 ---
 
+> [!NOTE]
+> I am away until 27 September 2026. Issues, pull requests and security reports that arrive
+> before then are read after it, so an answer takes longer than usual. Nothing is lost in the
+> meantime.
+
 Wegweiser is a single static binary that runs an authoritative DNS server. Start it, open the
 web interface, and have a working zone in five minutes without learning zonefile syntax
 first. It is a side project, written by one person who got tired of editing zonefiles by

@@ -37,6 +37,9 @@ What helps in a report:
 - something to reproduce it with: a packet capture, a `dig` invocation, a short program
 - the affected version (`weg version --output json`) and the platform
 
+Until 27 September 2026 I am away, and a report sent before then is read after it. Taking
+that long does not mean it went astray.
+
 I usually answer within a few days. If two weeks pass with nothing back, the report has gone
 astray: open a public issue saying only that you are waiting on a security report, and I
 will pick it up.
