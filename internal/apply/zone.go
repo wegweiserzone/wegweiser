@@ -42,6 +42,11 @@ func (m Meta) Validate() error {
 func (a *Applier) CreateZone(
 	ctx context.Context, z *zone.Zone, records []zone.Record, meta Meta,
 ) (*Result, error) {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return nil, serr
+	}
+	defer done()
 	if z == nil {
 		return nil, fmt.Errorf("%w: no zone given", zone.ErrInvalid)
 	}
@@ -59,7 +64,7 @@ func (a *Applier) CreateZone(
 		if err != nil {
 			return nil, err
 		}
-		if err := a.ApplyBatch(ctx, b); err != nil {
+		if err := a.submit(ctx, b); err != nil {
 			return nil, err
 		}
 		return res, nil
@@ -175,6 +180,11 @@ func (a *Applier) createZoneIn(
 func (a *Applier) UpdateZone(
 	ctx context.Context, z *zone.Zone, meta Meta,
 ) (*Result, error) {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return nil, serr
+	}
+	defer done()
 	if z == nil {
 		return nil, fmt.Errorf("%w: no zone given", zone.ErrInvalid)
 	}
@@ -202,7 +212,7 @@ func (a *Applier) UpdateZone(
 		if perr != nil {
 			return nil, perr
 		}
-		if aerr := a.ApplyBatch(ctx, b); aerr != nil {
+		if aerr := a.submit(ctx, b); aerr != nil {
 			return nil, aerr
 		}
 		return res, nil
@@ -332,6 +342,11 @@ func (a *Applier) updateZoneIn(
 func (a *Applier) DeleteZone(
 	ctx context.Context, zid zone.ZoneID, meta Meta,
 ) (*Result, error) {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return nil, serr
+	}
+	defer done()
 	unlock := a.locks.lock(string(zid))
 	defer unlock()
 
@@ -339,7 +354,7 @@ func (a *Applier) DeleteZone(
 	if err != nil {
 		return nil, err
 	}
-	if err := a.ApplyBatch(ctx, b); err != nil {
+	if err := a.submit(ctx, b); err != nil {
 		return nil, err
 	}
 	return res, nil

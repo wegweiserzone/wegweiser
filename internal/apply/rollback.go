@@ -27,6 +27,11 @@ import (
 func (a *Applier) Rollback(
 	ctx context.Context, zid zone.ZoneID, target zone.Serial, meta Meta,
 ) (*Result, error) {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return nil, serr
+	}
+	defer done()
 	if err := meta.Validate(); err != nil {
 		return nil, err
 	}
@@ -38,7 +43,7 @@ func (a *Applier) Rollback(
 	if err != nil {
 		return nil, err
 	}
-	if err := a.ApplyBatch(ctx, b); err != nil {
+	if err := a.submit(ctx, b); err != nil {
 		return nil, err
 	}
 	return res, nil

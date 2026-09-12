@@ -105,3 +105,16 @@ command reached. That is the only cross-zone transaction this data model has.
 
 The doubled write on the leader is real and measurable. If it ever matters, the answer is to
 make validation work against a plan, not to stop validating.
+
+## Where this stands
+
+Built. `Plan` and `ApplyBatch` are split, the batch travels in a format of its own, and the
+applied index is written in the transaction that applies it.
+
+What it takes for the state machine never to reject turned out to be more than planning on
+the leader. In a cluster the leader plans one write at a time, and only after a Raft barrier
+has confirmed that everything committed before it is applied locally. Two plans made side by
+side could each claim the next serial of a zone they both reach, a reverse zone most often,
+and the second would then fail inside the state machine on every member at once. Writes to
+a cluster are therefore strictly sequential. That is the price of the sentence above, and at
+the rate people edit zones not one worth designing around.

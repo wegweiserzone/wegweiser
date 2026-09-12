@@ -146,6 +146,11 @@ func (s CookieSecrets) Due(now time.Time) bool {
 // several answers to one fact, and a client would hold a cookie that half the
 // nodes recognise.
 func (a *Applier) RotateCookieSecrets(ctx context.Context) (CookieSecrets, bool, error) {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return CookieSecrets{}, false, serr
+	}
+	defer done()
 	var stored CookieSecrets
 	if err := a.store.View(ctx, func(r store.Reader) error {
 		var verr error

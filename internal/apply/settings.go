@@ -322,11 +322,16 @@ type SettingChange struct {
 // planning transaction reading the policy either sees this change or does not,
 // and never half of it.
 func (a *Applier) SetSettings(ctx context.Context, changes []SettingChange) error {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return serr
+	}
+	defer done()
 	b, err := a.PlanSettings(changes)
 	if err != nil {
 		return err
 	}
-	return a.ApplyBatch(ctx, b)
+	return a.submit(ctx, b)
 }
 
 // PlanSettings turns settings changes into the batch that carries them out.

@@ -84,7 +84,13 @@ func startMember(t *testing.T, id string, opts ...func(*memberOptions)) *member 
 	if dir == "" {
 		dir = t.TempDir()
 	}
-	a := newApplier(t, st)
+	// Writes made through this member's applier go through its node once the
+	// node is in a cluster, the way `weg serve` wires them.
+	repl := &Replication{}
+	a, err := apply.New(st, apply.Options{Replication: repl})
+	if err != nil {
+		t.Fatalf("build the applier: %v", err)
+	}
 	tr, _ := newTransport(t, secretOf(7), 0)
 	mux := serve(t, tr)
 	ld := &loads{}
@@ -97,6 +103,7 @@ func startMember(t *testing.T, id string, opts ...func(*memberOptions)) *member 
 	if err != nil {
 		t.Fatalf("Start %s: %v", id, err)
 	}
+	repl.Bind(n)
 	m := &member{
 		id: id, node: n, tr: tr, store: st, applier: a, addr: mux.Addr().String(), dir: dir, loads: ld,
 	}

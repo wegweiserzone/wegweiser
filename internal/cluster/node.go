@@ -223,6 +223,89 @@ func (n *Node) leave() {
 // Stalled reports whether this member has stopped applying the log, and where.
 func (n *Node) Stalled() (Stall, bool) { return n.machine.stalledAt() }
 
+// electionWait bounds how long [Node.Init] waits for a member alone in its
+// new cluster to elect itself.
+const electionWait = 30 * time.Second
+
+// Replicating reports whether this member holds Raft state: it has started a
+// cluster or been added to one. Until then it is an ordinary server (D44).
+//
+// A member that has stalled counts as replicating, so that a write made there
+// is refused as one made on a member that is behind, rather than landing in
+// its store unseen by any other.
+func (n *Node) Replicating() bool {
+	if _, ok := n.Stalled(); ok {
+		return true
+	}
+	return n.raft.LastIndex() > 0
+}
+
+// Settle returns once this member may plan a write: it leads, and everything
+// committed before now is applied here. A follower fails with [ErrNotLeader]
+// before anything is planned
+// (docs/decisions/d24-what-the-cluster-replicates.md).
+func (n *Node) Settle(ctx context.Context) error {
+	if s, ok := n.Stalled(); ok {
+		return s.Err()
+	}
+	timeout := proposeTimeout
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout = time.Until(deadline)
+	}
+	if err := n.raft.Barrier(timeout).Error(); err != nil {
+		if errors.Is(err, raft.ErrNotLeader) {
+			return ErrNotLeader
+		}
+		return fmt.Errorf("cluster: wait for the log to be applied here: %w", err)
+	}
+	return nil
+}
+
+// Init makes this member the first of a new cluster, with everything its store
+// holds (docs/decisions/d44-starting-and-joining.md).
+//
+// What the store held until now is in no entry of the log, so a member that
+// joins later could not replay it. Init therefore ends with a log snapshot and
+// nothing of the log left in front of it, and every member that joins starts
+// from that snapshot. Run it through [apply.Applier.Exclusive], so that no
+// write lands between the log beginning and the snapshot being taken.
+func (n *Node) Init(ctx context.Context) error {
+	if err := n.Bootstrap(); err != nil {
+		return fmt.Errorf("cluster: start a cluster: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, electionWait)
+	defer cancel()
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for !n.IsLeader() {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("cluster: this member has not come to lead its new cluster: %w", ctx.Err())
+		case <-tick.C:
+		}
+	}
+	return n.snapshotEverything()
+}
+
+// snapshotEverything writes a log snapshot and leaves nothing of the log
+// before it, so that the next member to join has to start from the snapshot.
+func (n *Node) snapshotEverything() error {
+	if err := n.raft.Barrier(proposeTimeout).Error(); err != nil {
+		return fmt.Errorf("cluster: wait for the log to be applied here: %w", err)
+	}
+	was := n.raft.ReloadableConfig()
+	none := was
+	none.TrailingLogs = 0
+	if err := n.raft.ReloadConfig(none); err != nil {
+		return fmt.Errorf("cluster: keep no log behind the first snapshot: %w", err)
+	}
+	serr := n.raft.Snapshot().Error()
+	if serr != nil {
+		serr = fmt.Errorf("cluster: write the first log snapshot: %w", serr)
+	}
+	return errors.Join(serr, n.raft.ReloadConfig(was))
+}
+
 // catchUp restores the newest log snapshot when the store is behind it.
 //
 // Raft does not restore on start here (see [Start]), and what that would get

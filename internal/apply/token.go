@@ -53,11 +53,16 @@ type TokenGuard func(tokens []*store.Token) error
 // because the secret is shown to whoever asked and never again. Everything
 // stored about it travels.
 func (a *Applier) CreateToken(ctx context.Context, tok *store.Token) error {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return serr
+	}
+	defer done()
 	b, err := a.PlanCreateToken(tok)
 	if err != nil {
 		return err
 	}
-	return a.ApplyBatch(ctx, b)
+	return a.submit(ctx, b)
 }
 
 // PlanCreateToken works out the batch that writes a token.
@@ -79,6 +84,11 @@ func (a *Applier) PlanCreateToken(tok *store.Token) (*Batch, error) {
 func (a *Applier) RevokeToken(
 	ctx context.Context, tid store.TokenID, guard TokenGuard,
 ) error {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return serr
+	}
+	defer done()
 	unlock := a.locks.lock(tokenLock)
 	defer unlock()
 
@@ -86,7 +96,7 @@ func (a *Applier) RevokeToken(
 	if err != nil {
 		return err
 	}
-	return a.ApplyBatch(ctx, b)
+	return a.submit(ctx, b)
 }
 
 // PlanRevokeToken works out the batch that ends a token, and refuses here

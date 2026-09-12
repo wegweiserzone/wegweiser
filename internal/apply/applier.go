@@ -32,8 +32,13 @@ type Applier struct {
 	autoReverseDefault bool
 	policy             Policy
 	onApplied          func(context.Context, Applied)
+	repl               Replication
 
 	locks keyedMutex
+
+	// serial puts one write after another when there is a cluster; see
+	// [Applier.settle].
+	serial sync.Mutex
 }
 
 // Options configure an applier.
@@ -64,6 +69,27 @@ type Options struct {
 	// from several at once, and it cannot fail the write: that is committed by
 	// the time it hears of it. Nil tells nobody.
 	OnApplied func(context.Context, Applied)
+
+	// Replication routes the batches this node plans through a cluster's log.
+	// Nil is a single node, which carries every batch out itself.
+	Replication Replication
+}
+
+// Replication is what a cluster puts between planning a batch and carrying it
+// out (docs/decisions/d24-what-the-cluster-replicates.md). A
+// *cluster.Replication is one.
+type Replication interface {
+	// Replicating reports whether writes go through the replicated log. A node
+	// that has not started or joined a cluster yet writes to its own store.
+	Replicating() bool
+
+	// Settle returns once this node may plan: it leads, and everything
+	// committed before now is applied here.
+	Settle(ctx context.Context) error
+
+	// Propose puts a planned batch into the log and returns once it is applied
+	// here.
+	Propose(ctx context.Context, b *Batch) error
 }
 
 // New returns an applier writing through s.
@@ -87,6 +113,7 @@ func New(s store.Store, opts Options) (*Applier, error) {
 		autoReverseDefault: autoReverse,
 		policy:             opts.Policy,
 		onApplied:          opts.OnApplied,
+		repl:               opts.Replication,
 	}, nil
 }
 
@@ -124,8 +151,72 @@ func (r *Result) Commit() *journal.Commit {
 // work back, and a transaction only discards on failure.
 var errPlanned = errors.New("the plan is complete")
 
+// settledKey marks a context whose write already holds the applier's write
+// lock, so that a write made on its behalf does not wait for it again.
+type settledKey struct{}
+
+// settle readies a write that is about to read the store and plan (D24).
+//
+// On a single node it does nothing: the per-zone locks and the store's own
+// ordering are what they always were. With a cluster, every write plans alone
+// and against a store that has applied everything committed before it. Two
+// plans made side by side could each claim the next serial of a reverse zone
+// they both reach, and the second would then fail inside the state machine on
+// every member at once, where D29 takes them all out of the cluster. The plan
+// is the only place that failure is allowed to happen.
+//
+// The lock is taken with a cluster configured even before this node replicates,
+// so that [Applier.Exclusive] can start a cluster with no write in flight.
+//
+// A write started on behalf of another, like the reconcile a zone creation
+// ends with, finds the lock held through its context and does not take it.
+func (a *Applier) settle(ctx context.Context) (context.Context, func(), error) {
+	if a.repl == nil || ctx.Value(settledKey{}) != nil {
+		return ctx, func() {}, nil
+	}
+	a.serial.Lock()
+	if a.repl.Replicating() {
+		if err := a.repl.Settle(ctx); err != nil {
+			a.serial.Unlock()
+			return ctx, nil, err
+		}
+	}
+	return context.WithValue(ctx, settledKey{}, true), a.serial.Unlock, nil
+}
+
+// submit carries out a batch this node planned: into the cluster's log when
+// there is one, into the store otherwise.
+func (a *Applier) submit(ctx context.Context, b *Batch) error {
+	if a.repl != nil && a.repl.Replicating() {
+		if b.Empty() {
+			return nil
+		}
+		return a.repl.Propose(ctx, b)
+	}
+	return a.ApplyBatch(ctx, b)
+}
+
+// Exclusive runs fn with no write of this applier in flight, and none starting
+// until it returns. Making a node the first member of a cluster runs this way,
+// so that no write lands in the store between the moment the log begins and
+// the moment its first snapshot is taken
+// (docs/decisions/d44-starting-and-joining.md).
+func (a *Applier) Exclusive(ctx context.Context, fn func(context.Context) error) error {
+	if a.repl == nil || ctx.Value(settledKey{}) != nil {
+		return fn(ctx)
+	}
+	a.serial.Lock()
+	defer a.serial.Unlock()
+	return fn(context.WithValue(ctx, settledKey{}, true))
+}
+
 // Apply carries out a command: a plan, and then that plan applied.
 func (a *Applier) Apply(ctx context.Context, cmd Command) (*Result, error) {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return nil, serr
+	}
+	defer done()
 	// One command per zone at a time. SQLite serializes writers anyway and the
 	// unique index on (zone_id, serial_to) is the last line of defence, but a
 	// database that does allow concurrent writers would otherwise have two
@@ -139,7 +230,7 @@ func (a *Applier) Apply(ctx context.Context, cmd Command) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := a.ApplyBatch(ctx, b); err != nil {
+	if err := a.submit(ctx, b); err != nil {
 		return nil, err
 	}
 	return res, nil

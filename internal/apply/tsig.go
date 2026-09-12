@@ -47,11 +47,16 @@ type KeyOp struct {
 func (a *Applier) CreateKey(
 	ctx context.Context, name zone.Name, alg zone.TSIGAlgorithm, secret []byte,
 ) (*store.TSIGKey, error) {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return nil, serr
+	}
+	defer done()
 	b, key, err := a.PlanCreateKey(name, alg, secret)
 	if err != nil {
 		return nil, err
 	}
-	if aerr := a.ApplyBatch(ctx, b); aerr != nil {
+	if aerr := a.submit(ctx, b); aerr != nil {
 		return nil, aerr
 	}
 	return key, nil
@@ -87,11 +92,16 @@ func (a *Applier) PlanCreateKey(
 
 // RevokeKey ends a key and clears its secret.
 func (a *Applier) RevokeKey(ctx context.Context, kid store.TSIGKeyID) error {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return serr
+	}
+	defer done()
 	b, err := a.PlanRevokeKey(kid)
 	if err != nil {
 		return err
 	}
-	return a.ApplyBatch(ctx, b)
+	return a.submit(ctx, b)
 }
 
 // PlanRevokeKey works out the batch that ends a key. The moment is settled

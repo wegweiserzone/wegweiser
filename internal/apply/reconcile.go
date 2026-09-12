@@ -23,6 +23,11 @@ import (
 // away by the change that made it obsolete, and one that somebody detached is
 // theirs to keep (D4): removing it here would make detaching mean nothing.
 func (a *Applier) Reconcile(ctx context.Context, zid zone.ZoneID, meta Meta) (*Result, error) {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return nil, serr
+	}
+	defer done()
 	if err := meta.Validate(); err != nil {
 		return nil, err
 	}
@@ -34,7 +39,7 @@ func (a *Applier) Reconcile(ctx context.Context, zid zone.ZoneID, meta Meta) (*R
 	if err != nil {
 		return nil, err
 	}
-	if err := a.ApplyBatch(ctx, b); err != nil {
+	if err := a.submit(ctx, b); err != nil {
 		return nil, err
 	}
 	return res, nil

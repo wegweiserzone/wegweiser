@@ -55,6 +55,11 @@ type Skipped struct {
 // than an import, and doing that silently would be the difference between
 // gaining a zone and losing one.
 func (a *Applier) Import(ctx context.Context, in Import, meta Meta) (*Result, error) {
+	ctx, done, serr := a.settle(ctx)
+	if serr != nil {
+		return nil, serr
+	}
+	defer done()
 	if err := meta.Validate(); err != nil {
 		return nil, err
 	}
