@@ -46,9 +46,10 @@ type Setting struct {
 // the tokens, keys and settings that reach other nodes in a batch.
 //
 // What is deliberately absent is node-local: how far this node has got through
-// the log, the browser sessions it is holding, and when a token was last used
-// *here*. That last one is the only node-local field living on a replicated
-// row, and it is zero on a token that travels.
+// the log, the identifier it is a member by, the browser sessions it is
+// holding, and when a token was last used *here*. That last one is the only
+// node-local field living on a replicated row, and it is zero on a token that
+// travels.
 type Replicated struct {
 	Kind ReplicatedKind
 

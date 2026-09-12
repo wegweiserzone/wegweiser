@@ -126,6 +126,12 @@ type Reader interface {
 	// log entry can occupy, so it needs no error of its own.
 	AppliedIndex(ctx context.Context) (uint64, error)
 
+	// MemberID returns the identifier this node is a member of a cluster by,
+	// and the empty string when it has never been given one. Like the applied
+	// index it is node-local: no log snapshot carries it and no restore
+	// replaces it (docs/decisions/d42-membership-lives-in-the-log.md).
+	MemberID(ctx context.Context) (string, error)
+
 	// ExportReplicated streams everything a cluster replicates, which is what a
 	// log snapshot is made of
 	// (docs/decisions/d30-what-a-log-snapshot-contains.md). Call it inside
@@ -212,6 +218,12 @@ type Writer interface {
 	// The index only moves forward, and whoever applies the log is what keeps
 	// it that way: the store records what it is told.
 	SetAppliedIndex(ctx context.Context, index uint64) error
+
+	// SetMemberID records the identifier this node is a member of a cluster
+	// by. It is written once: setting the one already held again changes
+	// nothing, and setting another returns [ErrConflict], because a member
+	// whose identifier changed would graft one member's history onto another's.
+	SetMemberID(ctx context.Context, id string) error
 }
 
 // Tx is a read-write transaction. Reads inside it see its own uncommitted
