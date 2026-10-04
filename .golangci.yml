@@ -31,8 +31,8 @@ linters:
 
   settings:
     # depguard enforces the architecture invariants mechanically, so that a
-    # violation is a failed build rather than a review comment. See
-    # architecture section 5.
+    # violation is a failed build rather than a review comment. See Layout in
+    # docs/conventions.md.
     depguard:
       rules:
         sql-confined-to-store:
@@ -49,7 +49,7 @@ linters:
               desc: the Postgres driver belongs in internal/store/postgres only
 
         # internal/api is a leaf everywhere except where a process is
-        # assembled. architecture section 5 puts that in cmd/weg and in
+        # assembled. Layout in docs/conventions.md puts that in cmd/weg and in
         # internal/cli, which is where `weg serve` runs the API in the same
         # process; commands live there rather than in package main so that they
         # can be tested without building a binary.
