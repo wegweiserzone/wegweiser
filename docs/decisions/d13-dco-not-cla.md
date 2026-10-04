@@ -1,5 +1,7 @@
 # D13 — DCO, not a CLA
 
+- Amended by: [D45](d45-agpl-or-later.md)
+
 Contributions are certified with a `Signed-off-by` line (Developer Certificate of Origin
 1.1). No copyright assignment, no CLA.
 
