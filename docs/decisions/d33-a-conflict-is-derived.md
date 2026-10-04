@@ -62,3 +62,10 @@ action for the reverse findings beside these.
 
 Listing conflicts costs a planning transaction, which is why it arrives behind the same flag
 the missing entries do rather than on every check.
+
+## Where this stands
+
+Built. `GET /zones/{zoneId}/check?reverse=true` reports each conflict as a warning ahead of
+the missing entries, naming the record that would take the reverse entry. The one-click
+action is no longer owed: `POST /records/{recordId}/canonical` is offered beside the finding
+on the GUI's check screen, and `weg record canonical` does the same from the CLI.

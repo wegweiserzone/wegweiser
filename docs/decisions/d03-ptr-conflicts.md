@@ -20,9 +20,13 @@ ask to change.
 the API response, listed under the zone, and clearable. A conflict that is only visible in
 the server log is the same as no conflict detection at all.
 
-**Where this stands: returned, not yet listed.** Every write that hits one reports it, in the API
-response and in both clients, and it carries the policy that decided it. Listing and
-clearing are not built, because a conflict is computed during a write and nothing stores it:
-that needs a table, a migration and a rule for when a conflict stops existing. Until then an
-operator sees a conflict when they cause one and not afterwards, which is the weaker half of
-what this entry asks for.
+**Where this stands: built, except per zone.** Every write that hits a conflict reports it,
+in the API response and in both clients, and it carries the policy that decided it. Listing
+went the way [D33](d33-a-conflict-is-derived.md) settled: nothing stores a conflict, and the
+zone's check reports each one as a warning, in `weg zone check --reverse` and on the check
+screen of the GUI. Clearing was dropped there too. "Make this the canonical name" is
+`weg record canonical`, and the GUI offers it beside the finding.
+
+The policy is one server-wide setting, `weg settings set --reverse-conflict-policy`. A zone
+cannot carry its own. Making a name canonical is the one write that overrides it, because
+taking the entry from whoever holds it is what that action asks for.
