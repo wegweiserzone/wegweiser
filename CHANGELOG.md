@@ -18,6 +18,13 @@ public API is unstable and may change without a deprecation period.
   carried the other zone as it stood before either change. That zone stayed
   stale until it was next edited or the server restarted.
 
+#### Observation
+
+- The help text of `weg_dns_under_load` described the gauge by a signal the
+  server no longer uses, the datagram readers no longer idling. It now says
+  what the value follows: the kernel discarding queries on the server's sockets
+  because nobody got to them in time.
+
 ## [0.4.0] - 2026-09-09
 
 ### Added

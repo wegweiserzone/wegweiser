@@ -342,7 +342,7 @@ func (r *Responder) cookieQuery() bool { return len(r.req.Question) == 0 && r.ha
 // server is under load and the client has not proved its address, and sets the
 // response that says so.
 //
-// The condition is D37's and the response is D35's. It costs a real client one
+// The condition is D38's and the response is D35's. It costs a real client one
 // round trip, once: it comes back with the cookie in the refusal and is never
 // refused again. The spoofed source never receives the refusal, so what it
 // bought is a response close in size to the query it forged, which is the
@@ -373,6 +373,6 @@ func (r *Responder) refuseCookieless(tr Transport) bool {
 	return true
 }
 
-// underLoad reports whether the readers this responder answers for have
-// stopped idling.
+// underLoad reports whether the kernel is dropping queries on the sockets this
+// responder answers for.
 func (r *Responder) underLoad() bool { return r.load != nil && r.load.underLoad() }

@@ -196,8 +196,9 @@ func New() *Metrics {
 
 	underLoad := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: namespace, Subsystem: "dns", Name: "under_load",
-		Help: "1 while the datagram readers have stopped idling, which is when a query " +
-			"carrying no valid cookie is refused rather than answered.",
+		Help: "1 while the kernel is discarding queries on the server's sockets because " +
+			"nobody got to them in time, which is when a query carrying no valid cookie " +
+			"is refused rather than answered.",
 	}, m.underLoad)
 
 	m.reg.MustRegister(

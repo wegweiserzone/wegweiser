@@ -329,7 +329,7 @@ func TestRespondReplacesACookie(t *testing.T) {
 				t.Errorf("what came back is not a cookie of ours: %x", cookie)
 			}
 			// Whatever was wrong with the cookie, the query is still answered:
-			// nothing is refused until the server is under load (D35, D37).
+			// nothing is refused until the server is under load (D35, D38).
 			if got.Rcode != wire.RcodeSuccess {
 				t.Errorf("rcode = %s, want NOERROR", wire.RcodeToString[got.Rcode])
 			}
@@ -471,8 +471,8 @@ func responseCookie(t *testing.T, msg *wire.Msg) []byte {
 	return raw
 }
 
-// TestRespondRefusesUnderLoad walks D35's switch: while the readers have
-// stopped idling, a client that has not proved its address is turned away, and
+// TestRespondRefusesUnderLoad walks D35's switch: while the server is under
+// load, a client that has not proved its address is turned away, and
 // everybody else is answered as before.
 func TestRespondRefusesUnderLoad(t *testing.T) {
 	t.Parallel()

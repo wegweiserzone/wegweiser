@@ -154,12 +154,12 @@ func TestUnderLoadGauge(t *testing.T) {
 	under := false
 	m.SetLoadSource(func() bool { return under })
 	if got := m.underLoad(); got != 0 {
-		t.Errorf("under_load = %v while the readers idle, want 0", got)
+		t.Errorf("under_load = %v while nothing is dropped, want 0", got)
 	}
 
 	under = true
 	if got := m.underLoad(); got != 1 {
-		t.Errorf("under_load = %v while the readers do not, want 1", got)
+		t.Errorf("under_load = %v while queries are dropped, want 1", got)
 	}
 
 	var buf bytes.Buffer

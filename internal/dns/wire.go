@@ -227,7 +227,7 @@ func (r *Responder) Respond(
 
 	case r.refuseCookieless(tr):
 		// Nothing is resolved: while the server cannot keep up, a client that
-		// has not shown it can receive what it is sent goes first (D35, D37).
+		// has not shown it can receive what it is sent goes first (D35, D38).
 
 	case r.cookieQuery():
 		// Nothing was asked, so nothing is answered. The cookie the response
