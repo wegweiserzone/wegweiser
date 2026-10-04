@@ -74,9 +74,11 @@ different reason now, and the fence says which.
 
 Built. Cookies are answered, issued and checked (RFC 7873, RFC 9018), the secret rolls over
 hourly, and a query carrying no valid Server Cookie is refused while the server is under
-load. What "under load" is derived from was the question this record left open, and
-[D37](d37-under-load-is-when-the-readers-stop-idling.md) closes it: the datagram readers
-having stopped idling.
+load. What "under load" is derived from was the question this record left open.
+[D37](d37-under-load-is-when-the-readers-stop-idling.md) answered it with the datagram
+readers having stopped idling, and [D38](d38-under-load-is-what-the-kernel-says.md)
+replaced that with what the server runs on now: the kernel having dropped a datagram on one
+of its sockets.
 
 The scope fence split the way this record said it would. Cookies are inside it; response rate
 limiting is outside, on the terms above.

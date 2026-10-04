@@ -138,7 +138,7 @@ the configuration that end needs, written for BIND and Knot
 secondaries what serial they hold ([D36](decisions/d36-probing-a-secondary.md));
 SQLite persistence with journal; DNS cookies, with a query carrying none refused while the
 server is under load ([D35](decisions/d35-cookieless-under-load.md),
-[D37](decisions/d37-under-load-is-when-the-readers-stop-idling.md)); REST API with token auth;
+[D38](decisions/d38-under-load-is-what-the-kernel-says.md)); REST API with token auth;
 CLI core commands; GUI with zone overview, record editor and live query stream; Prometheus
 metrics and `/healthz`; single node.
 
