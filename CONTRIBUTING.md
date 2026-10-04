@@ -30,7 +30,7 @@ Signed-off-by: Jane Doe <jane@example.com>
 contribution, or you have the right to submit it under the project's licence.
 
 There is no CLA and no copyright assignment. You keep your copyright, and your contribution
-is licensed under AGPL-3.0 like the rest of the project.
+is licensed under AGPL-3.0-or-later like the rest of the project.
 
 ## On AI assistance
 

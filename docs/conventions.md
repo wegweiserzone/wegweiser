@@ -45,7 +45,7 @@ Settled, and re-opened only by a reason that has not already been weighed below.
 | GUI | SvelteKit + TypeScript + Tailwind, built statically, embedded via `embed.FS` |
 | CLI / TUI | Cobra for commands, Bubble Tea + Lipgloss for interactive views |
 | Delivery | One static binary, plus container image and systemd unit |
-| License | AGPLv3 |
+| License | AGPLv3 or later, `AGPL-3.0-or-later` ([D45](decisions/d45-agpl-or-later.md)) |
 
 Packaging names: unit `wegweiser.service`, config dir `/etc/wegweiser/`, image `wegweiser`.
 

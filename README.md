@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/wegweiserzone/wegweiser/actions/workflows/ci.yml/badge.svg)](https://github.com/wegweiserzone/wegweiser/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/wegweiserzone/wegweiser.svg)](https://pkg.go.dev/github.com/wegweiserzone/wegweiser)
-[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![License: AGPL v3 or later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 
 </div>
 
@@ -186,7 +186,8 @@ Security issues: please follow [SECURITY.md](SECURITY.md) rather than opening a 
 
 ## License
 
-[GNU Affero General Public License v3.0](LICENSE).
+[GNU Affero General Public License v3.0](LICENSE) or any later version
+(`AGPL-3.0-or-later`).
 
 Chosen deliberately for a network-facing server: if you run a modified Wegweiser as a
 service, its users are entitled to the source. Note that this is more restrictive than

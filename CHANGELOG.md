@@ -8,6 +8,14 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
+### Changed
+
+#### Licence
+
+- The licence is named the same way everywhere: the GNU AGPL, version 3 or any later
+  version (`AGPL-3.0-or-later`). The web interface's package metadata said version 3 only,
+  which disagreed with the API document and the container image. D45 says why "or later".
+
 ### Fixed
 
 #### DNS
