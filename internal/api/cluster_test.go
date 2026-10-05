@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"testing"
 
@@ -20,7 +22,14 @@ func (m *member) Init(context.Context) error {
 	return nil
 }
 
-func (m *member) Member() (id, addr string) { return "ns1", "192.0.2.1:8054" }
+func (m *member) Member() (id, addr string)      { return "ns1", "192.0.2.1:8054" }
+func (m *member) Replicating() bool              { return m.started }
+func (m *member) IsLeader() bool                 { return m.started }
+func (m *member) Leader() (id, addr string)      { return m.Member() }
+func (m *member) Stalled() (cluster.Stall, bool) { return cluster.Stall{}, false }
+func (m *member) DialForward(context.Context, string) (net.Conn, error) {
+	return nil, errors.New("a member that leads forwards nothing")
+}
 
 func TestInitCluster(t *testing.T) {
 	t.Parallel()

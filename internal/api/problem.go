@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/cluster"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
@@ -98,6 +99,18 @@ func asProblem(err error) *apiError {
 		}
 	case errors.Is(err, store.ErrConflict):
 		return conflict(err.Error())
+	case errors.Is(err, cluster.ErrNotLeader):
+		// What reaches here is a write on a member that lost the lead while
+		// it was being made. Every other member forwards rather than tries.
+		return noLeader()
+	case errors.Is(err, cluster.ErrBehind):
+		// Written for whoever reads it: where the member stopped, and why.
+		return &apiError{
+			status: http.StatusServiceUnavailable,
+			kind:   typeUnavailable,
+			title:  "This member is behind the cluster",
+			detail: err.Error(),
+		}
 	case errors.Is(err, zone.ErrInvalid):
 		// The zone package validates what DNS itself requires, so its
 		// rejections are about the request and are safe to quote in full.

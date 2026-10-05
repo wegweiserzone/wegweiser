@@ -153,6 +153,31 @@ func TestTwoServersBecomeACluster(t *testing.T) {
 		}
 	})
 
+	// D40: a write sent to a member that does not lead reaches the one that
+	// does, and from there every member answers it.
+	t.Run("a write sent to the new member reaches the whole cluster", func(t *testing.T) {
+		var stdout, stderr syncBuffer
+		if code := Execute(t.Context(), []string{
+			"zone", "create", "two.example.", "--server", b.APIAddress, "--token", token,
+		}, &stdout, &stderr); code != ExitOK {
+			t.Fatalf("zone create on the new member: exit code %d; stderr: %s", code, stderr.String())
+		}
+		for _, s := range []serveStatus{a, b} {
+			deadline := time.Now().Add(10 * time.Second)
+			for {
+				got := ask(t, s.Address, "two.example.", zone.TypeSOA)
+				if got.Rcode == wire.RcodeSuccess && got.Authoritative {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("%s does not answer for the zone created through the new member: %s",
+						s.Address, wire.RcodeToString[got.Rcode])
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+		}
+	})
+
 	t.Run("a cluster is started once", func(t *testing.T) {
 		var stdout, stderr syncBuffer
 		if code := Execute(t.Context(), []string{

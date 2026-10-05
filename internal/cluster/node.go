@@ -422,6 +422,12 @@ func (n *Node) Propose(ctx context.Context, b *apply.Batch) error {
 // others reach it at.
 func (n *Node) Member() (id, addr string) { return string(n.id), string(n.addr) }
 
+// DialForward opens a stream to the member at addr that carries a write
+// forwarded to it (docs/decisions/d40-a-write-reaches-the-leader.md).
+func (n *Node) DialForward(ctx context.Context, addr string) (net.Conn, error) {
+	return n.tr.Dial(ctx, addr, StreamForward)
+}
+
 // IsLeader reports whether this member is leading.
 func (n *Node) IsLeader() bool { return n.raft.State() == raft.Leader }
 

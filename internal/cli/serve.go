@@ -382,6 +382,23 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 	// holding is written out once nothing more can arrive.
 	defer func() { err = errors.Join(err, apiSrv.Close()) }()
 
+	// A member takes the writes the others forward to it on its cluster port,
+	// for whenever it leads (docs/decisions/d40-a-write-reaches-the-leader.md).
+	if node != nil {
+		fwdSrv := &http.Server{Handler: apiSrv.Forwarded(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
+		go func() {
+			if serr := fwdSrv.Serve(port.mux.Listener(cluster.StreamForward)); serr != nil &&
+				!errors.Is(serr, http.ErrServerClosed) {
+				report(fmt.Errorf("serve forwarded writes: %w", serr))
+			}
+		}()
+		defer func() {
+			drain, cancel := context.WithTimeout(context.WithoutCancel(ctx), drainTimeout)
+			defer cancel()
+			err = errors.Join(err, fwdSrv.Shutdown(drain))
+		}()
+	}
+
 	apiListener, lerr := new(net.ListenConfig).Listen(ctx, "tcp", cfg.APIListen.Value)
 	if lerr != nil {
 		return fmt.Errorf("listen on %s for the API: %w", cfg.APIListen.Value, lerr)

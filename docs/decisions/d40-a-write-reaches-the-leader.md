@@ -57,3 +57,13 @@ to and no transport to forward over, and its write path is the one it has today.
 
 While there is no leader at all, a write fails the way D10 already describes, and the error
 says the cluster has no leader rather than naming this node as the problem.
+
+## Where this stands
+
+Built. The routes that write are listed in `internal/api/forward.go`, and a test holds that
+list to the specification, so a route added there has to be sorted into one side or the
+other. A member that is not leading hands such a request to the leader whole, body and all,
+with its credential taken out and the caller it authenticated put in a header that only the
+cluster port reads. A member that has left the cluster the way
+[D29](d29-a-node-that-cannot-apply.md) describes refuses the write rather than forwarding it,
+because what it answers afterwards would not show the change.

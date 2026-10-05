@@ -104,6 +104,9 @@ func (s *Server) Close() error {
 		ctx, cancel := context.WithTimeout(context.Background(), tokenFlushInterval)
 		defer cancel()
 		s.flushTokenUse(ctx)
+		if s.forwardTransport != nil {
+			s.forwardTransport.CloseIdleConnections()
+		}
 	})
 	return nil
 }

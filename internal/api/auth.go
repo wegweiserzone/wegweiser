@@ -272,12 +272,7 @@ func (s *Server) authenticator(next http.Handler) http.Handler {
 		}
 
 		if need := scopeNeeded(r); !sub.allows(need) {
-			writeProblem(w, r, &apiError{
-				status: http.StatusForbidden,
-				kind:   typeForbidden,
-				title:  "Not allowed",
-				detail: fmt.Sprintf("this token does not carry the %q scope", need),
-			})
+			writeProblem(w, r, notAllowed(need))
 			return
 		}
 
@@ -341,6 +336,16 @@ func (s *Server) credential(r *http.Request) (context.Context, *subject, error) 
 	ctx = context.WithValue(ctx, sessionKey{}, sess)
 	ctx = context.WithValue(ctx, sessionIDKey{}, c.Value)
 	return ctx, sub, nil
+}
+
+// notAllowed reports a caller whose token does not reach this far.
+func notAllowed(need Scope) *apiError {
+	return &apiError{
+		status: http.StatusForbidden,
+		kind:   typeForbidden,
+		title:  "Not allowed",
+		detail: fmt.Sprintf("this token does not carry the %q scope", need),
+	}
 }
 
 // unauthorized reports a request that carried no usable credential.

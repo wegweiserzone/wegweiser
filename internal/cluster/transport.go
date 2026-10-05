@@ -238,7 +238,7 @@ func (t *Transport) Dial(ctx context.Context, addr string, kind StreamKind) (net
 	if cerr := t.call(ctx, conn, kind); cerr != nil {
 		return nil, errors.Join(fmt.Errorf("cluster: %s: %w", addr, cerr), closeQuietly(conn))
 	}
-	return conn, nil
+	return stream{conn}, nil
 }
 
 // call is the dialling side of the handshake. It proves itself first and says
@@ -533,7 +533,7 @@ func (l *kindListener) Accept() (net.Conn, error) {
 	}
 	select {
 	case c := <-l.q.conns:
-		return c, nil
+		return stream{c}, nil
 	case <-l.q.closed:
 		return nil, net.ErrClosed
 	case <-l.m.ctx.Done():
@@ -549,6 +549,13 @@ func (l *kindListener) Close() error {
 }
 
 func (l *kindListener) Addr() net.Addr { return l.m.Addr() }
+
+// stream is an authenticated connection as whoever takes it sees it: a
+// stream of bytes. That TLS carries it is the transport's business, and a
+// consumer that can see a *tls.Conn acts on it. net/http does: a connection
+// whose ALPN names a protocol other than HTTP is handed to whoever registered
+// that protocol, and closed when nobody did.
+type stream struct{ net.Conn }
 
 // closeQuietly closes c and reports a failure, except the one saying it was
 // closed already.

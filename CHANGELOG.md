@@ -31,8 +31,12 @@ public API is unstable and may change without a deprecation period.
   It needs the admin scope, is done once, and is refused on a server without a
   cluster section. The API offers the same as `POST /cluster/init`.
 
-- A write sent to a member that is not leading fails instead of reaching the
-  leader.
+- A write can be sent to any member. One that is not leading hands it to the
+  leader over the cluster port and answers with what the leader answered, so a
+  client never needs to know which member leads. Reads are answered by the
+  member asked, and can trail the leader by a moment. Logging in to the web
+  interface stays on the member it was made on. While no member leads, a write
+  is refused with 503 and every member goes on answering queries.
 
 ### Changed
 

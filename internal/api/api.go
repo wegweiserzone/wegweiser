@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/buildinfo"
+	"github.com/wegweiserzone/wegweiser/internal/cluster"
 	"github.com/wegweiserzone/wegweiser/internal/dns"
 	"github.com/wegweiserzone/wegweiser/internal/metrics"
 	"github.com/wegweiserzone/wegweiser/internal/store"
@@ -81,6 +83,10 @@ type Secondaries interface {
 
 // Cluster is this node's member of a cluster, as far as the API acts on it. A
 // *cluster.Node is one.
+//
+// Of the cluster itself the API learns two things, whether this member leads
+// and where the leader is, which is what forwarding a write takes
+// (docs/decisions/d40-a-write-reaches-the-leader.md).
 type Cluster interface {
 	// Init starts a cluster with this node as its only member. The API runs
 	// it with no write in flight, which is what it asks of its caller.
@@ -88,6 +94,18 @@ type Cluster interface {
 	// Member is the identifier this node is a member by, and the address the
 	// others reach it at.
 	Member() (id, addr string)
+	// Replicating reports whether this node is a member of a cluster yet.
+	Replicating() bool
+	// IsLeader reports whether this member leads.
+	IsLeader() bool
+	// Leader names the member leading, empty while none is.
+	Leader() (id, addr string)
+	// Stalled reports where this member stopped, if it has left the cluster
+	// over an entry it could not apply.
+	Stalled() (cluster.Stall, bool)
+	// DialForward opens a stream to the member at addr that carries a
+	// forwarded write.
+	DialForward(ctx context.Context, addr string) (net.Conn, error)
 }
 
 // Config is what a [Server] needs.
@@ -152,9 +170,12 @@ type Server struct {
 	secondaries Secondaries
 	cluster     Cluster
 	metrics     *metrics.Metrics
-	stream      *stream.Hub
-	onError     func(error)
-	now         func() time.Time
+
+	// forwardTransport carries writes to the leader; nil without a cluster.
+	forwardTransport *http.Transport
+	stream           *stream.Hub
+	onError          func(error)
+	now              func() time.Time
 
 	limiter  *authLimiter
 	sessions *sessionStore
@@ -207,6 +228,9 @@ func New(cfg Config) (*Server, http.Handler, error) {
 		tokenUse:    newTokenUse(),
 		done:        make(chan struct{}),
 	}
+	if cfg.Cluster != nil {
+		s.forwardTransport = newForwardTransport(cfg.Cluster)
+	}
 	if cfg.UI {
 		ui, err := newWebUI()
 		if err != nil {
@@ -231,7 +255,7 @@ func New(cfg Config) (*Server, http.Handler, error) {
 // middleware chain demands one on every request it sees.
 func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle(basePath+"/", s.apiHandler())
+	mux.Handle(basePath+"/", s.apiHandler(s.authenticator, s.forwarding))
 	if s.ui != nil {
 		mux.Handle("/", s.ui)
 	} else {
@@ -241,7 +265,10 @@ func (s *Server) handler() http.Handler {
 }
 
 // apiHandler builds the API router.
-func (s *Server) apiHandler() http.Handler {
+//
+// The two arguments are what differs between the API's own listener and the
+// cluster port: who the caller is, and what happens once the route is known.
+func (s *Server) apiHandler(authenticate, routed func(http.Handler) http.Handler) http.Handler {
 	r := chi.NewRouter()
 	// No RealIP here on purpose. It rewrites RemoteAddr from headers the
 	// client sets, which would hand the rate limiter of D5 to whoever it is
@@ -253,7 +280,7 @@ func (s *Server) apiHandler() http.Handler {
 		boundedTime,
 		limitBody,
 		withFacts,
-		s.authenticator,
+		authenticate,
 	)
 
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{
@@ -273,13 +300,30 @@ func (s *Server) apiHandler() http.Handler {
 		},
 	})
 
+	var perRoute []gen.MiddlewareFunc
+	if routed != nil {
+		perRoute = append(perRoute, routed)
+	}
 	return gen.HandlerWithOptions(strict, gen.ChiServerOptions{
-		BaseURL:    basePath,
-		BaseRouter: r,
+		BaseURL:     basePath,
+		BaseRouter:  r,
+		Middlewares: perRoute,
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			writeProblem(w, r, badRequest("%v", err))
 		},
 	})
+}
+
+// Forwarded is what the cluster port serves writes forwarded to this member
+// with. The member that forwarded one authenticated its caller and says who
+// it was, and the cluster port is reached only by members holding the
+// secret, which is what makes saying so enough (D40, D43). A write is never
+// forwarded on from here: one that arrives after leadership moved is refused,
+// and the member it came from answers with that.
+func (s *Server) Forwarded() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle(basePath+"/", s.apiHandler(s.forwardedIdentity, nil))
+	return mux
 }
 
 // recoverer turns a panic in a handler into a failed request rather than a
