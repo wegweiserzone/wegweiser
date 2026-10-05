@@ -78,6 +78,7 @@ type Node struct {
 	raft    *raft.Raft
 	logs    *raftboltdb.BoltStore
 	trans   *raft.NetworkTransport
+	tr      *Transport
 	machine *fsm
 	joins   net.Listener
 	id      raft.ServerID
@@ -190,7 +191,7 @@ func Start(cfg NodeConfig) (_ *Node, err error) {
 	}
 	n := &Node{
 		raft: r, logs: logs, trans: trans, machine: machine, joins: cfg.Mux.Listener(StreamJoin),
-		id: conf.LocalID, addr: raft.ServerAddress(cfg.Advertise), report: report,
+		id: conf.LocalID, addr: raft.ServerAddress(cfg.Advertise), report: report, tr: cfg.Transport,
 		ctx: ctx, cancel: cancel,
 	}
 	n.wg.Add(2)

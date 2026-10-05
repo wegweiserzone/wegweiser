@@ -79,7 +79,7 @@ func TestAFounderBringsWhatItHeldBeforeInit(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	j := startMember(t, "j")
-	if err := Join(t.Context(), j.tr, f.addr, asking(j, RoleVoter)); err != nil {
+	if err := j.node.Join(t.Context(), f.addr, RoleVoter); err != nil {
 		t.Fatalf("Join: %v", err)
 	}
 	holds(t, j, 2)

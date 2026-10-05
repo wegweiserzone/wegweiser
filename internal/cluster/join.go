@@ -31,6 +31,10 @@ type JoinRequest struct {
 	Address string `json:"address"`
 	// Role is what it joins as.
 	Role Role `json:"role"`
+	// HoldsLog says the node has been sent the log and applied it. A voter
+	// asks once without it and is added without a vote, and asks again with
+	// it to be given one.
+	HoldsLog bool `json:"holdsLog,omitempty"`
 }
 
 func (r JoinRequest) check() error {
@@ -47,9 +51,11 @@ func (r JoinRequest) check() error {
 	return nil
 }
 
-// joinReply is the answer: done, ask the leader at this address, or no.
+// joinReply is the answer: done, added without a vote for now, ask the leader
+// at this address, or no.
 type joinReply struct {
 	Done   bool   `json:"done,omitempty"`
+	Staged bool   `json:"staged,omitempty"`
 	Leader string `json:"leader,omitempty"`
 	Error  string `json:"error,omitempty"`
 }
@@ -67,31 +73,80 @@ const joinTimeout = membershipTimeout + 5*time.Second
 // ErrNoLeader is a member that could not say who leads.
 var ErrNoLeader = errors.New("cluster: the member asked knows of no leader")
 
+// logWait bounds how long a node that has been added waits for the log to
+// reach it. What arrives first is a log snapshot of the whole store, so this
+// is a bound on a member that cannot be reached rather than on a large one.
+const logWait = time.Minute
+
 // Join asks the member at addr to make this node a member, follows it to the
-// leader when it does not lead, and returns once the addition is committed.
-func Join(ctx context.Context, t *Transport, addr string, req JoinRequest) error {
+// leader when it does not lead, and returns once this node is one and has
+// applied the log it was sent.
+//
+// A voter is added without a vote first, and asks for one once the log has
+// reached it, so that a node the leader cannot reach never counts towards
+// quorum (docs/decisions/d44-starting-and-joining.md, where it stands).
+func (n *Node) Join(ctx context.Context, addr string, role Role) error {
+	req := JoinRequest{ID: string(n.id), Address: string(n.addr), Role: role}
 	if err := req.check(); err != nil {
 		return err
 	}
 	target := addr
 	for range joinHops {
-		reply, err := askToJoin(ctx, t, target, req)
+		reply, err := askToJoin(ctx, n.tr, target, req)
 		if err != nil {
 			return err
 		}
 		switch {
-		case reply.Done:
-			return nil
 		case reply.Error != "":
 			return fmt.Errorf("cluster: %s would not add this node: %s", target, reply.Error)
 		case reply.Leader != "":
 			target = reply.Leader
+		case reply.Staged || reply.Done:
+			if werr := n.awaitLog(ctx); werr != nil {
+				return werr
+			}
+			if reply.Done {
+				return nil
+			}
+			req.HoldsLog = true
 		default:
 			return fmt.Errorf("%w (%s)", ErrNoLeader, target)
 		}
 	}
 	return fmt.Errorf("cluster: sent on %d times without reaching a member that leads; "+
 		"the members disagree about who does", joinHops)
+}
+
+// awaitLog returns once this member has applied everything it knows to be
+// committed, and has been sent something to apply at all.
+//
+// The store's own index is asked as well as Raft's, because Raft counts an
+// entry as applied once it is handed over rather than once it is written, and
+// a restored log snapshot is what moves the store's.
+func (n *Node) awaitLog(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, logWait)
+	defer cancel()
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if s, ok := n.Stalled(); ok {
+			return s.Err()
+		}
+		held, err := n.machine.store.AppliedIndex(ctx)
+		if err != nil && ctx.Err() == nil {
+			return err
+		}
+		committed := n.raft.CommitIndex()
+		if held > 0 && committed > 0 && n.raft.AppliedIndex() >= committed {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("cluster: this node was added to the cluster and the log has not reached it "+
+				"in %s; check that the members can reach it at %s: %w", logWait, n.addr, ctx.Err())
+		case <-tick.C:
+		}
+	}
 }
 
 // askToJoin puts the request to one member and reads its answer.
@@ -162,7 +217,7 @@ func (n *Node) answerJoin(conn net.Conn) {
 
 // admit decides one request to join. A member that leads proposes the
 // addition and answers once it is committed; one that does not names the
-// member that does (D44).
+// member that does (D44). A voter is staged first, as [Node.Join] describes.
 func (n *Node) admit(req JoinRequest) joinReply {
 	if s, ok := n.Stalled(); ok {
 		return joinReply{Error: s.Err().Error()}
@@ -178,9 +233,15 @@ func (n *Node) admit(req JoinRequest) joinReply {
 	}
 
 	var err error
-	switch req.Role {
-	case RoleNonvoter:
+	reply := joinReply{Done: true}
+	switch {
+	case req.Role == RoleNonvoter:
 		err = n.AddNonvoter(req.ID, req.Address)
+	case !req.HoldsLog:
+		// The first of a voter's two steps (see [Node.Join]). A member that is
+		// a voter already keeps its vote: Raft only moves its address.
+		err = n.AddNonvoter(req.ID, req.Address)
+		reply = joinReply{Staged: true}
 	default:
 		err = n.AddVoter(req.ID, req.Address)
 	}
@@ -194,5 +255,5 @@ func (n *Node) admit(req JoinRequest) joinReply {
 	case err != nil:
 		return joinReply{Error: err.Error()}
 	}
-	return joinReply{Done: true}
+	return reply
 }

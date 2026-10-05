@@ -70,3 +70,19 @@ before a node has a cluster section in its file.
 
 A member that joins and then finds it cannot apply the log stops the way D29 says, and the
 same flag brings it back once it has been repaired. Nothing here rejoins by itself.
+
+## Where this stands
+
+The member's half is built, in `internal/cluster`: starting a cluster with everything the
+store holds, and the join stream with its redirect to the leader.
+
+A voter joins in two steps rather than the one described above. `hashicorp/raft` adds a
+voter as a voter at once, whatever its documentation says about staging, so a node added to
+a cluster of one at an address the leader cannot reach would leave two voters and a majority
+of two: nothing could be committed any more, the node's removal included. So the leader
+adds every new member without a vote. The node waits until the log has reached it and asks
+again, and only that second request makes it a voter. A node nobody can reach stays a
+non-voter and costs the cluster nothing.
+
+Nothing of it is reachable yet. `weg serve` does not start a member, the configuration file
+has no cluster section, and `weg cluster init`, `leave` and `remove` do not exist.
