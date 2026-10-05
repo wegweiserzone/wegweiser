@@ -181,4 +181,11 @@ func TestTheStatusListsTheMembers(t *testing.T) {
 	if st.Applied == 0 || st.Stall != nil {
 		t.Errorf("status = %+v, want a member that has applied the log and not stopped", st)
 	}
+
+	// A leader at rest is not behind itself. Raft's own entries, the one an
+	// election writes among them, count as applied.
+	waitFor(t, "the leader to report itself current", func() bool {
+		st, err := a.node.Status(t.Context())
+		return err == nil && st.Applied == st.Committed
+	})
 }

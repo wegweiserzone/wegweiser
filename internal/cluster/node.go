@@ -450,14 +450,21 @@ type Status struct {
 }
 
 // Status reports what this member knows of the cluster and of itself.
+//
+// How far it has got is Raft's count, which includes the entries Raft writes
+// for itself and never hands over: one each time a leader is elected, and a
+// barrier wherever a write waits for the log. The store's own count skips
+// those, so a member at rest would read as a few entries behind for ever. A
+// member that has stopped is the exception: Raft went on counting entries it
+// refused, and the store says where it really is.
 func (n *Node) Status(ctx context.Context) (Status, error) {
-	applied, err := n.machine.store.AppliedIndex(ctx)
-	if err != nil {
-		return Status{}, err
-	}
-	st := Status{Applied: applied, Committed: n.raft.CommitIndex()}
+	st := Status{Applied: n.raft.AppliedIndex(), Committed: n.raft.CommitIndex()}
 	if s, ok := n.Stalled(); ok {
-		st.Stall = &s
+		held, err := n.machine.store.AppliedIndex(ctx)
+		if err != nil {
+			return Status{}, err
+		}
+		st.Applied, st.Stall = held, &s
 		return st, nil
 	}
 
