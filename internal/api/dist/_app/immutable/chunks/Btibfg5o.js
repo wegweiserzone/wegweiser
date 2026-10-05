@@ -1,0 +1,4 @@
+import{J as e,a as t,f as n,i as r,j as i,k as a,lt as o,w as s}from"./DF2T1Eo-.js";import"./xihTtKlq.js";var c=new Set([`$$slots`,`$$events`,`$$legacy`,`weight`,`children`,`class`]),l=i(`<button><!></button>`);function u(i,u){let d=r(u,`weight`,3,`default`),f=r(u,`class`,3,``),p=t(u,c),m={primary:`border-signal bg-signal text-signal-on hover:border-signal-hi hover:bg-signal-hi`,default:`border-line bg-surface text-ink hover:border-ink-faint hover:bg-raised`,quiet:`border-transparent bg-transparent text-ink-mute hover:bg-raised hover:text-ink`};var h=l();n(h,()=>({class:`sign inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-sm border px-3
+         text-[13px] whitespace-nowrap transition-colors ${m[d()]??``} ${f()??``}
+         disabled:cursor-not-allowed disabled:border-line disabled:bg-raised
+         disabled:text-ink-faint disabled:hover:border-line disabled:hover:bg-raised`,...p}));var g=e(h);s(g,()=>u.children),o(h),a(i,h)}export{u as t};
