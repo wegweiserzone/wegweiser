@@ -8,6 +8,27 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
+### Added
+
+#### Cluster
+
+- The configuration file takes a `cluster` section: the address to listen on
+  for other members, the address they reach this node at, the cluster's shared
+  secret, and optionally the identifier this node is a member by. A node with
+  one opens its cluster port and is otherwise an ordinary server until it is a
+  member. `weg config show` says that a secret is set and how long it is, never
+  what it is.
+
+- `weg serve --join <address> --role voter|nonvoter` makes a new node a member
+  by asking the one at that cluster port. The node starts answering queries only
+  once the cluster's data has reached it, and mints no administrator token or
+  cookie secret of its own. A node whose database already holds anything is
+  refused and told what it holds. Once a node is a member the flag is ignored,
+  so a unit file can keep it.
+
+- A cluster cannot be started yet, and a write sent to a member that is not
+  leading fails instead of reaching the leader.
+
 ### Changed
 
 #### Licence

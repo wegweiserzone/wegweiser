@@ -65,3 +65,7 @@ of a change, and the secrets cookies are computed under. Each keeps a node able 
 so each is every node's by the rule above, and each now travels the same way. The hook is
 told what a batch touched rather than handed the `Result`, because a follower applying an
 entry holds a batch and no result.
+
+In a cluster, rotating the cookie secret is the leader's. Every member tries on the same
+schedule, and one that is not leading finds the write refused and leaves it there; whichever
+member leads next picks the rotation up within a minute.

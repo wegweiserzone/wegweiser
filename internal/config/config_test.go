@@ -372,3 +372,69 @@ func TestAPIUI(t *testing.T) {
 		})
 	}
 }
+
+// A cluster section is all a node needs to be reachable as a member
+// (docs/decisions/d42-membership-lives-in-the-log.md), and a file without one
+// is a single server.
+func TestCluster(t *testing.T) {
+	const secret = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=" // 32 octets
+
+	t.Run("no section is no cluster", func(t *testing.T) {
+		cfg, err := config.Load(write(t, "log:\n  level: info\n"), config.Flags{})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if cfg.Cluster != nil {
+			t.Errorf("cluster = %+v, want none", cfg.Cluster)
+		}
+	})
+
+	t.Run("a section is read, and fills what it leaves out", func(t *testing.T) {
+		cfg, err := config.Load(write(t, `
+database:
+  path: "/var/lib/wegweiser/wegweiser.db"
+cluster:
+  advertise: "192.0.2.1:8054"
+  secret: "`+secret+`"
+`), config.Flags{})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		c := cfg.Cluster
+		if c == nil {
+			t.Fatal("the section was not read")
+		}
+		if c.Listen.Value != config.Defaults.ClusterListen || c.Listen.Source != config.FromDefault {
+			t.Errorf("listen = %+v, want the default", c.Listen)
+		}
+		if c.Advertise.Value != "192.0.2.1:8054" || c.Advertise.Source != config.FromFile {
+			t.Errorf("advertise = %+v, want the file's", c.Advertise)
+		}
+		if c.ID.Value != "" {
+			t.Errorf("id = %q, want none, to be minted on first start", c.ID.Value)
+		}
+		if string(c.Secret) != "0123456789abcdef0123456789abcdef" {
+			t.Errorf("secret = %q, want it decoded", c.Secret)
+		}
+		if want := filepath.FromSlash("/var/lib/wegweiser/wegweiser.raft"); c.Dir != want {
+			t.Errorf("dir = %q, want %q, beside the database", c.Dir, want)
+		}
+	})
+
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		{"a section without a secret", "cluster:\n  advertise: \"192.0.2.1:8054\"\n", "cluster.secret is missing"},
+		{"a secret that is not base64", "cluster:\n  advertise: \"192.0.2.1:8054\"\n  secret: \"not base64!\"\n",
+			"cluster.secret is not base64"},
+		{"a section without an address to advertise", "cluster:\n  secret: \"" + secret + "\"\n",
+			"cluster.advertise is missing"},
+	} {
+		t.Run(tc.name+" is refused", func(t *testing.T) {
+			_, err := config.Load(write(t, tc.body), config.Flags{})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("load = %v, want it to say %q", err, tc.want)
+			}
+		})
+	}
+}

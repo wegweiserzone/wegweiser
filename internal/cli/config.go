@@ -89,6 +89,21 @@ func runConfigShow(opts *options, cfg *config.Config) error {
 			{"log.level", cfg.LogLevel.Value, string(cfg.LogLevel.Source)},
 		},
 	}
+	if c := cfg.Cluster; c != nil {
+		id := c.ID.Value
+		if id == "" {
+			id = "(minted on first start)"
+		}
+		shown.Settings = append(shown.Settings,
+			settingShown{"cluster.id", id, string(c.ID.Source)},
+			settingShown{"cluster.listen", c.Listen.Value, string(c.Listen.Source)},
+			settingShown{"cluster.advertise", c.Advertise.Value, string(c.Advertise.Source)},
+			// What a secret is worth is that nobody else has it, so this says
+			// that there is one and how long it is, and nothing a terminal or a
+			// log could leak.
+			settingShown{"cluster.secret", fmt.Sprintf("(%d bits)", len(c.Secret)*8), string(config.FromFile)},
+		)
+	}
 
 	p := opts.Printer()
 	return p.Print(shown, func(w io.Writer) error {

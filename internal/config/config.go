@@ -10,11 +10,13 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -46,6 +48,7 @@ type File struct {
 	API      APIFile      `json:"api,omitempty"`
 	Database DatabaseFile `json:"database,omitempty"`
 	Log      LogFile      `json:"log,omitempty"`
+	Cluster  ClusterFile  `json:"cluster,omitempty"`
 }
 
 // DNSFile is what the query path takes.
@@ -72,6 +75,21 @@ type LogFile struct {
 	Level *string `json:"level,omitempty"`
 }
 
+// ClusterFile is what a node needs to be reachable as a cluster member, and
+// nothing about who the other members are: that list lives in the log
+// (docs/decisions/d42-membership-lives-in-the-log.md).
+type ClusterFile struct {
+	ID        *string `json:"id,omitempty"`
+	Listen    *string `json:"listen,omitempty"`
+	Advertise *string `json:"advertise,omitempty"`
+	Secret    *string `json:"secret,omitempty"`
+}
+
+// set reports whether the file has a cluster section at all.
+func (c ClusterFile) set() bool {
+	return c.ID != nil || c.Listen != nil || c.Advertise != nil || c.Secret != nil
+}
+
 // Value is one setting, and where it came from.
 type Value[T any] struct {
 	Value  T
@@ -91,6 +109,28 @@ type Config struct {
 	MaxTCPClients   Value[int]
 	MaxTransfers    Value[int]
 	LogLevel        Value[string]
+
+	// Cluster is nil unless the file has a cluster section. Without one the
+	// node is a single server, exactly as it was before clusters existed.
+	Cluster *Cluster
+}
+
+// Cluster is how this node takes part in a cluster. It is read from the file
+// only: a secret belongs in a file only root can read, and the rest is only
+// ever set next to it.
+type Cluster struct {
+	// ID is the identifier the file names, empty when it names none and one
+	// is minted on first start.
+	ID        Value[string]
+	Listen    Value[string]
+	Advertise Value[string]
+	// Secret is the shared secret, decoded. Whether it is long enough is the
+	// transport's to say, which names the rule it enforces.
+	Secret []byte
+	// Dir is where Raft keeps its log and its snapshots, beside the database
+	// and named after it. Repairing a member means removing both
+	// (docs/decisions/d29-a-node-that-cannot-apply.md).
+	Dir string
 }
 
 // Defaults are what a process runs with when nothing says otherwise.
@@ -103,6 +143,7 @@ var Defaults = struct {
 	MaxTCPClients   int
 	MaxTransfers    int
 	LogLevel        string
+	ClusterListen   string
 }{
 	// The port RFC 1035 §4.2 assigns, on every address the host has. Reaching
 	// it without root is what CAP_NET_BIND_SERVICE is for (invariant 7).
@@ -124,6 +165,8 @@ var Defaults = struct {
 	MaxTCPClients: 0,
 	MaxTransfers:  0,
 	LogLevel:      "info",
+	// One above the API's port (docs/decisions/d43-the-cluster-transport.md).
+	ClusterListen: ":8054",
 }
 
 // LogLevels are the levels [Config.LogLevel] accepts.
@@ -189,10 +232,41 @@ func Load(path string, flags Flags) (*Config, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
+	if file.Cluster.set() {
+		c, cerr := loadCluster(file.Cluster, cfg.Database.Value)
+		if cerr != nil {
+			return nil, cerr
+		}
+		cfg.Cluster = c
+	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// loadCluster checks the cluster section and settles what it leaves out.
+func loadCluster(f ClusterFile, database string) (*Cluster, error) {
+	c := &Cluster{
+		ID:        fromFile(f.ID, ""),
+		Listen:    fromFile(f.Listen, Defaults.ClusterListen),
+		Advertise: fromFile(f.Advertise, ""),
+		Dir:       strings.TrimSuffix(database, filepath.Ext(database)) + ".raft",
+	}
+	if f.Secret == nil || strings.TrimSpace(*f.Secret) == "" {
+		return nil, errors.New("cluster.secret is missing; every member holds the same one, " +
+			"and `openssl rand -base64 32` makes one")
+	}
+	secret, err := base64.StdEncoding.DecodeString(strings.TrimSpace(*f.Secret))
+	if err != nil {
+		return nil, fmt.Errorf("cluster.secret is not base64; `openssl rand -base64 32` makes one: %w", err)
+	}
+	c.Secret = secret
+	if c.Advertise.Value == "" {
+		return nil, fmt.Errorf("cluster.advertise is missing; the other members reach this one there, "+
+			"and %q, the address it listens on, need not be one they can reach", c.Listen.Value)
+	}
+	return c, nil
 }
 
 // readFile reads the document, and reports whether there was one.
@@ -292,6 +366,14 @@ func resolveErr[T any](
 		return Value[T]{Value: *file, Source: FromFile}, nil
 	}
 	return Value[T]{Value: fallback, Source: FromDefault}, nil
+}
+
+// fromFile is a setting that only the file gives.
+func fromFile[T any](file *T, fallback T) Value[T] {
+	if file != nil {
+		return Value[T]{Value: *file, Source: FromFile}
+	}
+	return Value[T]{Value: fallback, Source: FromDefault}
 }
 
 func parseString(s string) (string, error) { return s, nil }

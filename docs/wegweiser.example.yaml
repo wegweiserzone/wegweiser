@@ -73,3 +73,28 @@ log:
   # output.
   # Environment: $WEG_LOG_LEVEL
   level: "info"
+
+# cluster:
+#   A node with this section can be a member of a cluster. Without it, the
+#   node is a single server. Nothing here says who the other members are: that
+#   list lives in the cluster's log (docs/decisions/d42-membership-lives-in-the-log.md).
+#   These are read from this file only.
+#
+#   The identifier this node is a member by. Left out, one is minted on first
+#   start and kept in the database; once there, it never changes.
+#   id: "ns1"
+#
+#   Where to listen for the other members, as host:port.
+#   listen: ":8054"
+#
+#   Where the other members reach this one. Required, because the address
+#   listened on may be every interface, which is not one anybody can dial.
+#   advertise: "192.0.2.1:8054"
+#
+#   The cluster's shared secret, base64, at least 256 bits, the same on every
+#   member. `openssl rand -base64 32` makes one. Whoever holds it can speak as
+#   any member, so this file wants to be readable by the server alone.
+#   secret: ""
+#
+#   Raft keeps its log in a directory beside the database, named after it:
+#   /var/lib/wegweiser/wegweiser.raft for the path above.

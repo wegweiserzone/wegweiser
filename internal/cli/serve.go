@@ -16,6 +16,7 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/api"
 	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/cli/output"
+	"github.com/wegweiserzone/wegweiser/internal/cluster"
 	"github.com/wegweiserzone/wegweiser/internal/config"
 	"github.com/wegweiserzone/wegweiser/internal/dns"
 	"github.com/wegweiserzone/wegweiser/internal/metrics"
@@ -88,11 +89,26 @@ type serveStatus struct {
 	Database   string `json:"database"`
 	Zones      int    `json:"zones"`
 	Records    int    `json:"records"`
+	// Cluster is set when this node has a cluster section, member or not yet.
+	Cluster *memberStatus `json:"cluster,omitempty"`
+}
+
+// memberStatus is this node's place in a cluster, as far as it knows at start.
+type memberStatus struct {
+	Member    string `json:"member"`
+	Advertise string `json:"advertise"`
+	// Replicating is false for a node that has a cluster section and has not
+	// started or joined a cluster yet: it is an ordinary server until then.
+	Replicating bool `json:"replicating"`
+	// RaftDir is what a repair removes, with the database
+	// (docs/decisions/d29-a-node-that-cannot-apply.md).
+	RaftDir string `json:"raftDir"`
 }
 
 // newServeCommand runs the DNS server.
 func newServeCommand(opts *options) *cobra.Command {
 	var f serveFlags
+	var join joinFlags
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -105,18 +121,27 @@ func newServeCommand(opts *options) *cobra.Command {
 		DisableFlagsInUseLine: true,
 		Example: "  weg serve\n" +
 			"  weg serve --listen 127.0.0.1:5353 --db ./wegweiser.db\n" +
-			"  weg serve --output json",
+			"  weg serve --output json\n" +
+			"  weg serve --join 192.0.2.1:8054 --role nonvoter",
 
 		RunE: func(c *cobra.Command, _ []string) error {
 			cfg, err := config.Load(f.config, f.asFlags(c))
 			if err != nil {
 				return err
 			}
-			return runServe(c.Context(), opts, cfg)
+			if jerr := join.check(cfg); jerr != nil {
+				return jerr
+			}
+			return runServe(c.Context(), opts, cfg, join)
 		},
 	}
 
 	registerServeFlags(cmd, &f)
+	cmd.Flags().StringVar(&join.addr, "join", "",
+		"join the cluster of the member at this cluster port; ignored once this node is a member")
+	cmd.Flags().StringVar(&join.role, "role", string(cluster.RoleVoter),
+		"what to join as: "+string(cluster.RoleVoter)+" or "+string(cluster.RoleNonvoter))
+	registerFlagCompletion(cmd, "role", completeStatic(string(cluster.RoleVoter), string(cluster.RoleNonvoter)))
 	return cmd
 }
 
@@ -152,7 +177,7 @@ func registerServeFlags(cmd *cobra.Command, f *serveFlags) {
 // NXDOMAIN for zones this host is supposed to hold, which is worse than not
 // answering at all, and reporting ready before the API is up would tell a
 // supervisor the control plane exists when it does not.
-func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error) {
+func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinFlags) (err error) {
 	st, err := sqlite.Open(ctx, sqlite.Options{Path: cfg.Database.Value})
 	if err != nil {
 		return err
@@ -172,6 +197,17 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 	met := metrics.New()
 	tail := stream.NewHub(stream.Options{})
 
+	// A node with a cluster section listens on its cluster port from here on,
+	// and its writes go through the member that serves there once it is one
+	// (docs/decisions/d44-starting-and-joining.md).
+	var port *clusterPort
+	if cfg.Cluster != nil {
+		if port, err = openClusterPort(ctx, cfg.Cluster, st, log); err != nil {
+			return err
+		}
+		defer func() { err = errors.Join(err, port.mux.Close()) }()
+	}
+
 	// The applier tells the publisher what every batch changed, and the
 	// publisher holds the query path that the applier's history feeds, so one
 	// of the two is built first and reaches the other late. Nothing is applied
@@ -180,9 +216,13 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 	var pub *publish.Publisher
 
 	// Reverse automation is on unless a zone says otherwise; see [apply.Options].
-	applier, err := apply.New(st, apply.Options{
+	applyOpts := apply.Options{
 		OnApplied: func(ctx context.Context, done apply.Applied) { pub.Applied(ctx, done) },
-	})
+	}
+	if port != nil {
+		applyOpts.Replication = port.repl
+	}
+	applier, err := apply.New(st, applyOpts)
 	if err != nil {
 		return err
 	}
@@ -248,14 +288,34 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		return err
 	}
 
-	// A cookie is a hash under a secret this installation minted, so the first
-	// start is where it comes into existence, and every hour after that is a
-	// rotation.
-	if _, _, rerr := applier.RotateCookieSecrets(ctx); rerr != nil {
-		return fmt.Errorf("mint the cookie secret: %w", rerr)
-	}
 	if lerr := pub.Load(ctx); lerr != nil {
 		return lerr
+	}
+
+	// The member comes up after the first load, so that what it applies on
+	// the way in reaches a query path that already holds everything else. A
+	// node that joins waits here until the log has reached it, so that it
+	// never answers from an empty database.
+	var node *cluster.Node
+	if port != nil {
+		node, err = startMember(ctx, cfg.Cluster, port, join, st, applier, pub, log, report)
+		if err != nil {
+			return err
+		}
+		defer func() { err = errors.Join(err, node.Close()) }()
+	}
+	// A member's credentials and secrets are the cluster's, and arrive in its
+	// log. Only a node that is no member mints its own.
+	replicating := node != nil && node.Replicating()
+
+	// A cookie is a hash under a secret this installation minted, so the first
+	// start is where it comes into existence, and every hour after that is a
+	// rotation. The minted secret reaches the query path the way every other
+	// write does.
+	if !replicating {
+		if _, _, rerr := applier.RotateCookieSecrets(ctx); rerr != nil {
+			return fmt.Errorf("mint the cookie secret: %w", rerr)
+		}
 	}
 
 	if nerr := notifier.Start(); nerr != nil {
@@ -288,10 +348,13 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 
 	// The first start mints an administrator token and shows it once. What is
 	// stored is its hash, so this is the only moment it exists in readable
-	// form (docs/decisions/ D5).
-	secret, err := api.EnsureBootstrapToken(ctx, st, applier, time.Now())
-	if err != nil {
-		return err
+	// form (docs/decisions/ D5). A member never does: a token it minted would
+	// be one the cluster never issued (docs/decisions/ D32).
+	var secret string
+	if !replicating {
+		if secret, err = api.EnsureBootstrapToken(ctx, st, applier, time.Now()); err != nil {
+			return err
+		}
 	}
 
 	apiSrv, handler, err := api.New(api.Config{
@@ -343,11 +406,19 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config) (err error
 		Zones:      first.Zones(),
 		Records:    first.Records(),
 	}
+	if port != nil {
+		status.Cluster = &memberStatus{
+			Member: port.id, Advertise: cfg.Cluster.Advertise.Value,
+			Replicating: replicating, RaftDir: cfg.Cluster.Dir,
+		}
+	}
 	if err := p.Print(status, func(w io.Writer) error {
-		_, werr := fmt.Fprintf(w,
+		if _, werr := fmt.Fprintf(w,
 			"weg is answering on %s — %d zones, %d records from %s\nthe API is on http://%s\n",
-			status.Address, status.Zones, status.Records, status.Database, status.APIAddress)
-		return werr
+			status.Address, status.Zones, status.Records, status.Database, status.APIAddress); werr != nil {
+			return werr
+		}
+		return printMemberStatus(w, status.Cluster)
 	}); err != nil {
 		return err
 	}
@@ -385,9 +456,14 @@ func rotateCookies(ctx context.Context, applier *apply.Applier, report func(erro
 		// A rotation is a setting written through the applier, so the new
 		// secret reaches the query path the way every other change does.
 		secrets, _, err := applier.RotateCookieSecrets(ctx)
-		if err != nil {
+		switch {
+		case errors.Is(err, cluster.ErrNotLeader), errors.Is(err, cluster.ErrBehind):
+			// Rotating publishes a fact to every client, so in a cluster the
+			// leader does it alone (docs/decisions/d41-what-follows-applying-a-batch.md),
+			// and a member that has left the cluster has said why already.
+		case err != nil:
 			report(fmt.Errorf("rotate the cookie secret: %w", err))
-		} else {
+		default:
 			wait = max(time.Until(secrets.RotatedAt.Add(apply.CookieRotation)), retry)
 		}
 

@@ -60,3 +60,9 @@ has got through the log. That last column is what makes a node parked by
 The first node's own address is in its configuration from the moment it starts a cluster, so
 a member that changes address is a change to that configuration rather than a restart with a
 different file.
+
+## Where this stands
+
+The cluster section holds the four things above and nothing else. The identifier is minted on
+first start and kept beside the applied index, and a file naming a different one is refused.
+`weg cluster status` and `weg cluster leave` are not built.
