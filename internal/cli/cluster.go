@@ -6,6 +6,9 @@ import (
 	"io"
 
 	"github.com/spf13/cobra"
+
+	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/cli/output"
 )
 
 // newClusterCommand groups what a node does about the servers it keeps its
@@ -27,6 +30,7 @@ func newClusterCommand(opts *options) *cobra.Command {
 	}
 	f.register(cmd)
 
+	cmd.AddCommand(newClusterStatusCommand(opts, &f))
 	cmd.AddCommand(newClusterInitCommand(opts, &f))
 	return cmd
 }
@@ -76,4 +80,86 @@ func runClusterInit(ctx context.Context, opts *options, f *clientFlags) error {
 			got.Member, got.Address, got.Address)
 		return werr
 	})
+}
+
+func newClusterStatusCommand(opts *options, f *clientFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:     "status",
+		Aliases: []string{"show", "members"},
+		Short:   "Say who the members are, and how far this server has got",
+		Long: "List the members as the server's copy of the cluster's configuration has\n" +
+			"them, with the role each holds and which one leads, and say how far the\n" +
+			"server itself has got through the log.\n\n" +
+			"How far the others have got is theirs to say: ask each of them with\n" +
+			"--server. A member that has left the cluster over an entry it could not\n" +
+			"apply says where it stopped and why\n" +
+			"(docs/decisions/d29-a-node-that-cannot-apply.md).",
+		Args:    usageArgs(cobra.NoArgs),
+		Example: "  weg cluster status\n  weg cluster status --server http://10.0.0.6:8053 --output json",
+
+		RunE: func(c *cobra.Command, _ []string) error {
+			return runClusterStatus(c.Context(), opts, f)
+		},
+	}
+}
+
+func runClusterStatus(ctx context.Context, opts *options, f *clientFlags) error {
+	client, err := f.client()
+	if err != nil {
+		return err
+	}
+	resp, err := client.GetClusterWithResponse(ctx)
+	if err != nil {
+		return reachable(err, f.server)
+	}
+	if resp.JSON200 == nil {
+		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
+	}
+	st := resp.JSON200
+
+	p := opts.Printer()
+	return p.Print(st, func(w io.Writer) error { return printClusterStatus(w, p, st) })
+}
+
+func printClusterStatus(w io.Writer, p *output.Printer, st *gen.ClusterStatus) error {
+	switch {
+	case st.Behind != nil:
+		where := fmt.Sprintf("entry %d", st.Behind.Entry)
+		if st.Behind.Entry == 0 {
+			where = "a log snapshot"
+		}
+		_, err := fmt.Fprintf(w, "%s %s at %s has left the cluster: it stopped at %s, %s, because %s.\n"+
+			"It answers queries with what it held then and refuses writes. Repair it by removing it\n"+
+			"from the cluster, discarding its database and its Raft directory, and joining it again.\n",
+			p.Paint(output.ColorRed, "behind:"), st.Self.Id, st.Self.Address, where,
+			since(&st.Behind.Since), st.Behind.Reason)
+		return err
+	case !st.Replicating:
+		_, err := fmt.Fprintf(w, "%s at %s is in no cluster yet. `weg cluster init` starts one with it,\n"+
+			"or it joins one when started with `weg serve --join`.\n", st.Self.Id, st.Self.Address)
+		return err
+	}
+
+	state := p.Paint(output.ColorGreen, "current")
+	if st.Applied < st.Committed {
+		state = p.Paint(output.ColorYellow, fmt.Sprintf("%d entries behind", st.Committed-st.Applied))
+	}
+	if _, err := fmt.Fprintf(w, "%s at %s: applied %d of %d, %s\n\n",
+		st.Self.Id, st.Self.Address, st.Applied, st.Committed, state); err != nil {
+		return err
+	}
+
+	t := newTable(w, "MEMBER", "ADDRESS", "ROLE", "")
+	for _, m := range st.Members {
+		lead := ""
+		if m.Leader {
+			lead = p.Paint(output.ColorGreen, "leader")
+		}
+		name := m.Id
+		if m.Id == st.Self.Id {
+			name += " (this one)"
+		}
+		t.row(name, m.Address, string(m.Role), lead)
+	}
+	return t.flush()
 }

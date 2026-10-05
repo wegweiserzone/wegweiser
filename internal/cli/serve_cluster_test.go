@@ -16,6 +16,7 @@ import (
 	wire "github.com/miekg/dns"
 
 	"github.com/wegweiserzone/wegweiser/internal/api"
+	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
@@ -174,6 +175,42 @@ func TestTwoServersBecomeACluster(t *testing.T) {
 						s.Address, wire.RcodeToString[got.Rcode])
 				}
 				time.Sleep(20 * time.Millisecond)
+			}
+		}
+	})
+
+	t.Run("either member lists both, and says which leads", func(t *testing.T) {
+		for _, s := range []serveStatus{a, b} {
+			var stdout, stderr syncBuffer
+			if code := Execute(t.Context(), []string{
+				"cluster", "status", "--server", s.APIAddress, "--token", token, "--output", "json",
+			}, &stdout, &stderr); code != ExitOK {
+				t.Fatalf("cluster status on %s: exit code %d; stderr: %s", s.APIAddress, code, stderr.String())
+			}
+			var st gen.ClusterStatus
+			if err := json.Unmarshal([]byte(stdout.String()), &st); err != nil {
+				t.Fatalf("read the status: %v (%q)", err, stdout.String())
+			}
+			leaders := map[string]bool{}
+			for _, m := range st.Members {
+				if m.Leader {
+					leaders[m.Address] = true
+				}
+			}
+			if len(st.Members) != 2 || len(leaders) != 1 || !leaders[advertiseA] {
+				t.Errorf("%s lists %+v, want two members with the founder leading", s.APIAddress, st.Members)
+			}
+		}
+
+		var stdout, stderr syncBuffer
+		if code := Execute(t.Context(), []string{
+			"cluster", "status", "--server", b.APIAddress, "--token", token,
+		}, &stdout, &stderr); code != ExitOK {
+			t.Fatalf("cluster status: exit code %d; stderr: %s", code, stderr.String())
+		}
+		for _, want := range []string{"(this one)", "leader", "voter", advertiseB} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Errorf("the status does not say %q:\n%s", want, stdout.String())
 			}
 		}
 	})

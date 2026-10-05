@@ -26,8 +26,13 @@ type follower struct {
 func (f *follower) Init(context.Context) error { return cluster.ErrMember }
 func (f *follower) Member() (id, addr string)  { return "ns2", "192.0.2.2:8054" }
 func (f *follower) Replicating() bool          { return true }
-func (f *follower) IsLeader() bool             { return false }
-func (f *follower) Leader() (id, addr string)  { return "ns1", f.leader }
+
+func (f *follower) Status(context.Context) (cluster.Status, error) {
+	return cluster.Status{Stall: f.stall}, nil
+}
+
+func (f *follower) IsLeader() bool            { return false }
+func (f *follower) Leader() (id, addr string) { return "ns1", f.leader }
 func (f *follower) Stalled() (cluster.Stall, bool) {
 	if f.stall == nil {
 		return cluster.Stall{}, false

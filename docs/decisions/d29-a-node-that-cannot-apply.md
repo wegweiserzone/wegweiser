@@ -86,5 +86,6 @@ among them, is a stall of the same kind.
 log never having been compacted: remove the member, discard its store and its Raft
 directory, and join it again, and it starts from a snapshot.
 
-The operator's half is not built. `weg cluster status` does not exist yet, there is no
-metric, and `/healthz` has no field for whether the node is current.
+Of the operator's half, `weg cluster status` is built: a member that has stopped names the
+entry and the reason. There is no metric yet, and `/healthz` has no field for whether the
+node is current.

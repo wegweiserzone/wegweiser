@@ -1029,6 +1029,30 @@ paths:
                 items: { $ref: "#/components/schemas/SecondaryStanding" }
         default: { $ref: "#/components/responses/Problem" }
 
+  /cluster:
+    get:
+      operationId: getCluster
+      tags: [cluster]
+      summary: Say who the members are, and how far this one has got
+      description: |
+        The members as this node's copy of the cluster's configuration lists
+        them, which of them leads, and how far this node has got through the
+        log. How far the others have got is theirs to say: ask each of them
+        (docs/decisions/d42-membership-lives-in-the-log.md).
+
+        A node that has left the cluster over an entry it could not apply says
+        where it stopped and why, and goes on answering queries with what it
+        holds (docs/decisions/d29-a-node-that-cannot-apply.md).
+
+        A node whose configuration file has no cluster section answers 404.
+      responses:
+        "200":
+          description: What this node knows of its cluster.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClusterStatus" }
+        default: { $ref: "#/components/responses/Problem" }
+
   /cluster/init:
     post:
       operationId: initCluster
@@ -2108,6 +2132,65 @@ components:
           type: string
           description: Where the other members reach it, and where a new node asks to join.
           example: "192.0.2.1:8054"
+
+    ClusterStatus:
+      type: object
+      required: [self, replicating, applied, committed, members]
+      properties:
+        self: { $ref: "#/components/schemas/ClusterMember" }
+        replicating:
+          type: boolean
+          description: |
+            False for a node that has a cluster section and has not started or
+            joined a cluster. It is an ordinary server until it does.
+        applied:
+          type: integer
+          format: int64
+          description: The last entry of the log this node has carried out.
+        committed:
+          type: integer
+          format: int64
+          description: |
+            The last entry this node knows to be committed. A member that
+            keeps up has this equal to `applied`, or nearly.
+        behind: { $ref: "#/components/schemas/ClusterStall" }
+        members:
+          type: array
+          description: |
+            Every member, as this node's copy of the configuration lists them.
+            Empty on a node in no cluster, and on one that has left its
+            cluster, which no longer has a copy to read.
+          items: { $ref: "#/components/schemas/ClusterMemberState" }
+
+    ClusterMemberState:
+      type: object
+      required: [id, address, role, leader]
+      properties:
+        id: { type: string, example: ns1 }
+        address: { type: string, example: "192.0.2.1:8054" }
+        role:
+          type: string
+          enum: [voter, nonvoter]
+          description: |
+            A voter counts towards quorum and can lead. A non-voter receives
+            the whole log and answers queries like any member, and is neither
+            counted nor waited for (docs/decisions/d25-cluster-shape.md).
+        leader: { type: boolean }
+
+    ClusterStall:
+      type: object
+      description: |
+        Where this node stopped applying the log, present only when it has.
+        It has left the cluster, refuses writes, and answers queries with what
+        it held at that entry.
+      required: [entry, reason, since]
+      properties:
+        entry:
+          type: integer
+          format: int64
+          description: The entry it could not get past; 0 for a log snapshot it could not read.
+        reason: { type: string }
+        since: { type: string, format: date-time }
 
     SecondaryStanding:
       type: object

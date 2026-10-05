@@ -765,6 +765,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cluster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Say who the members are, and how far this one has got
+         * @description The members as this node's copy of the cluster's configuration lists
+         *     them, which of them leads, and how far this node has got through the
+         *     log. How far the others have got is theirs to say: ask each of them
+         *     (docs/decisions/d42-membership-lives-in-the-log.md).
+         *
+         *     A node that has left the cluster over an entry it could not apply says
+         *     where it stopped and why, and goes on answering queries with what it
+         *     holds (docs/decisions/d29-a-node-that-cannot-apply.md).
+         *
+         *     A node whose configuration file has no cluster section answers 404.
+         */
+        get: operations["getCluster"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cluster/init": {
         parameters: {
             query?: never;
@@ -1562,6 +1591,61 @@ export interface components {
              * @example 192.0.2.1:8054
              */
             address: string;
+        };
+        ClusterStatus: {
+            self: components["schemas"]["ClusterMember"];
+            /**
+             * @description False for a node that has a cluster section and has not started or
+             *     joined a cluster. It is an ordinary server until it does.
+             */
+            replicating: boolean;
+            /**
+             * Format: int64
+             * @description The last entry of the log this node has carried out.
+             */
+            applied: number;
+            /**
+             * Format: int64
+             * @description The last entry this node knows to be committed. A member that
+             *     keeps up has this equal to `applied`, or nearly.
+             */
+            committed: number;
+            behind?: components["schemas"]["ClusterStall"];
+            /**
+             * @description Every member, as this node's copy of the configuration lists them.
+             *     Empty on a node in no cluster, and on one that has left its
+             *     cluster, which no longer has a copy to read.
+             */
+            members: components["schemas"]["ClusterMemberState"][];
+        };
+        ClusterMemberState: {
+            /** @example ns1 */
+            id: string;
+            /** @example 192.0.2.1:8054 */
+            address: string;
+            /**
+             * @description A voter counts towards quorum and can lead. A non-voter receives
+             *     the whole log and answers queries like any member, and is neither
+             *     counted nor waited for (docs/decisions/d25-cluster-shape.md).
+             * @enum {string}
+             */
+            role: "voter" | "nonvoter";
+            leader: boolean;
+        };
+        /**
+         * @description Where this node stopped applying the log, present only when it has.
+         *     It has left the cluster, refuses writes, and answers queries with what
+         *     it held at that entry.
+         */
+        ClusterStall: {
+            /**
+             * Format: int64
+             * @description The entry it could not get past; 0 for a log snapshot it could not read.
+             */
+            entry: number;
+            reason: string;
+            /** Format: date-time */
+            since: string;
         };
         /**
          * @description Where one secondary stands on one zone, as of the last question it
@@ -2602,6 +2686,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SecondaryStanding"][];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getCluster: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What this node knows of its cluster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClusterStatus"];
                 };
             };
             default: components["responses"]["Problem"];

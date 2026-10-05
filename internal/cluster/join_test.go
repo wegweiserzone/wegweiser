@@ -148,3 +148,37 @@ func unreachable(t *testing.T) string {
 	}
 	return addr
 }
+
+// D42: the status lists every member with the role it holds and which one
+// leads, from any member's copy of the configuration.
+func TestTheStatusListsTheMembers(t *testing.T) {
+	t.Parallel()
+	a := startAlone(t, "a")
+	n := startMember(t, "n")
+	if err := n.node.Join(t.Context(), a.addr, RoleNonvoter); err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	propose(t, a, "example.com.")
+	holds(t, n, 1)
+
+	waitFor(t, "n to know who leads", func() bool { id, _ := n.node.Leader(); return id == "a" })
+	st, err := n.node.Status(t.Context())
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	want := map[string]MemberState{
+		"a": {ID: "a", Address: a.addr, Role: RoleVoter, Leader: true},
+		"n": {ID: "n", Address: n.addr, Role: RoleNonvoter},
+	}
+	if len(st.Members) != len(want) {
+		t.Fatalf("members = %+v, want a and n", st.Members)
+	}
+	for _, m := range st.Members {
+		if m != want[m.ID] {
+			t.Errorf("member %s = %+v, want %+v", m.ID, m, want[m.ID])
+		}
+	}
+	if st.Applied == 0 || st.Stall != nil {
+		t.Errorf("status = %+v, want a member that has applied the log and not stopped", st)
+	}
+}

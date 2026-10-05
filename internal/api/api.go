@@ -94,6 +94,8 @@ type Cluster interface {
 	// Member is the identifier this node is a member by, and the address the
 	// others reach it at.
 	Member() (id, addr string)
+	// Status is what this member knows of the cluster and of itself.
+	Status(ctx context.Context) (cluster.Status, error)
 	// Replicating reports whether this node is a member of a cluster yet.
 	Replicating() bool
 	// IsLeader reports whether this member leads.

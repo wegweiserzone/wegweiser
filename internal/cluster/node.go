@@ -422,6 +422,62 @@ func (n *Node) Propose(ctx context.Context, b *apply.Batch) error {
 // others reach it at.
 func (n *Node) Member() (id, addr string) { return string(n.id), string(n.addr) }
 
+// MemberState is one member, as this node's copy of the configuration lists
+// it.
+type MemberState struct {
+	ID      string
+	Address string
+	Role    Role
+	Leader  bool
+}
+
+// Status is what this member knows: who the members are, as far as its copy
+// of the configuration says, and how far it has got through the log itself.
+// How far the others have got is theirs to say, and each one is asked
+// (docs/decisions/d42-membership-lives-in-the-log.md).
+type Status struct {
+	// Members is empty on a member that has stopped taking part, whose copy
+	// of the configuration Raft no longer hands out.
+	Members []MemberState
+	// Applied is the last entry this member has carried out, and Committed
+	// the last one it knows to be committed. A member that keeps up has the
+	// two equal, or nearly.
+	Applied   uint64
+	Committed uint64
+	// Stall is where this member stopped, if it has left the cluster over an
+	// entry it could not apply (docs/decisions/d29-a-node-that-cannot-apply.md).
+	Stall *Stall
+}
+
+// Status reports what this member knows of the cluster and of itself.
+func (n *Node) Status(ctx context.Context) (Status, error) {
+	applied, err := n.machine.store.AppliedIndex(ctx)
+	if err != nil {
+		return Status{}, err
+	}
+	st := Status{Applied: applied, Committed: n.raft.CommitIndex()}
+	if s, ok := n.Stalled(); ok {
+		st.Stall = &s
+		return st, nil
+	}
+
+	f := n.raft.GetConfiguration()
+	if err := f.Error(); err != nil {
+		return Status{}, fmt.Errorf("cluster: read the configuration: %w", err)
+	}
+	leader, _ := n.Leader()
+	for _, srv := range f.Configuration().Servers {
+		role := RoleNonvoter
+		if srv.Suffrage == raft.Voter {
+			role = RoleVoter
+		}
+		st.Members = append(st.Members, MemberState{
+			ID: string(srv.ID), Address: string(srv.Address), Role: role, Leader: string(srv.ID) == leader,
+		})
+	}
+	return st, nil
+}
+
 // DialForward opens a stream to the member at addr that carries a write
 // forwarded to it (docs/decisions/d40-a-write-reaches-the-leader.md).
 func (n *Node) DialForward(ctx context.Context, addr string) (net.Conn, error) {

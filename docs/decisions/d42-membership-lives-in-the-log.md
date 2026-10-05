@@ -65,4 +65,7 @@ different file.
 
 The cluster section holds the four things above and nothing else. The identifier is minted on
 first start and kept beside the applied index, and a file naming a different one is refused.
-`weg cluster status` and `weg cluster leave` are not built.
+`weg cluster status` lists the members from the replicated configuration, with each one's
+role and which one leads, and says how far the member asked has got. How far the others have
+got is not in it: `hashicorp/raft` keeps the leader's view of each follower to itself, so
+each member is asked on its own. `weg cluster leave` is not built.
