@@ -56,6 +56,12 @@ tags:
       The configuration the other end of a zone transfer needs. This server
       writes it and never installs it; docs/decisions/ D34 says where that line
       is drawn and why.
+  - name: cluster
+    description: |
+      The servers this one keeps its data in step with. Managing them needs
+      the `admin` scope: a member can rewrite every zone the cluster holds.
+      A node whose configuration file has no cluster section has none of this
+      (docs/decisions/d42-membership-lives-in-the-log.md).
   - name: health
     description: Whether the server is fit to answer.
   - name: metrics
@@ -1021,6 +1027,31 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/SecondaryStanding" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /cluster/init:
+    post:
+      operationId: initCluster
+      tags: [cluster]
+      summary: Start a cluster with this node as its first member
+      description: |
+        This node becomes the only member of a new cluster, and brings
+        everything it holds into it: zones, tokens, keys and settings. Every
+        other node joins by asking a member, with `weg serve --join`
+        (docs/decisions/d44-starting-and-joining.md).
+
+        It is done once. A node that is a member already is refused, and so is
+        one whose configuration file has no cluster section, since it has no
+        address to be reached at and no secret to prove it belongs.
+
+        Writes wait while the cluster is started, and go through its log from
+        then on.
+      responses:
+        "200":
+          description: The cluster is started, and this node leads it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClusterMember" }
         default: { $ref: "#/components/responses/Problem" }
 
   /commits:
@@ -2061,6 +2092,22 @@ components:
             offering the fix beside it is a client's job, the way a zone check's
             findings work.
           items: { type: string }
+
+    ClusterMember:
+      type: object
+      description: One member of a cluster.
+      required: [id, address]
+      properties:
+        id:
+          type: string
+          description: |
+            The identifier the member is known by. It never changes
+            (docs/decisions/d42-membership-lives-in-the-log.md).
+          example: ns1
+        address:
+          type: string
+          description: Where the other members reach it, and where a new node asks to join.
+          example: "192.0.2.1:8054"
 
     SecondaryStanding:
       type: object

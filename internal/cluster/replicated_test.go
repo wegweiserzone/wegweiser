@@ -92,3 +92,15 @@ func TestAFounderBringsWhatItHeldBeforeInit(t *testing.T) {
 	}
 	holds(t, j, 3)
 }
+
+// D44: a cluster is started once, by one node.
+func TestAMemberCannotStartASecondCluster(t *testing.T) {
+	t.Parallel()
+	f := startMember(t, "f")
+	if err := f.applier.Exclusive(t.Context(), f.node.Init); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := f.applier.Exclusive(t.Context(), f.node.Init); !errors.Is(err, ErrMember) {
+		t.Errorf("a second Init = %v, want it refused as a member already", err)
+	}
+}

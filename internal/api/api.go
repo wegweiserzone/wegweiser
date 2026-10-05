@@ -79,6 +79,17 @@ type Secondaries interface {
 	Standing() []dns.ProbeStanding
 }
 
+// Cluster is this node's member of a cluster, as far as the API acts on it. A
+// *cluster.Node is one.
+type Cluster interface {
+	// Init starts a cluster with this node as its only member. The API runs
+	// it with no write in flight, which is what it asks of its caller.
+	Init(ctx context.Context) error
+	// Member is the identifier this node is a member by, and the address the
+	// others reach it at.
+	Member() (id, addr string)
+}
+
 // Config is what a [Server] needs.
 type Config struct {
 	// Store is the source of truth. It is read directly and written only
@@ -115,6 +126,10 @@ type Config struct {
 	// looks like a server nobody is querying.
 	Stream *stream.Hub
 
+	// Cluster is nil when the configuration file has no cluster section, and
+	// then this node is a single server and every cluster endpoint says so.
+	Cluster Cluster
+
 	// UI decides whether the embedded web interface is served alongside the
 	// API. False serves only the API and answers everything else with a
 	// problem document saying so (docs/decisions/ D16).
@@ -135,6 +150,7 @@ type Server struct {
 	snapshots   Snapshots
 	notifier    Notifier
 	secondaries Secondaries
+	cluster     Cluster
 	metrics     *metrics.Metrics
 	stream      *stream.Hub
 	onError     func(error)
@@ -181,6 +197,7 @@ func New(cfg Config) (*Server, http.Handler, error) {
 		snapshots:   cfg.Snapshots,
 		notifier:    cfg.Notifier,
 		secondaries: cfg.Secondaries,
+		cluster:     cfg.Cluster,
 		metrics:     cfg.Metrics,
 		stream:      cfg.Stream,
 		onError:     cfg.OnError,

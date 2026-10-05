@@ -84,7 +84,6 @@ adds every new member without a vote. The node waits until the log has reached i
 again, and only that second request makes it a voter. A node nobody can reach stays a
 non-voter and costs the cluster nothing.
 
-`weg serve --join` and `--role` are built as described, with the wait for the log in front
-of the DNS listener, so a new member never answers from an empty database. `weg cluster
-init`, `leave` and `remove` do not exist yet, and until the first does, only the tests start
-a cluster.
+`weg cluster init` and `weg serve --join` with `--role` are built as described, with the wait
+for the log in front of the DNS listener, so a new member never answers from an empty
+database. `weg cluster leave` and `remove` do not exist yet.

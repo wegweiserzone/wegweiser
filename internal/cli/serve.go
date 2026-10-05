@@ -357,12 +357,19 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 		}
 	}
 
+	// An interface holding a nil node is not a nil interface, and the API
+	// tells "no cluster section" from "a member" by exactly that.
+	var member api.Cluster
+	if node != nil {
+		member = node
+	}
 	apiSrv, handler, err := api.New(api.Config{
 		Store:       st,
 		Applier:     applier,
 		Snapshots:   snapshots,
 		Notifier:    notifyPublishers{notifier: notifier, prober: prober},
 		Secondaries: prober,
+		Cluster:     member,
 		Metrics:     met,
 		Stream:      tail,
 		UI:          cfg.APIUI.Value,

@@ -765,6 +765,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cluster/init": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a cluster with this node as its first member
+         * @description This node becomes the only member of a new cluster, and brings
+         *     everything it holds into it: zones, tokens, keys and settings. Every
+         *     other node joins by asking a member, with `weg serve --join`
+         *     (docs/decisions/d44-starting-and-joining.md).
+         *
+         *     It is done once. A node that is a member already is refused, and so is
+         *     one whose configuration file has no cluster section, since it has no
+         *     address to be reached at and no secret to prove it belongs.
+         *
+         *     Writes wait while the cluster is started, and go through its log from
+         *     then on.
+         */
+        post: operations["initCluster"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/commits": {
         parameters: {
             query?: never;
@@ -1518,6 +1548,20 @@ export interface components {
              *     findings work.
              */
             warnings: string[];
+        };
+        /** @description One member of a cluster. */
+        ClusterMember: {
+            /**
+             * @description The identifier the member is known by. It never changes
+             *     (docs/decisions/d42-membership-lives-in-the-log.md).
+             * @example ns1
+             */
+            id: string;
+            /**
+             * @description Where the other members reach it, and where a new node asks to join.
+             * @example 192.0.2.1:8054
+             */
+            address: string;
         };
         /**
          * @description Where one secondary stands on one zone, as of the last question it
@@ -2558,6 +2602,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SecondaryStanding"][];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    initCluster: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cluster is started, and this node leads it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClusterMember"];
                 };
             };
             default: components["responses"]["Problem"];

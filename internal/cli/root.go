@@ -178,6 +178,7 @@ func newRootCommand(opts *options) *cobra.Command {
 	cmd.AddCommand(newConfigCommand(opts))
 	cmd.AddCommand(newSettingsCommand(opts))
 	cmd.AddCommand(newSecondaryCommand(opts))
+	cmd.AddCommand(newClusterCommand(opts))
 	cmd.AddCommand(newStatusCommand(opts))
 	cmd.AddCommand(newHealthCommand(opts))
 	cmd.AddCommand(newVersionCommand(opts))

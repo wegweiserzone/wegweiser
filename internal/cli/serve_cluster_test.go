@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +16,6 @@ import (
 	wire "github.com/miekg/dns"
 
 	"github.com/wegweiserzone/wegweiser/internal/api"
-	"github.com/wegweiserzone/wegweiser/internal/apply"
-	"github.com/wegweiserzone/wegweiser/internal/cluster"
-	"github.com/wegweiserzone/wegweiser/internal/store/sqlite"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
@@ -55,112 +53,117 @@ func clusterConfig(t *testing.T) (path, advertise string) {
 	return path, advertise
 }
 
-type noLoad struct{}
-
-func (noLoad) Load(context.Context) error { return nil }
-
-// startFounder makes a cluster of one out of the seeded database, the way
-// `weg cluster init` will, and returns the address of its cluster port.
-func startFounder(t *testing.T) string {
+// serving starts `weg serve` with args in the background, and returns what it
+// reported once it was answering and what it wrote to standard error. The
+// server is stopped when the test ends, and has to stop cleanly.
+func serving(t *testing.T, args ...string) (serveStatus, *syncBuffer) {
 	t.Helper()
-	ctx := t.Context()
-
-	st, err := sqlite.Open(ctx, sqlite.Options{Path: seedDatabase(t)})
-	if err != nil {
-		t.Fatalf("open the founder's database: %v", err)
-	}
-	repl := &cluster.Replication{}
-	a, err := apply.New(st, apply.Options{Replication: repl})
-	if err != nil {
-		t.Fatalf("build the founder's applier: %v", err)
-	}
-	tr, err := cluster.New(cluster.Config{Secret: clusterSecret})
-	if err != nil {
-		t.Fatalf("build the founder's transport: %v", err)
-	}
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	mux := tr.Serve(l)
-	node, err := cluster.Start(cluster.NodeConfig{
-		ID: "founder", Advertise: mux.Addr().String(), Dir: t.TempDir(),
-		Transport: tr, Mux: mux, Store: st, Applier: a, Loader: noLoad{},
-		OnError: func(err error) { t.Errorf("founder: %v", err) },
-	})
-	if err != nil {
-		t.Fatalf("start the founder: %v", err)
-	}
-	repl.Bind(node)
-	t.Cleanup(func() {
-		if cerr := node.Close(); cerr != nil {
-			t.Errorf("close the founder: %v", cerr)
-		}
-		if cerr := mux.Close(); cerr != nil {
-			t.Errorf("close the founder's port: %v", cerr)
-		}
-		if cerr := st.Close(); cerr != nil {
-			t.Errorf("close the founder's database: %v", cerr)
-		}
-	})
-	if err := a.Exclusive(ctx, node.Init); err != nil {
-		t.Fatalf("start the cluster: %v", err)
-	}
-	return mux.Addr().String()
-}
-
-// A node started with --join holds the cluster's data before it answers a
-// single query, and mints nothing of its own on the way in
-// (docs/decisions/d44-starting-and-joining.md).
-func TestServeJoinsACluster(t *testing.T) {
-	t.Parallel()
-	founder := startFounder(t)
-	conf, advertise := clusterConfig(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
 	pr, pw := io.Pipe()
-	defer pr.Close()
-	var stderr syncBuffer
+	stderr := &syncBuffer{}
 	done := make(chan int, 1)
 	go func() {
-		code := Execute(ctx, []string{
-			"serve", "--config", conf, "--listen", "127.0.0.1:0", "--api-listen", "127.0.0.1:0",
-			"--db", filepath.Join(t.TempDir(), "weg.db"), "--output", "json",
-			"--join", founder,
-		}, pw, &stderr)
+		code := Execute(ctx, append([]string{
+			"serve", "--listen", "127.0.0.1:0", "--api-listen", "127.0.0.1:0", "--output", "json",
+		}, args...), pw, stderr)
 		pw.Close()
 		done <- code
 	}()
+	t.Cleanup(func() {
+		cancel()
+		pr.Close()
+		select {
+		case code := <-done:
+			if code != ExitOK {
+				t.Errorf("exit code = %d, want %d; stderr: %s", code, ExitOK, stderr.String())
+			}
+		case <-time.After(10 * time.Second):
+			t.Error("the server did not stop after its context was cancelled")
+		}
+	})
 
 	var status serveStatus
 	if err := json.NewDecoder(pr).Decode(&status); err != nil {
 		t.Fatalf("read the status: %v (stderr: %s)", err, stderr.String())
 	}
-	if status.Cluster == nil || !status.Cluster.Replicating || status.Cluster.Advertise != advertise {
-		t.Errorf("cluster status = %+v, want a member advertising %s", status.Cluster, advertise)
+	return status, stderr
+}
+
+// Two servers become a cluster the way an operator makes one: the first is
+// started as a cluster with `weg cluster init`, and the second joins it from
+// its first start (docs/decisions/d44-starting-and-joining.md).
+func TestTwoServersBecomeACluster(t *testing.T) {
+	t.Parallel()
+
+	confA, advertiseA := clusterConfig(t)
+	a, stderrA := serving(t, "--config", confA, "--db", seedDatabase(t))
+	token := bootstrapToken(t, awaitStderr(t, stderrA, api.TokenPrefix))
+
+	var stdout, stderr syncBuffer
+	if code := Execute(t.Context(), []string{
+		"cluster", "init", "--server", a.APIAddress, "--token", token, "--output", "json",
+	}, &stdout, &stderr); code != ExitOK {
+		t.Fatalf("cluster init: exit code %d; stderr: %s", code, stderr.String())
 	}
-	if status.Zones != 1 {
-		t.Errorf("the node reported %d zones at start, want the founder's 1", status.Zones)
+	var started clusterStarted
+	if err := json.Unmarshal([]byte(stdout.String()), &started); err != nil {
+		t.Fatalf("read what cluster init reported: %v (%q)", err, stdout.String())
 	}
-	got := ask(t, status.Address, "www.example.com.", zone.TypeA)
-	if got.Rcode != wire.RcodeSuccess || len(got.Answer) != 1 {
-		t.Errorf("rcode = %s, answer = %v, want the founder's record",
-			wire.RcodeToString[got.Rcode], got.Answer)
+	if started.Address != advertiseA || started.Member == "" {
+		t.Errorf("cluster init reported %+v, want the first member at %s", started, advertiseA)
 	}
 
-	cancel()
-	select {
-	case code := <-done:
-		if code != ExitOK {
-			t.Errorf("exit code = %d, want %d; stderr: %s", code, ExitOK, stderr.String())
+	confB, advertiseB := clusterConfig(t)
+	b, stderrB := serving(t, "--config", confB, "--db", filepath.Join(t.TempDir(), "weg.db"),
+		"--join", started.Address)
+
+	if b.Cluster == nil || !b.Cluster.Replicating || b.Cluster.Advertise != advertiseB {
+		t.Errorf("cluster status = %+v, want a member advertising %s", b.Cluster, advertiseB)
+	}
+	t.Run("the new member answers from the cluster's data", func(t *testing.T) {
+		if b.Zones != 1 {
+			t.Errorf("it reported %d zones at start, want the founder's 1", b.Zones)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the member did not stop after its context was cancelled")
-	}
-	if strings.Contains(stderr.String(), api.TokenPrefix) {
-		t.Errorf("a joining node showed a bootstrap token of its own:\n%s", stderr.String())
-	}
+		got := ask(t, b.Address, "www.example.com.", zone.TypeA)
+		if got.Rcode != wire.RcodeSuccess || len(got.Answer) != 1 {
+			t.Errorf("rcode = %s, answer = %v, want the founder's record",
+				wire.RcodeToString[got.Rcode], got.Answer)
+		}
+	})
+	// D32: credentials are the cluster's, so the founder's token works on the
+	// new member, and the new member mints none of its own.
+	t.Run("the founder's token works there, and it mints none", func(t *testing.T) {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+			"http://"+b.APIAddress+"/api/v1/zones", http.NoBody)
+		if err != nil {
+			t.Fatalf("build the request: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("list the zones on the new member: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("the founder's token on the new member: status %d, want 200", resp.StatusCode)
+		}
+		if strings.Contains(stderrB.String(), api.TokenPrefix) {
+			t.Errorf("the new member showed a bootstrap token of its own:\n%s", stderrB.String())
+		}
+	})
+
+	t.Run("a cluster is started once", func(t *testing.T) {
+		var stdout, stderr syncBuffer
+		if code := Execute(t.Context(), []string{
+			"cluster", "init", "--server", a.APIAddress, "--token", token,
+		}, &stdout, &stderr); code == ExitOK {
+			t.Error("starting the cluster a second time succeeded")
+		}
+		if !strings.Contains(stderr.String(), "already") {
+			t.Errorf("stderr = %q, want it to say this node is a member already", stderr.String())
+		}
+	})
 }
 
 // What a node holds before it joins is in no entry of the cluster's log, so
@@ -189,33 +192,27 @@ func TestServeWithAClusterSectionIsAServerUntilItJoins(t *testing.T) {
 	t.Parallel()
 	conf, _ := clusterConfig(t)
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	pr, pw := io.Pipe()
-	defer pr.Close()
-	var stderr syncBuffer
-	done := make(chan int, 1)
-	go func() {
-		code := Execute(ctx, []string{
-			"serve", "--config", conf, "--listen", "127.0.0.1:0", "--api-listen", "127.0.0.1:0",
-			"--db", seedDatabase(t), "--output", "json",
-		}, pw, &stderr)
-		pw.Close()
-		done <- code
-	}()
-
-	var status serveStatus
-	if err := json.NewDecoder(pr).Decode(&status); err != nil {
-		t.Fatalf("read the status: %v (stderr: %s)", err, stderr.String())
-	}
+	status, stderr := serving(t, "--config", conf, "--db", seedDatabase(t))
 	if status.Cluster == nil || status.Cluster.Replicating || status.Cluster.Member == "" {
 		t.Errorf("cluster status = %+v, want a node with an identifier and no cluster yet", status.Cluster)
 	}
-	awaitStderr(t, &stderr, api.TokenPrefix)
+	awaitStderr(t, stderr, api.TokenPrefix)
+}
 
-	cancel()
-	if code := <-done; code != ExitOK {
-		t.Errorf("exit code = %d, want %d; stderr: %s", code, ExitOK, stderr.String())
+// Without a cluster section, starting one is refused, and says what is missing.
+func TestClusterInitNeedsAClusterSection(t *testing.T) {
+	t.Parallel()
+	status, stderr := serving(t, "--db", seedDatabase(t))
+	token := bootstrapToken(t, awaitStderr(t, stderr, api.TokenPrefix))
+
+	var stdout, errOut syncBuffer
+	if code := Execute(t.Context(), []string{
+		"cluster", "init", "--server", status.APIAddress, "--token", token,
+	}, &stdout, &errOut); code == ExitOK {
+		t.Fatal("a node without a cluster section started a cluster")
+	}
+	if !strings.Contains(errOut.String(), "cluster section") {
+		t.Errorf("stderr = %q, want it to name the missing cluster section", errOut.String())
 	}
 }
 

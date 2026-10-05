@@ -36,6 +36,10 @@ const (
 // cue to forward the write (docs/decisions/d40-a-write-reaches-the-leader.md).
 var ErrNotLeader = errors.New("cluster: this member is not the leader")
 
+// ErrMember is a cluster started on a node that is in one already. A cluster
+// is started once, by one node (docs/decisions/d44-starting-and-joining.md).
+var ErrMember = errors.New("cluster: this node is a cluster member already")
+
 // NodeConfig is what a [Node] needs.
 type NodeConfig struct {
 	// ID identifies this member for as long as it is one
@@ -271,6 +275,9 @@ func (n *Node) Settle(ctx context.Context) error {
 // from that snapshot. Run it through [apply.Applier.Exclusive], so that no
 // write lands between the log beginning and the snapshot being taken.
 func (n *Node) Init(ctx context.Context) error {
+	if n.Replicating() {
+		return ErrMember
+	}
 	if err := n.Bootstrap(); err != nil {
 		return fmt.Errorf("cluster: start a cluster: %w", err)
 	}
@@ -410,6 +417,10 @@ func (n *Node) Propose(ctx context.Context, b *apply.Batch) error {
 	}
 	return nil
 }
+
+// Member is the identifier this node is a member by, and the address the
+// others reach it at.
+func (n *Node) Member() (id, addr string) { return string(n.id), string(n.addr) }
 
 // IsLeader reports whether this member is leading.
 func (n *Node) IsLeader() bool { return n.raft.State() == raft.Leader }

@@ -26,8 +26,13 @@ public API is unstable and may change without a deprecation period.
   refused and told what it holds. Once a node is a member the flag is ignored,
   so a unit file can keep it.
 
-- A cluster cannot be started yet, and a write sent to a member that is not
-  leading fails instead of reaching the leader.
+- `weg cluster init` starts a cluster with the server it is run against as the
+  first member, bringing everything it holds: zones, tokens, keys and settings.
+  It needs the admin scope, is done once, and is refused on a server without a
+  cluster section. The API offers the same as `POST /cluster/init`.
+
+- A write sent to a member that is not leading fails instead of reaching the
+  leader.
 
 ### Changed
 

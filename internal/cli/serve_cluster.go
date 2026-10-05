@@ -139,7 +139,8 @@ func refuseHeldContent(ctx context.Context, st store.Store) error {
 	}
 	sort.Strings(found)
 	return fmt.Errorf("a node joins a cluster with an empty database, and this one holds %s; "+
-		"start it on a new one", strings.Join(found, ", "))
+		"start it on a new one, or start a cluster from this one with `weg cluster init`",
+		strings.Join(found, ", "))
 }
 
 // printMemberStatus adds a line about the cluster to what serve reports at
