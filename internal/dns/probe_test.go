@@ -2,6 +2,7 @@ package dns
 
 import (
 	"context"
+	"hash/maphash"
 	"net"
 	"net/netip"
 	"sync"
@@ -136,11 +137,21 @@ func (c *probeLog) forgotten() []probeKey {
 // startProber returns one already asking, stopped when the test ends.
 func startProber(t *testing.T, cfg ProbeConfig) *Prober {
 	t.Helper()
+	return runProber(t, newProber(cfg))
+}
 
+// newProber is [NewProber] with the short wait the tests want.
+func newProber(cfg ProbeConfig) *Prober {
 	if cfg.Wait == 0 {
 		cfg.Wait = 100 * time.Millisecond
 	}
-	p := NewProber(cfg)
+	return NewProber(cfg)
+}
+
+// runProber starts p and stops it when the test ends.
+func runProber(t *testing.T, p *Prober) *Prober {
+	t.Helper()
+
 	if err := p.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -435,14 +446,21 @@ func TestProbeStandingReportsWhatWasFound(t *testing.T) {
 func TestProbeStandingSaysWhenNothingHasBeenAskedYet(t *testing.T) {
 	t.Parallel()
 
-	_, snap := ixfrZone(t, 12)
+	z, snap := ixfrZone(t, 12)
 	sec := newAnswerer(t, 12, false)
 
-	p := startProber(t, ProbeConfig{
+	p := newProber(ProbeConfig{
 		Targets:   []NotifyTarget{{Addr: sec.addr}},
 		Snapshots: holder{snap},
 		Floor:     time.Hour,
 	})
+	// The first ask lands in one of probeSlots places in the floor window,
+	// chosen by a seed drawn per process. The first place is now, and a pair
+	// that draws it is asked before this looks.
+	for p.slot(probeKey{zone: z.Name, addr: sec.addr}, p.cfg.Floor) == 0 {
+		p.seed = maphash.MakeSeed()
+	}
+	runProber(t, p)
 
 	waitFor(t, "the pair is known", func() bool { return len(p.Standing()) == 1 })
 	if got := p.Standing()[0]; got.Outcome != "" || got.Known {
