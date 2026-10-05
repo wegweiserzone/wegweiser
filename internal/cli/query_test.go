@@ -82,7 +82,9 @@ func TestQueryTail(t *testing.T) {
 	}
 	args := []string{"query", "tail", "--name", "example.com.", "--type", "A"}
 
-	stdout, _ := tailUntil(t, srv, args, feed, "www.example.com.")
+	// The denial is fed last, so it is what to wait for: stopping at the first
+	// line printed leaves it in flight, and the assertion below then fails.
+	stdout, _ := tailUntil(t, srv, args, feed, "gone.example.com.")
 
 	t.Run("it names the columns", func(t *testing.T) {
 		if !strings.HasPrefix(stdout, "TIME") || !strings.Contains(stdout, "RCODE") {
