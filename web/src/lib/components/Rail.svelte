@@ -47,6 +47,11 @@
       icon: "M4 5h7v5H4zM13 14h7v5h-7M11 7.5h6a2 2 0 0 1 2 2v2M8 10v2a2 2 0 0 0 2 2h3",
     },
     {
+      href: "/cluster",
+      label: "Cluster",
+      icon: "M12 3.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4M5 16.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4M19 16.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4M12 7.5v4M12 11.5l-5.5 5M12 11.5l5.5 5",
+    },
+    {
       href: "/keys",
       label: "Keys",
       icon: "M15.5 8.5a3.5 3.5 0 1 0-3.2 3.5L4 20v0h3v-2h2v-2h2l1.3-1.3a3.5 3.5 0 0 0 3.2-6.2M16 7.5h.01",
@@ -78,9 +83,20 @@
       <p class="font-cond text-[19px] leading-none font-bold tracking-[0.13em] uppercase">
         Wegweiser
       </p>
-      <p class="num mt-0.5 truncate text-[10px] text-ink-faint">
-        {health?.version ?? "not serving"}
-      </p>
+      <!--
+        A member that has left its cluster still serves, so the version line is
+        where it says so: everywhere, rather than only on the page that explains
+        it (docs/decisions/d29-a-node-that-cannot-apply.md).
+      -->
+      {#if health?.current === false}
+        <a href="/cluster" class="num mt-0.5 block truncate text-[10px] text-crit">
+          behind its cluster
+        </a>
+      {:else}
+        <p class="num mt-0.5 truncate text-[10px] text-ink-faint">
+          {health?.version ?? "not serving"}
+        </p>
+      {/if}
     </div>
   </div>
 

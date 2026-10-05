@@ -31,6 +31,8 @@ export type Settings = components["schemas"]["Settings"];
 export type SecondaryConfig = components["schemas"]["SecondaryConfig"];
 export type SecondaryStanding = components["schemas"]["SecondaryStanding"];
 export type SecondaryFormat = components["schemas"]["SecondaryFormat"];
+export type ClusterMember = components["schemas"]["ClusterMember"];
+export type ClusterStatus = components["schemas"]["ClusterStatus"];
 export type ZoneImported = components["schemas"]["ZoneImported"];
 export type ReverseConflictPolicy = components["schemas"]["ReverseConflictPolicy"];
 

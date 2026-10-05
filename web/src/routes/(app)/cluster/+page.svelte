@@ -1,0 +1,294 @@
+<script lang="ts">
+  /**
+   * The servers this one keeps its zones in step with.
+   *
+   * What a server knows is its own copy of the cluster's configuration and how
+   * far it has got itself. How far the others have got is theirs to say, so
+   * this page is about the server it is served by, and says so
+   * (docs/decisions/d42-membership-lives-in-the-log.md).
+   */
+  import { api, ApiError, NetworkError } from "$lib/api";
+  import type { ClusterMember, ClusterStatus } from "$lib/api";
+  import { ago, exact } from "$lib/format";
+  import { session } from "$lib/session.svelte";
+  import Bar from "$lib/components/Bar.svelte";
+  import Button from "$lib/components/Button.svelte";
+  import Chip from "$lib/components/Chip.svelte";
+  import Dialog from "$lib/components/Dialog.svelte";
+  import Empty from "$lib/components/Empty.svelte";
+  import Notice from "$lib/components/Notice.svelte";
+  import Table from "$lib/components/Table.svelte";
+  import type { Column } from "$lib/components/Table.svelte";
+
+  type Member = ClusterStatus["members"][number];
+
+  /**
+   * single is a server with no cluster section, which the API answers with a
+   * 404. It is a way to run, not a fault, and gets a page of its own.
+   */
+  let status = $state<ClusterStatus | null>(null);
+  let single = $state(false);
+  let loading = $state(true);
+  let trouble = $state<string | null>(null);
+
+  let starting = $state(false);
+  let busy = $state(false);
+  let notStarted = $state<string | null>(null);
+  let started = $state<ClusterMember | null>(null);
+  let copied = $state(false);
+
+  const administers = $derived(session.can("admin"));
+  const joinLine = $derived(started ? `weg serve --join ${started.address}` : "");
+
+  const roles: Record<Member["role"], { label: string; what: string }> = {
+    voter: {
+      label: "Voter",
+      what: "Counts towards quorum, and can lead.",
+    },
+    nonvoter: {
+      label: "Non-voter",
+      what: "Receives the whole log and answers queries like any member, and is neither counted nor waited for.",
+    },
+  };
+
+  const columns: Column[] = [
+    { label: "Member" },
+    { label: "Address", width: "14rem" },
+    { label: "Role", width: "8rem" },
+    { label: "", width: "7rem" },
+  ];
+
+  async function load() {
+    loading = true;
+    trouble = null;
+    try {
+      status = await api.get("/cluster");
+      single = false;
+    } catch (err) {
+      status = null;
+      single = err instanceof ApiError && err.status === 404;
+      if (!single) {
+        trouble =
+          err instanceof NetworkError
+            ? "The server did not answer."
+            : err instanceof ApiError
+              ? (err.detail ?? err.title)
+              : "The cluster could not be read.";
+      }
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function start() {
+    busy = true;
+    notStarted = null;
+    try {
+      started = await api.post("/cluster/init");
+      await load();
+    } catch (err) {
+      notStarted =
+        err instanceof ApiError ? (err.detail ?? err.title) : "The cluster was not started.";
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function copyJoin() {
+    try {
+      await navigator.clipboard.writeText(joinLine);
+      copied = true;
+    } catch {
+      notStarted = "This browser did not allow the copy. Select the line instead.";
+    }
+  }
+
+  function closeStart() {
+    starting = false;
+    started = null;
+    notStarted = null;
+    copied = false;
+  }
+
+  /** where names the place in the log a member stopped at. */
+  const where = (entry: number) => (entry === 0 ? "a log snapshot" : `entry ${entry}`);
+
+  $effect(() => {
+    load();
+  });
+</script>
+
+<svelte:head><title>Cluster — Wegweiser</title></svelte:head>
+
+<Bar title="Cluster">
+  {#snippet actions()}
+    <Button onclick={load}>Refresh</Button>
+  {/snippet}
+</Bar>
+
+<div class="flex flex-1 flex-col gap-5 overflow-auto py-5">
+  {#if trouble}
+    <div class="max-w-3xl px-5">
+      <Notice tone="crit" title="The cluster could not be read">
+        {trouble}
+        {#snippet actions()}
+          <Button onclick={load}>Try again</Button>
+        {/snippet}
+      </Notice>
+    </div>
+  {/if}
+
+  {#if single}
+    <Empty title="A single server">
+      This server's configuration file has no cluster section, so it keeps its zones to
+      itself. A cluster is a few servers holding the same zones, kept in step through one
+      log, and each of them answers every change. Add the section below, restart the
+      server, and start the cluster here.
+      {#snippet actions()}
+        <pre
+          class="num mt-1 rounded-sm border border-line bg-sunken px-4 py-3 text-left
+                 text-[12px] leading-relaxed text-ink">cluster:
+  advertise: "192.0.2.1:8054"   # where the other members reach this one
+  secret: "…"                   # openssl rand -base64 32, the same on every member</pre>
+      {/snippet}
+    </Empty>
+  {:else if status && status.behind}
+    <div class="max-w-3xl px-5">
+      <Notice tone="crit" title="This server has left its cluster">
+        It stopped at {where(status.behind.entry)},
+        <span title={exact(status.behind.since)}>{ago(status.behind.since)}</span>, because
+        {status.behind.reason}. It answers queries with what it held then and refuses
+        writes. To repair it, remove it from the cluster, discard its database and its Raft
+        directory, and start it again with <code class="num">weg serve --join</code>.
+      </Notice>
+    </div>
+  {:else if status && !status.replicating}
+    <Empty title="In no cluster yet">
+      This server has a cluster section, so it can be a member, and it is not one yet. Start
+      a cluster with it here, and it brings everything it holds. Or start it with
+      <code class="num">weg serve --join</code> and the address of a member, and it takes the
+      cluster's zones instead.
+      {#snippet actions()}
+        {#if administers}
+          <Button weight="primary" onclick={() => (starting = true)}>Start a cluster</Button>
+        {:else}
+          <span class="text-[12px] text-ink-faint">Starting one needs the admin scope.</span>
+        {/if}
+      {/snippet}
+    </Empty>
+  {/if}
+
+  {#if status && status.replicating}
+    <!--
+      The plate: which server this is, in the voice the rail gives the product's
+      own name, because every number on this page is this server's view and the
+      reader has to know whose.
+    -->
+    <section
+      class="relative mx-5 flex flex-wrap items-end gap-x-8 gap-y-2 border-l-[3px]
+             border-signal py-1 pl-4"
+      aria-label="This server"
+    >
+      <div class="min-w-0">
+        <p class="text-[12px] text-ink-faint">This server</p>
+        <p class="font-cond text-[30px] leading-none font-bold tracking-[0.08em] uppercase">
+          {status.self.id}
+        </p>
+      </div>
+      <dl class="flex flex-wrap gap-x-8 gap-y-1 pb-0.5 text-[12px]">
+        <div>
+          <dt class="text-ink-faint">Reached at</dt>
+          <dd class="num text-ink">{status.self.address}</dd>
+        </div>
+        <div>
+          <dt class="text-ink-faint">Log</dt>
+          <dd class="num text-ink">
+            {status.applied} of {status.committed} applied
+          </dd>
+        </div>
+        <div class="self-end">
+          {#if status.behind}
+            <Chip tone="crit">Left the cluster</Chip>
+          {:else if status.applied < status.committed}
+            <Chip tone="warn" title="Entries committed and not yet carried out here">
+              {status.committed - status.applied} behind
+            </Chip>
+          {:else}
+            <Chip tone="ok" dot>Current</Chip>
+          {/if}
+        </div>
+      </dl>
+    </section>
+
+    <Table {columns} items={status.members} key={(m) => m.id}>
+      {#snippet row(m: Member)}
+        <td class="py-1.5 pr-3 pl-5 whitespace-nowrap">
+          {m.id}
+          {#if m.id === status?.self.id}
+            <span class="ml-2 text-[11px] text-ink-faint">this server</span>
+          {/if}
+        </td>
+        <td class="num px-3 py-1.5 text-ink-mute">{m.address}</td>
+        <td class="px-3 py-1.5">
+          <Chip tone="neutral" title={roles[m.role].what}>{roles[m.role].label}</Chip>
+        </td>
+        <td class="py-1.5 pr-5 pl-3">
+          {#if m.leader}
+            <Chip tone="signal" dot title="Takes every write, whichever member it was sent to">
+              Leader
+            </Chip>
+          {/if}
+        </td>
+      {/snippet}
+
+      {#snippet empty()}
+        <Empty title="No members listed">
+          A server that has left its cluster no longer holds a copy of the configuration to
+          read the members from.
+        </Empty>
+      {/snippet}
+    </Table>
+
+    <p class="max-w-3xl px-5 text-[12px] text-ink-faint">
+      Every member answers queries, and any of them takes a write and hands it to the leader.
+      How far the others have got is theirs to say: open this page on each of them.
+    </p>
+  {/if}
+</div>
+
+<Dialog bind:open={starting} title="Start a cluster" onclose={closeStart}>
+  {#if started}
+    <p class="text-[12px] text-ink-mute">
+      The cluster is started, and {started.id} is its first member and leads it. Every other
+      server joins from its first start, with a cluster section of its own, the same secret,
+      and an empty database:
+    </p>
+    <div class="flex items-center gap-3">
+      <pre
+        class="num flex-1 overflow-auto rounded-sm border border-line bg-sunken px-4 py-2.5
+               text-[12px] text-ink">{joinLine}</pre>
+      <Button onclick={copyJoin}>{copied ? "Copied" : "Copy"}</Button>
+    </div>
+  {:else}
+    <p class="text-[12px] text-ink-mute">
+      {status?.self.id} becomes the first member of a new cluster, and everything it holds goes
+      into it: zones, tokens, keys and settings. It is done once. Writes wait for the moment
+      it takes, and go through the cluster's log from then on.
+    </p>
+  {/if}
+
+  {#if notStarted}
+    <Notice tone="crit" title="The cluster was not started">{notStarted}</Notice>
+  {/if}
+
+  {#snippet actions()}
+    {#if started}
+      <Button weight="primary" onclick={closeStart}>Done</Button>
+    {:else}
+      <Button weight="quiet" onclick={closeStart}>Cancel</Button>
+      <Button weight="primary" disabled={busy} onclick={start}>
+        {busy ? "Starting…" : "Start the cluster"}
+      </Button>
+    {/if}
+  {/snippet}
+</Dialog>

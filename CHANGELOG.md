@@ -44,6 +44,16 @@ public API is unstable and may change without a deprecation period.
   interface stays on the member it was made on. While no member leads, a write
   is refused with 503 and every member goes on answering queries.
 
+#### Web interface
+
+- A Cluster page lists the members with the role each holds and which one
+  leads, and says how far the server it is served by has got. A server in no
+  cluster yet offers to start one, and then shows the line another server joins
+  it with. A server without a cluster section says what that section needs.
+
+- A member that has left its cluster says so in the rail, on every page, where
+  the version is otherwise shown.
+
 #### Observation
 
 - `weg_cluster_behind` is 1 while this member has left its cluster over a

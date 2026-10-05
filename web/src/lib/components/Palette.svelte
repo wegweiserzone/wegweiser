@@ -38,6 +38,7 @@
     { key: "h", label: "History", href: "/history" },
     { key: "t", label: "Tokens", href: "/tokens" },
     { key: "k", label: "Keys", href: "/keys" },
+    { key: "c", label: "Cluster", href: "/cluster" },
     // The comma rather than a letter, because that is the key every other
     // application puts settings on and the letters that fit are taken.
     { key: ",", label: "Settings", href: "/settings" },
