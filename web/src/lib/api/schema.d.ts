@@ -957,6 +957,14 @@ export interface components {
             zones: number;
             /** @description Records the query path currently answers from. */
             records: number;
+            /**
+             * @description Present on a cluster member. False once it has left its cluster
+             *     over a change it could not apply: it still answers queries, with
+             *     what it held then, which is why this is a field beside `status`
+             *     rather than a reason to answer 503
+             *     (docs/decisions/d29-a-node-that-cannot-apply.md).
+             */
+            current?: boolean;
         };
         /** @description One exchange, as a watcher sees it. */
         QueryEvent: {

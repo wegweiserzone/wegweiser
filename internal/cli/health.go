@@ -24,6 +24,9 @@ type serverHealth struct {
 	Version string `json:"version"`
 	Zones   int    `json:"zones"`
 	Records int    `json:"records"`
+	// Current is set on a cluster member, and false once it has left the
+	// cluster (docs/decisions/d29-a-node-that-cannot-apply.md).
+	Current *bool `json:"current,omitempty"`
 }
 
 func newHealthCommand(opts *options) *cobra.Command {
@@ -79,6 +82,7 @@ func runHealth(ctx context.Context, opts *options, f *clientFlags) error {
 		Version: h.Version,
 		Zones:   h.Zones,
 		Records: h.Records,
+		Current: h.Current,
 	}
 	p := opts.Printer()
 	return p.Print(got, func(w io.Writer) error {
@@ -86,8 +90,15 @@ func runHealth(ctx context.Context, opts *options, f *clientFlags) error {
 		if got.Status != string(gen.HealthStatusServing) {
 			colour = output.ColorYellow
 		}
-		_, werr := fmt.Fprintf(w, "%s — %d zones, %d records, %s\n",
-			p.Paint(colour, got.Status), got.Zones, got.Records, got.Version)
-		return werr
+		if _, werr := fmt.Fprintf(w, "%s — %d zones, %d records, %s\n",
+			p.Paint(colour, got.Status), got.Zones, got.Records, got.Version); werr != nil {
+			return werr
+		}
+		if got.Current != nil && !*got.Current {
+			_, werr := fmt.Fprintf(w, "%s it has left its cluster over a change it could not apply; "+
+				"`weg cluster status` says where and why\n", p.Paint(output.ColorRed, "behind:"))
+			return werr
+		}
+		return nil
 	})
 }

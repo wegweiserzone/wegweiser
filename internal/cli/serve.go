@@ -298,7 +298,7 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 	// never answers from an empty database.
 	var node *cluster.Node
 	if port != nil {
-		node, err = startMember(ctx, cfg.Cluster, port, join, st, applier, pub, log, report)
+		node, err = startMember(ctx, cfg.Cluster, port, join, st, applier, pub, met, log, report)
 		if err != nil {
 			return err
 		}

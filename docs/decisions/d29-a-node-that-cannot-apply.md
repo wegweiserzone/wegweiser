@@ -86,6 +86,6 @@ among them, is a stall of the same kind.
 log never having been compacted: remove the member, discard its store and its Raft
 directory, and join it again, and it starts from a snapshot.
 
-Of the operator's half, `weg cluster status` is built: a member that has stopped names the
-entry and the reason. There is no metric yet, and `/healthz` has no field for whether the
-node is current.
+The operator's half is built too. `weg cluster status` on a member that has stopped names the
+entry and the reason, `weg_cluster_behind` carries the same fact for whoever is watching, and
+`/healthz` has a `current` field beside a status that stays `serving`.

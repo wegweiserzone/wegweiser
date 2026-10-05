@@ -125,3 +125,34 @@ func TestGetCluster(t *testing.T) {
 		}
 	})
 }
+
+// D29: whether a member is current is a field beside the health status, not
+// a different answer: a member that has left its cluster still answers.
+func TestHealthSaysWhetherAMemberIsCurrent(t *testing.T) {
+	t.Parallel()
+	stall := &cluster.Stall{Entry: 7, Reason: errors.New("disk full"), At: time.Now()}
+
+	for _, tc := range []struct {
+		name    string
+		cluster Cluster
+		want    *bool
+	}{
+		{"a single server says nothing about it", nil, nil},
+		{"a node in no cluster yet says nothing about it", &member{}, nil},
+		{"a member that keeps up is current", &member{started: true}, ptr(true)},
+		{"a member that has left is not", &follower{stall: stall}, ptr(false)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, func(cfg *Config) { cfg.Cluster = tc.cluster })
+			var got gen.Health
+			h.decode(h.do(http.MethodGet, "/healthz", nil), http.StatusOK, &got)
+			switch {
+			case tc.want == nil && got.Current != nil:
+				t.Errorf("current = %v, want it left out", *got.Current)
+			case tc.want != nil && (got.Current == nil || *got.Current != *tc.want):
+				t.Errorf("current = %v, want %v", got.Current, *tc.want)
+			}
+		})
+	}
+}

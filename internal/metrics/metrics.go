@@ -87,6 +87,10 @@ type Metrics struct {
 	// wiring rather than passed in, and nil until it is.
 	load atomic.Pointer[func() bool]
 
+	// stalled is where this member's place in its cluster is read from,
+	// published the same way, and nil on a server in no cluster.
+	stalled atomic.Pointer[func() bool]
+
 	byTransport [2]transportMetrics
 }
 
@@ -201,10 +205,17 @@ func New() *Metrics {
 			"is refused rather than answered.",
 	}, m.underLoad)
 
+	clusterBehind := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace: namespace, Subsystem: "cluster", Name: "behind",
+		Help: "1 while this member has left its cluster over a change it could not apply. " +
+			"It refuses writes and answers queries with what it held then, and stays so " +
+			"until it is repaired (docs/decisions/d29-a-node-that-cannot-apply.md).",
+	}, m.clusterBehind)
+
 	m.reg.MustRegister(
 		m.queries, m.dropped, m.truncated, m.duration, m.size, m.notify, m.refusals,
 		m.probes, m.lag, m.behind, m.unanswered,
-		m.zones, m.records, m.built, underLoad,
+		m.zones, m.records, m.built, underLoad, clusterBehind,
 		buildInfo(),
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -251,9 +262,20 @@ func buildInfo() prometheus.Collector {
 func (m *Metrics) SetLoadSource(under func() bool) { m.load.Store(&under) }
 
 // underLoad is what the gauge reads, in the shape Prometheus wants it.
-func (m *Metrics) underLoad() float64 {
-	source := m.load.Load()
-	if source == nil || !(*source)() {
+func (m *Metrics) underLoad() float64 { return readFlag(&m.load) }
+
+// SetStallSource says where it is read from whether this member has left its
+// cluster, which is the member itself. Until it is set, and on a server in no
+// cluster, the gauge reads zero: such a server has no cluster to be behind.
+func (m *Metrics) SetStallSource(stalled func() bool) { m.stalled.Store(&stalled) }
+
+func (m *Metrics) clusterBehind() float64 { return readFlag(&m.stalled) }
+
+// readFlag reads a published yes or no as a gauge: 1 for yes, and 0 for no or
+// for nothing published yet.
+func readFlag(source *atomic.Pointer[func() bool]) float64 {
+	f := source.Load()
+	if f == nil || !(*f)() {
 		return 0
 	}
 	return 1

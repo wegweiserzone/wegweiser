@@ -396,10 +396,16 @@ func (s *Server) GetHealth(_ context.Context, _ gen.GetHealthRequestObject) (gen
 		}, nil
 	}
 
-	return gen.GetHealth200JSONResponse{
+	out := gen.GetHealth200JSONResponse{
 		Status:  gen.HealthStatusServing,
 		Version: info.Version,
 		Zones:   snap.Zones(),
 		Records: snap.Records(),
-	}, nil
+	}
+	if c := s.cluster; c != nil && c.Replicating() {
+		_, stalled := c.Stalled()
+		current := !stalled
+		out.Current = &current
+	}
+	return out, nil
 }

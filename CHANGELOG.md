@@ -44,6 +44,16 @@ public API is unstable and may change without a deprecation period.
   interface stays on the member it was made on. While no member leads, a write
   is refused with 503 and every member goes on answering queries.
 
+#### Observation
+
+- `weg_cluster_behind` is 1 while this member has left its cluster over a
+  change it could not apply. It refuses writes then, answers queries with what
+  it held, and stays so until somebody repairs it.
+
+- `/healthz` on a cluster member carries `current`, which is false in that same
+  state, and `weg health` says so. The status stays `serving`, because the
+  member still answers: taking it out of rotation is the operator's decision.
+
 ### Changed
 
 #### Licence

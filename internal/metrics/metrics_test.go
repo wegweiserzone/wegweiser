@@ -171,6 +171,30 @@ func TestUnderLoadGauge(t *testing.T) {
 	}
 }
 
+// D29: a member that has left its cluster says so for whoever is watching.
+func TestClusterBehindGauge(t *testing.T) {
+	t.Parallel()
+
+	m := New()
+	if got := m.clusterBehind(); got != 0 {
+		t.Errorf("cluster_behind = %v on a server in no cluster, want 0", got)
+	}
+
+	stalled := false
+	m.SetStallSource(func() bool { return stalled })
+	if got := m.clusterBehind(); got != 0 {
+		t.Errorf("cluster_behind = %v on a member that keeps up, want 0", got)
+	}
+	stalled = true
+	var buf bytes.Buffer
+	if _, err := m.WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo: %v", err)
+	}
+	if !strings.Contains(buf.String(), "weg_cluster_behind 1") {
+		t.Error("the scrape does not say the member has left its cluster")
+	}
+}
+
 func TestWriteTo(t *testing.T) {
 	t.Parallel()
 

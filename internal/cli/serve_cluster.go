@@ -13,6 +13,7 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/cluster"
 	"github.com/wegweiserzone/wegweiser/internal/config"
+	"github.com/wegweiserzone/wegweiser/internal/metrics"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 )
 
@@ -81,7 +82,8 @@ func openClusterPort(ctx context.Context, cfg *config.Cluster, st store.Store, l
 // command line says to.
 func startMember(
 	ctx context.Context, cfg *config.Cluster, port *clusterPort, join joinFlags,
-	st store.Store, applier *apply.Applier, loader cluster.Loader, log *slog.Logger, report func(error),
+	st store.Store, applier *apply.Applier, loader cluster.Loader, met *metrics.Metrics,
+	log *slog.Logger, report func(error),
 ) (*cluster.Node, error) {
 	node, err := cluster.Start(cluster.NodeConfig{
 		ID: port.id, Advertise: cfg.Advertise.Value, Dir: cfg.Dir,
@@ -93,6 +95,7 @@ func startMember(
 		return nil, err
 	}
 	port.repl.Bind(node)
+	met.SetStallSource(func() bool { _, stalled := node.Stalled(); return stalled })
 
 	switch {
 	case join.addr == "":
