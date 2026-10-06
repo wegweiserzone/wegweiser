@@ -204,7 +204,9 @@ func (f *fsm) StoreConfiguration(index uint64, _ raft.Configuration) {
 	if _, ok := f.stalledAt(); ok {
 		return
 	}
-	if err := f.applier.ApplyBatchAt(f.ctx, &apply.Batch{}, apply.Index(index)); err != nil {
+	// A member shutting down is not failing, and Raft replays the entry the
+	// next time it starts.
+	if err := f.applier.ApplyBatchAt(f.ctx, &apply.Batch{}, apply.Index(index)); err != nil && f.ctx.Err() == nil {
 		f.report(fmt.Errorf("cluster: record configuration entry %d as applied: %w", index, err))
 	}
 }
