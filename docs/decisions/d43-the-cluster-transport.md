@@ -2,7 +2,7 @@
 
 - Decided: 2026-09-10
 - Amends: [D24](d24-what-the-cluster-replicates.md)
-- Amended by: [D44](d44-starting-and-joining.md)
+- Amended by: [D44](d44-starting-and-joining.md), [D47](d47-status-asks-every-member.md)
 
 ## Context
 
