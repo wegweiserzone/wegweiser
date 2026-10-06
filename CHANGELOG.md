@@ -35,8 +35,9 @@ public API is unstable and may change without a deprecation period.
   leads, and how far each has got through the log. The server asked asks every
   other member as it answers, and one that does not answer within a couple of
   seconds is listed as not reached, with the reason. A member that has left the
-  cluster over a change it could not apply says where it stopped and why. The API offers the same as `GET /cluster`, which answers
-  404 on a server without a cluster section.
+  cluster over a change it could not apply says where it stopped and why. The
+  API offers the same as `GET /cluster`, which answers 404 on a server without
+  a cluster section.
 
 - A write can be sent to any member. One that is not leading hands it to the
   leader over the cluster port and answers with what the leader answered, so a
@@ -52,25 +53,27 @@ public API is unstable and may change without a deprecation period.
   only voter cannot be removed. The API offers the same as
   `DELETE /cluster/members/{memberId}`.
 
-- A cluster takes witnesses: voters that keep the log and answer no queries,
-  for two servers that want a third vote without a third copy of the data. The
-  witness is a program of its own, `wegwitness`. It is known by an identifier
-  beginning `witness-`, which a server holding data refuses for itself.
-  Witnesses are kept fewer than half of the voters, on joining and on removal.
-  While one leads, for the moment it takes to hand leadership to a server, a
-  write is refused with 503. `weg cluster status` and the Cluster page name a
-  witness as one.
-
 - A member that has been taken out goes on answering queries with what it
   held and refuses writes with 503. `weg cluster status` on it says so, and
   how to join it again or run it on its own.
 
+- A cluster takes witnesses: voters that keep the log and answer no queries,
+  for two servers that want a third vote without a third copy of the data. The
+  witness is a program of its own,
+  [wegwitness](https://github.com/wegweiserzone/wegwitness). It is known by an
+  identifier beginning `witness-`, which a server holding data refuses for
+  itself. Witnesses are kept fewer than half of the voters, on joining and on
+  removal. While one leads, for the moment it takes to hand leadership to a
+  server, a write is refused with 503. `weg cluster status` and the Cluster
+  page name a witness as one.
+
 #### Web interface
 
 - A Cluster page lists the members with the role each holds, which one leads,
-  and how far each has got, the same way `weg cluster status` does. A server in no
-  cluster yet offers to start one, and then shows the line another server joins
-  it with. A server without a cluster section says what that section needs.
+  and how far each has got, the same way `weg cluster status` does. A server in
+  no cluster yet offers to start one, and then shows the line another server
+  joins it with. A server without a cluster section says what that section
+  needs.
 
 - A member that has left its cluster says so in the rail, on every page, where
   the version is otherwise shown.
