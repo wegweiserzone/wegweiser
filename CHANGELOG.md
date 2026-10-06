@@ -65,6 +65,11 @@ public API is unstable and may change without a deprecation period.
 - A member that has left its cluster says so in the rail, on every page, where
   the version is otherwise shown.
 
+- The Cluster page takes a member out from its row, and a server leaves from
+  its own. A voter's removal comes with a warning about the majority. A server
+  that has been taken out says so, and how to join it again or run it on its
+  own.
+
 #### Observation
 
 - `weg_cluster_behind` is 1 while this member has left its cluster, over a

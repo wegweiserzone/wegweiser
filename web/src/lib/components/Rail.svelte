@@ -86,11 +86,12 @@
       <!--
         A member that has left its cluster still serves, so the version line is
         where it says so: everywhere, rather than only on the page that explains
-        it (docs/decisions/d29-a-node-that-cannot-apply.md).
+        it (docs/decisions/d29-a-node-that-cannot-apply.md,
+        docs/decisions/d46-a-member-that-has-left.md).
       -->
       {#if health?.current === false}
         <a href="/cluster" class="num mt-0.5 block truncate text-[10px] text-crit">
-          behind its cluster
+          left its cluster
         </a>
       {:else}
         <p class="num mt-0.5 truncate text-[10px] text-ink-faint">

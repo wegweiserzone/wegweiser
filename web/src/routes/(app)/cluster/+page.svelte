@@ -37,6 +37,14 @@
   let started = $state<ClusterMember | null>(null);
   let copied = $state(false);
 
+  /** removing is the member a removal is being asked about; itself, to leave. */
+  let removing = $state<Member | null>(null);
+  let refused = $state<string | null>(null);
+
+  const leaving = $derived(removing !== null && removing.id === status?.self.id);
+  /** out is a server that no longer takes part, either way it got there. */
+  const out = $derived(Boolean(status?.behind || status?.removed));
+
   const administers = $derived(session.can("admin"));
   const joinLine = $derived(started ? `weg serve --join ${started.address}` : "");
 
@@ -55,7 +63,7 @@
     { label: "Member" },
     { label: "Address", width: "14rem" },
     { label: "Role", width: "8rem" },
-    { label: "", width: "7rem" },
+    { label: "", width: "9rem" },
   ];
 
   async function load() {
@@ -110,6 +118,22 @@
     copied = false;
   }
 
+  async function remove() {
+    if (!removing) return;
+    busy = true;
+    refused = null;
+    try {
+      await api.delete("/cluster/members/{memberId}", { path: { memberId: removing.id } });
+      removing = null;
+      await load();
+    } catch (err) {
+      refused =
+        err instanceof ApiError ? (err.detail ?? err.title) : "The member was not taken out.";
+    } finally {
+      busy = false;
+    }
+  }
+
   /** where names the place in the log a member stopped at. */
   const where = (entry: number) => (entry === 0 ? "a log snapshot" : `entry ${entry}`);
 
@@ -158,8 +182,18 @@
         It stopped at {where(status.behind.entry)},
         <span title={exact(status.behind.since)}>{ago(status.behind.since)}</span>, because
         {status.behind.reason}. It answers queries with what it held then and refuses
-        writes. To repair it, remove it from the cluster, discard its database and its Raft
-        directory, and start it again with <code class="num">weg serve --join</code>.
+        writes. To repair it, remove it from the cluster on another member's Cluster page,
+        discard its database and its Raft directory, and start it again with
+        <code class="num">weg serve --join</code>.
+      </Notice>
+    </div>
+  {:else if status && status.removed}
+    <div class="max-w-3xl px-5">
+      <Notice tone="crit" title="This server has left its cluster">
+        It was taken out of the cluster, and answers queries with what it held then and refuses
+        writes. To join it again, discard its database and its Raft directory and start it with
+        <code class="num">weg serve --join</code>. To run it on its own, discard its Raft
+        directory only.
       </Notice>
     </div>
   {:else if status && !status.replicating}
@@ -207,7 +241,7 @@
           </dd>
         </div>
         <div class="self-end">
-          {#if status.behind}
+          {#if out}
             <Chip tone="crit">Left the cluster</Chip>
           {:else if status.applied < status.committed}
             <Chip tone="warn" title="Entries committed and not yet carried out here">
@@ -233,11 +267,29 @@
           <Chip tone="neutral" title={roles[m.role].what}>{roles[m.role].label}</Chip>
         </td>
         <td class="py-1.5 pr-5 pl-3">
-          {#if m.leader}
-            <Chip tone="signal" dot title="Takes every write, whichever member it was sent to">
-              Leader
-            </Chip>
-          {/if}
+          <div class="flex items-center gap-2">
+            {#if m.leader}
+              <Chip tone="signal" dot title="Takes every write, whichever member it was sent to">
+                Leader
+              </Chip>
+            {/if}
+            {#if administers && !out}
+              <button
+                type="button"
+                onclick={() => ((removing = m), (refused = null))}
+                aria-label={m.id === status?.self.id ? "Leave the cluster" : `Remove ${m.id}`}
+                title={m.id === status?.self.id ? "Leave the cluster" : "Take it out of the cluster"}
+                class="ml-auto grid size-6 cursor-pointer place-items-center rounded-xs text-ink-faint
+                       opacity-0 transition-opacity group-hover:opacity-100 hover:bg-crit-lo
+                       hover:text-crit focus-visible:opacity-100"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-3.5">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="m6 6 12 12" stroke-linecap="round" />
+                </svg>
+              </button>
+            {/if}
+          </div>
         </td>
       {/snippet}
 
@@ -250,8 +302,13 @@
     </Table>
 
     <p class="max-w-3xl px-5 text-[12px] text-ink-faint">
-      Every member answers queries, and any of them takes a write and hands it to the leader.
-      How far the others have got is theirs to say: open this page on each of them.
+      {#if status.removed}
+        These are the members as this server last knew them. Open this page on one of them to
+        see the cluster as it is now.
+      {:else}
+        Every member answers queries, and any of them takes a write and hands it to the leader.
+        How far the others have got is theirs to say: open this page on each of them.
+      {/if}
     </p>
   {/if}
 </div>
@@ -290,5 +347,53 @@
         {busy ? "Starting…" : "Start the cluster"}
       </Button>
     {/if}
+  {/snippet}
+</Dialog>
+
+<Dialog
+  open={removing !== null}
+  onclose={() => (removing = null)}
+  title={leaving ? "Leave the cluster" : `Remove ${removing?.id ?? ""}`}
+>
+  {#if leaving}
+    <p class="text-[13px] text-ink-mute">
+      {removing?.id} stops being a member. It goes on answering queries with what it holds, and
+      refuses writes from then on. Joining it again takes an emptied database; running it on its
+      own takes discarding its Raft directory.
+    </p>
+  {:else}
+    <p class="text-[13px] text-ink-mute">
+      {removing?.id} stops being a member. This is for a member that is off, or has stopped over
+      a change it could not apply. If it is running, it goes on answering queries with what it
+      held and refuses writes.
+    </p>
+    {#if removing?.role === "voter"}
+      <Notice tone="warn" title="Take out a member that is off first">
+        Removing a running voter while another voter is off can leave the rest without a
+        majority, and then the cluster takes no writes at all.
+      </Notice>
+    {/if}
+  {/if}
+
+  {#if refused}
+    <p
+      class="rounded-sm border border-line border-l-2 border-l-crit bg-raised px-3 py-2
+             text-[13px] text-ink-mute"
+      role="alert"
+    >
+      {refused}
+    </p>
+  {/if}
+
+  {#snippet actions()}
+    <Button weight="quiet" onclick={() => (removing = null)}>Cancel</Button>
+    <Button
+      weight="primary"
+      onclick={remove}
+      disabled={busy}
+      class="border-crit bg-crit text-ground hover:border-crit hover:bg-crit"
+    >
+      {busy ? "Taking it out…" : leaving ? "Leave" : "Remove it"}
+    </Button>
   {/snippet}
 </Dialog>
