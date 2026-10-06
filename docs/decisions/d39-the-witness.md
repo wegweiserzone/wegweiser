@@ -1,6 +1,7 @@
 # D39 — A witness is a voter that keeps the log and applies none of it
 
 - Decided: 2026-09-10
+- Amended by: [D48](d48-a-witness-is-known-by-its-identifier.md)
 
 ## Context
 

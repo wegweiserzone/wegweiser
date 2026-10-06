@@ -2,7 +2,7 @@
 
 - Decided: 2026-09-11
 - Amends: [D43](d43-the-cluster-transport.md)
-- Amended by: [D46](d46-a-member-that-has-left.md)
+- Amended by: [D46](d46-a-member-that-has-left.md), [D48](d48-a-witness-is-known-by-its-identifier.md)
 
 ## Context
 
