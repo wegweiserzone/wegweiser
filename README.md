@@ -38,7 +38,8 @@ yourself.
 
 Also here: authoritative UDP and TCP with EDNS0, DNS cookies, zonefile import and export,
 outbound zone transfer to the secondaries you name, signed with TSIG and announced with
-NOTIFY, SQLite persistence, token authentication, Prometheus metrics. Single node.
+NOTIFY, SQLite persistence, token authentication, Prometheus metrics. One server, or a
+few of them as a cluster that keeps itself in step without a database beside it.
 
 ## What it does not do
 
@@ -130,6 +131,28 @@ in the database and is reachable through the API.
 The API listens on loopback by default, because it can change every zone this server answers
 for. Putting TLS and a reverse proxy in front of it is the intended way to expose it. A
 sandboxed systemd unit is in [packaging/systemd](packaging/systemd/wegweiser.service).
+
+### Running a cluster
+
+A cluster is three or more servers holding the same zones, each answering queries from its
+own copy, with every change going through one log. Two servers make no honest cluster, and
+in a large one only three or five of them vote; [D25](docs/decisions/d25-cluster-shape.md)
+says why, and what to run instead.
+
+Each member's configuration file needs a `cluster` section, with the same secret on every
+one; the [example configuration](docs/wegweiser.example.yaml) describes it. One server
+starts the cluster, and every other one joins from its first start, with an empty database:
+
+```console
+$ weg cluster init                               # on the first server, once
+$ weg serve --join 192.0.2.1:8054                # on each of the others
+$ weg cluster status                             # who the members are, and who leads
+```
+
+A write can be sent to any member, and reaches the one leading. `weg cluster leave` takes a
+member out, and `weg cluster remove` takes out one that is off. A member that has left goes
+on answering what it held; [D46](docs/decisions/d46-a-member-that-has-left.md) says how it
+comes back.
 
 ## Building
 

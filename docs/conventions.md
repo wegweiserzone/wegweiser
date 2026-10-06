@@ -23,9 +23,8 @@ Four differentiators. Every design decision is checked against them:
    vice versa. Conflicts are surfaced, never silently overwritten.
 2. **Time travel.** Every change is a journal event. IXFR, audit log, diff view and
    rollback to any earlier zone state all derive from that one mechanism.
-3. **Cluster without an external database.** Nodes are to form a cluster themselves: no
-   Postgres, no etcd, no manual primary/secondary wiring. Not built; the scope fence
-   below is where it stands.
+3. **Cluster without an external database.** Nodes form a cluster themselves: no
+   Postgres, no etcd, no manual primary/secondary wiring.
 4. **An interface people enjoy using.** The GUI and the CLI are both designed.
 
 Reference points: Technitium (GUI benchmark), PowerDNS (API benchmark), Knot DNS
@@ -77,7 +76,7 @@ These are not negotiable. A change that requires breaking one needs a discussion
 8. **The database is the source of truth; the snapshot is a derived cache.** A snapshot can
    always be rebuilt from the store. Never the other way around.
 9. **A write is a replicated command.** One resolved batch of record changes is what Raft
-   will carry, and the journal is the history applying it produces. Do not invent a second
+   carries, and the journal is the history applying it produces. Do not invent a second
    write log. See `docs/decisions/d19-journal-as-command-log.md`, corrected on the unit of
    replication by `docs/decisions/d24-what-the-cluster-replicates.md`.
 
@@ -101,7 +100,7 @@ internal/id/        ULID primary keys, assignable before the write that stores t
 internal/apply/     The write path: commands to events, serials, rollback
 internal/publish/   Copies the store into the data plane, at start and after every batch (D41)
 internal/api/       HTTP handlers, OpenAPI, auth
-internal/cluster/   Transport (D43), the Raft node and membership; health not built
+internal/cluster/   Transport (D43), the Raft node, membership and its status
 internal/tui/       Bubble Tea views                  (not built)
 web/                SvelteKit sources (build output lands in internal/api/dist)
 scripts/            Development helpers, not shipped; `make demo` is the one
@@ -140,9 +139,11 @@ SQLite persistence with journal; DNS cookies, with a query carrying none refused
 server is under load ([D35](decisions/d35-cookieless-under-load.md),
 [D38](decisions/d38-under-load-is-what-the-kernel-says.md)); REST API with token auth;
 CLI core commands; GUI with zone overview, record editor and live query stream; Prometheus
-metrics and `/healthz`; single node.
+metrics and `/healthz`; a single node, or a cluster of them kept in step through Raft, in
+the shape [D25](decisions/d25-cluster-shape.md) gives it, with a write sent to any member
+reaching the leader ([D40](decisions/d40-a-write-reaches-the-leader.md)).
 
-**Explicitly out:** DNSSEC, Raft cluster, DoT/DoH/DoQ, Postgres backend, views and
+**Explicitly out:** DNSSEC, DoT/DoH/DoQ, Postgres backend, views and
 split-horizon, `weg tui`.
 
 Do not build any of it early. Keep the seams so it fits later without a rewrite, especially
@@ -182,7 +183,7 @@ and the order is roughly what each costs against what it buys.
 
 | | Seam it uses |
 | --- | --- |
-| Clustering | The write path, which D19 shaped as a state machine for this. D24 says what travels between nodes, D25 how many nodes there are. Three to seven voters; below three, zone transfer is the honest answer. |
+| A witness | The join stream, whose role field is where a witness says it is one. [D39](decisions/d39-the-witness.md) says what it is; it is a program of its own, `wegwitness`, in another repository. |
 | PostgreSQL | The `Store` interface, which is why persistence is an interface at all. |
 | User accounts, and LDAP or AD behind them | D5 left the door open: the schema does not preclude users, and `sessionStore` is the seam. Tokens stay, because a program should not need an account. |
 | DNSSEC | Nothing yet. Signing touches the write path, the snapshot and the query path at once. |
