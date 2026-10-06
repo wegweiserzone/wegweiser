@@ -775,9 +775,11 @@ export interface paths {
         /**
          * Say who the members are, and how far this one has got
          * @description The members as this node's copy of the cluster's configuration lists
-         *     them, which of them leads, and how far this node has got through the
-         *     log. How far the others have got is theirs to say: ask each of them
-         *     (docs/decisions/d42-membership-lives-in-the-log.md).
+         *     them, which of them leads, and how far each has got through the log.
+         *     This node asks every other member for that as it answers, and one
+         *     that does not answer within a couple of seconds is listed as not
+         *     reached (docs/decisions/d47-status-asks-every-member.md). Asked over
+         *     the cluster port, a member answers for itself only.
          *
          *     A node that has left the cluster over an entry it could not apply says
          *     where it stopped and why, and goes on answering queries with what it
@@ -1668,6 +1670,11 @@ export interface components {
              */
             members: components["schemas"]["ClusterMemberState"][];
         };
+        /**
+         * @description One member, and how far it has got. `progress` is present for a member
+         *     that answered, and `trouble` for one that was asked and did not; a
+         *     member answering over the cluster port asks nobody, and has neither.
+         */
         ClusterMemberState: {
             /** @example ns1 */
             id: string;
@@ -1681,6 +1688,25 @@ export interface components {
              */
             role: "voter" | "nonvoter";
             leader: boolean;
+            progress?: components["schemas"]["ClusterProgress"];
+            /** @description Why the member could not be asked, or what it answered instead. */
+            trouble?: string;
+        };
+        /** @description How far one member has got, as it said itself just now. */
+        ClusterProgress: {
+            /**
+             * Format: int64
+             * @description The last entry of the log the member has carried out.
+             */
+            applied: number;
+            /**
+             * Format: int64
+             * @description The last entry the member knows to be committed.
+             */
+            committed: number;
+            /** @description True once the member has been taken out of the cluster. */
+            removed: boolean;
+            behind?: components["schemas"]["ClusterStall"];
         };
         /**
          * @description Where this node stopped applying the log, present only when it has.

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -218,5 +219,60 @@ func TestRemoveClusterMember(t *testing.T) {
 	single := newHarness(t)
 	if resp := single.do(http.MethodDelete, "/cluster/members/ns2", nil); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("removing a member of no cluster is %d, want 404", resp.StatusCode)
+	}
+}
+
+// D47: the member asked asks every other one how far it has got, and says
+// which it could not reach. Asked over the cluster port, a member asks nobody.
+func TestTheStatusAsksEveryMember(t *testing.T) {
+	t.Parallel()
+	leader := newLeading(t)
+	f := newHarness(t, func(cfg *Config) {
+		cfg.Cluster = &follower{leader: leader.port, members: []cluster.MemberState{
+			{ID: "ns1", Address: leader.port, Role: cluster.RoleVoter, Leader: true},
+			{ID: "ns2", Address: "192.0.2.2:8054", Role: cluster.RoleVoter},
+			{ID: "ns3", Address: unreachableAddr(t), Role: cluster.RoleNonvoter},
+		}}
+	})
+
+	var got gen.ClusterStatus
+	f.decode(f.do(http.MethodGet, "/cluster", nil), http.StatusOK, &got)
+	by := map[string]gen.ClusterMemberState{}
+	for _, m := range got.Members {
+		by[m.Id] = m
+	}
+	if p := by["ns1"].Progress; p == nil || p.Applied != 3 || p.Committed != 3 {
+		t.Errorf("ns1 = %+v, want it asked and at entry 3", by["ns1"])
+	}
+	if by["ns2"].Progress == nil {
+		t.Errorf("ns2 = %+v, want this member's own progress", by["ns2"])
+	}
+	if m := by["ns3"]; m.Progress != nil || m.Trouble == nil {
+		t.Errorf("ns3 = %+v, want it not reached, and why", m)
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		"http://"+leader.port+basePath+"/cluster", http.NoBody)
+	if err != nil {
+		t.Fatalf("build the request: %v", err)
+	}
+	identity, err := forwardedAs(&subject{name: "ns2's caller", scopes: []Scope{ScopeRead}})
+	if err != nil {
+		t.Fatalf("encode who asks: %v", err)
+	}
+	req.Header.Set(forwardedHeader, identity)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("ask the leader over its cluster port: %v", err)
+	}
+	defer resp.Body.Close()
+	var own gen.ClusterStatus
+	if err := json.NewDecoder(resp.Body).Decode(&own); err != nil {
+		t.Fatalf("read the leader's answer: %v", err)
+	}
+	for _, m := range own.Members {
+		if m.Progress != nil || m.Trouble != nil {
+			t.Errorf("asked over the cluster port, the leader went on to ask %s: %+v", m.Id, m)
+		}
 	}
 }

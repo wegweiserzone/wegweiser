@@ -2,16 +2,22 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/cluster"
 )
 
 // GetCluster says who the members are, as this node knows them, and how far
-// it has got itself (docs/decisions/d42-membership-lives-in-the-log.md).
+// each has got (docs/decisions/d42-membership-lives-in-the-log.md). The
+// others are asked as it answers, unless another member is the one asking
+// (docs/decisions/d47-status-asks-every-member.md).
 func (s *Server) GetCluster(
 	ctx context.Context, _ gen.GetClusterRequestObject,
 ) (gen.GetClusterResponseObject, error) {
@@ -41,7 +47,76 @@ func (s *Server) GetCluster(
 			Entry: logIndex(st.Stall.Entry), Reason: st.Stall.Reason.Error(), Since: st.Stall.At,
 		}
 	}
+	if ctx.Value(viaClusterPort{}) == nil {
+		s.askMembers(ctx, out.Members, gen.ClusterStatus(out))
+	}
 	return out, nil
+}
+
+// memberWait bounds how long a status waits for another member to answer.
+const memberWait = 2 * time.Second
+
+// askMembers fills in how far each member has got: this one from what it
+// knows itself, every other one from what it answers over the cluster port,
+// all of them at once.
+func (s *Server) askMembers(ctx context.Context, members []gen.ClusterMemberState, self gen.ClusterStatus) {
+	identity, err := forwardedAs(subjectOf(ctx))
+	if err != nil {
+		s.report(err)
+		return
+	}
+	client := &http.Client{Transport: s.forwardTransport, Timeout: memberWait}
+	var wg sync.WaitGroup
+	for i := range members {
+		m := &members[i]
+		if m.Id == self.Self.Id {
+			m.Progress = progressOf(self)
+			continue
+		}
+		wg.Go(func() {
+			got, aerr := askMember(ctx, client, m.Address, identity)
+			if aerr != nil {
+				trouble := aerr.Error()
+				m.Trouble = &trouble
+				return
+			}
+			m.Progress = progressOf(got)
+		})
+	}
+	wg.Wait()
+}
+
+// askMember asks the member at addr for its own status.
+func askMember(ctx context.Context, client *http.Client, addr, identity string) (gen.ClusterStatus, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+basePath+"/cluster", http.NoBody)
+	if err != nil {
+		return gen.ClusterStatus{}, err
+	}
+	req.Header.Set(forwardedHeader, identity)
+	resp, err := client.Do(req)
+	if err != nil {
+		return gen.ClusterStatus{}, fmt.Errorf("not reached in %s: %w", memberWait, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var problem gen.Problem
+		if derr := json.NewDecoder(resp.Body).Decode(&problem); derr != nil || problem.Detail == nil {
+			return gen.ClusterStatus{}, fmt.Errorf("it answered %s", resp.Status)
+		}
+		return gen.ClusterStatus{}, errors.New(*problem.Detail)
+	}
+	var st gen.ClusterStatus
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+		return gen.ClusterStatus{}, fmt.Errorf("its answer could not be read: %w", err)
+	}
+	return st, nil
+}
+
+func progressOf(st gen.ClusterStatus) *gen.ClusterProgress {
+	return &gen.ClusterProgress{
+		Applied: st.Applied, Committed: st.Committed, Removed: st.Removed, Behind: st.Behind,
+	}
 }
 
 // noClusterSection is a cluster endpoint asked of a single server.

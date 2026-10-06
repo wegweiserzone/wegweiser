@@ -31,10 +31,11 @@ public API is unstable and may change without a deprecation period.
   It needs the admin scope, is done once, and is refused on a server without a
   cluster section. The API offers the same as `POST /cluster/init`.
 
-- `weg cluster status` lists the members with the role each holds and which
-  one leads, and says how far the server asked has got through the log. A
-  member that has left the cluster over a change it could not apply says where
-  it stopped and why. The API offers the same as `GET /cluster`, which answers
+- `weg cluster status` lists the members with the role each holds, which one
+  leads, and how far each has got through the log. The server asked asks every
+  other member as it answers, and one that does not answer within a couple of
+  seconds is listed as not reached, with the reason. A member that has left the
+  cluster over a change it could not apply says where it stopped and why. The API offers the same as `GET /cluster`, which answers
   404 on a server without a cluster section.
 
 - A write can be sent to any member. One that is not leading hands it to the
@@ -57,8 +58,8 @@ public API is unstable and may change without a deprecation period.
 
 #### Web interface
 
-- A Cluster page lists the members with the role each holds and which one
-  leads, and says how far the server it is served by has got. A server in no
+- A Cluster page lists the members with the role each holds, which one leads,
+  and how far each has got, the same way `weg cluster status` does. A server in no
   cluster yet offers to start one, and then shows the line another server joins
   it with. A server without a cluster section says what that section needs.
 

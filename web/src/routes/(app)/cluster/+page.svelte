@@ -2,10 +2,11 @@
   /**
    * The servers this one keeps its zones in step with.
    *
-   * What a server knows is its own copy of the cluster's configuration and how
-   * far it has got itself. How far the others have got is theirs to say, so
-   * this page is about the server it is served by, and says so
-   * (docs/decisions/d42-membership-lives-in-the-log.md).
+   * What a server knows is its own copy of the cluster's configuration, so this
+   * page is about the server it is served by, and says so
+   * (docs/decisions/d42-membership-lives-in-the-log.md). How far the others have
+   * got, that server asks them as it answers
+   * (docs/decisions/d47-status-asks-every-member.md).
    */
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { ClusterMember, ClusterStatus } from "$lib/api";
@@ -63,8 +64,33 @@
     { label: "Member" },
     { label: "Address", width: "14rem" },
     { label: "Role", width: "8rem" },
+    { label: "Log", width: "9rem" },
     { label: "", width: "9rem" },
   ];
+
+  /** furthest is the last commit any member reported, the leader's when it answered. */
+  const furthest = $derived(
+    Math.max(
+      status?.committed ?? 0,
+      ...(status?.members ?? []).map((m) => m.progress?.committed ?? 0),
+    ),
+  );
+
+  /** log says how far one member has got, against the furthest commit. */
+  function log(m: Member): { label: string; tone: "ok" | "warn" | "crit"; title?: string } {
+    const p = m.progress;
+    if (!p) return { label: "Not reached", tone: "warn", title: m.trouble };
+    if (p.behind) {
+      return {
+        label: "Stopped",
+        tone: "crit",
+        title: `At ${where(p.behind.entry)}, because ${p.behind.reason}`,
+      };
+    }
+    if (p.removed) return { label: "Left", tone: "crit" };
+    if (p.applied < furthest) return { label: `${furthest - p.applied} behind`, tone: "warn" };
+    return { label: "Current", tone: "ok" };
+  }
 
   async function load() {
     loading = true;
@@ -256,6 +282,7 @@
 
     <Table {columns} items={status.members} key={(m) => m.id}>
       {#snippet row(m: Member)}
+        {@const shown = log(m)}
         <td class="py-1.5 pr-3 pl-5 whitespace-nowrap">
           {m.id}
           {#if m.id === status?.self.id}
@@ -265,6 +292,9 @@
         <td class="num px-3 py-1.5 text-ink-mute">{m.address}</td>
         <td class="px-3 py-1.5">
           <Chip tone="neutral" title={roles[m.role].what}>{roles[m.role].label}</Chip>
+        </td>
+        <td class="px-3 py-1.5">
+          <Chip tone={shown.tone} dot={shown.tone === "ok"} title={shown.title}>{shown.label}</Chip>
         </td>
         <td class="py-1.5 pr-5 pl-3">
           <div class="flex items-center gap-2">
@@ -307,7 +337,9 @@
         see the cluster as it is now.
       {:else}
         Every member answers queries, and any of them takes a write and hands it to the leader.
-        How far the others have got is theirs to say: open this page on each of them.
+        How far each has got is what it said when this page asked. One that did not answer
+        within a couple of seconds is shown as not reached: from here, a server that is off
+        and one that cannot be reached look the same.
       {/if}
     </p>
   {/if}

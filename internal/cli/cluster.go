@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -90,14 +91,14 @@ func newClusterStatusCommand(opts *options, f *clientFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:     "status",
 		Aliases: []string{"show", "members"},
-		Short:   "Say who the members are, and how far this server has got",
+		Short:   "Say who the members are, and how far each has got",
 		Long: "List the members as the server's copy of the cluster's configuration has\n" +
-			"them, with the role each holds and which one leads, and say how far the\n" +
-			"server itself has got through the log.\n\n" +
-			"How far the others have got is theirs to say: ask each of them with\n" +
-			"--server. A member that has left the cluster over an entry it could not\n" +
-			"apply says where it stopped and why\n" +
-			"(docs/decisions/d29-a-node-that-cannot-apply.md).",
+			"them, with the role each holds, which one leads, and how far each has got\n" +
+			"through the log. The server asks every other member as it answers, and one\n" +
+			"that does not answer within a couple of seconds is listed as not reached\n" +
+			"(docs/decisions/d47-status-asks-every-member.md).\n\n" +
+			"A member that has left the cluster over an entry it could not apply says\n" +
+			"where it stopped and why (docs/decisions/d29-a-node-that-cannot-apply.md).",
 		Args:    usageArgs(cobra.NoArgs),
 		Example: "  weg cluster status\n  weg cluster status --server http://10.0.0.6:8053 --output json",
 
@@ -157,7 +158,15 @@ func printClusterStatus(w io.Writer, p *output.Printer, st *gen.ClusterStatus) e
 		return err
 	}
 
-	t := newTable(w, "MEMBER", "ADDRESS", "ROLE", "")
+	furthest := st.Committed
+	for _, m := range st.Members {
+		if m.Progress != nil {
+			furthest = max(furthest, m.Progress.Committed)
+		}
+	}
+
+	t := newTable(w, "MEMBER", "ADDRESS", "ROLE", "LOG", "")
+	var trouble []string
 	for _, m := range st.Members {
 		lead := ""
 		if m.Leader {
@@ -167,9 +176,35 @@ func printClusterStatus(w io.Writer, p *output.Printer, st *gen.ClusterStatus) e
 		if m.Id == st.Self.Id {
 			name += " (this one)"
 		}
-		t.row(name, m.Address, string(m.Role), lead)
+		if m.Trouble != nil {
+			trouble = append(trouble, fmt.Sprintf("%s: %s\n", m.Id, *m.Trouble))
+		}
+		t.row(name, m.Address, string(m.Role), progress(p, m.Progress, furthest), lead)
 	}
-	return t.flush()
+	if err := t.flush(); err != nil {
+		return err
+	}
+	if len(trouble) > 0 {
+		_, err := fmt.Fprintf(w, "\n%s", strings.Join(trouble, ""))
+		return err
+	}
+	return nil
+}
+
+// progress says how far a member has got, measured against the furthest
+// commit any member reported (docs/decisions/d47-status-asks-every-member.md).
+func progress(p *output.Printer, g *gen.ClusterProgress, furthest int64) string {
+	switch {
+	case g == nil:
+		return p.Paint(output.ColorYellow, "not reached")
+	case g.Behind != nil:
+		return p.Paint(output.ColorRed, fmt.Sprintf("stopped at %d", g.Behind.Entry))
+	case g.Removed:
+		return p.Paint(output.ColorRed, "left")
+	case g.Applied < furthest:
+		return p.Paint(output.ColorYellow, fmt.Sprintf("%d behind", furthest-g.Applied))
+	}
+	return p.Paint(output.ColorGreen, "current")
 }
 
 // afterLeaving is what becomes of a member taken out of its cluster, and the

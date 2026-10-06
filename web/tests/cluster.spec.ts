@@ -27,10 +27,23 @@ test("a single server says what a cluster would take", async ({ page, server }) 
 
 /** asMember answers for the cluster as ns1 would, leading ns2 and ns3. */
 async function asMember(page: Page, opts: { removed?: boolean } = {}) {
+  const at = (applied: number) => ({ applied, committed: 12, removed: false });
   const members = [
-    { id: "ns1", address: "192.0.2.1:8054", role: "voter", leader: !opts.removed },
-    { id: "ns2", address: "192.0.2.2:8054", role: "voter", leader: false },
-    { id: "ns3", address: "192.0.2.3:8054", role: "nonvoter", leader: false },
+    {
+      id: "ns1",
+      address: "192.0.2.1:8054",
+      role: "voter",
+      leader: !opts.removed,
+      progress: at(12),
+    },
+    { id: "ns2", address: "192.0.2.2:8054", role: "voter", leader: false, progress: at(9) },
+    {
+      id: "ns3",
+      address: "192.0.2.3:8054",
+      role: "nonvoter",
+      leader: false,
+      trouble: "not reached in 2s",
+    },
   ].filter((m) => !(opts.removed && m.id === "ns1"));
   const removed: string[] = [];
 
@@ -52,6 +65,17 @@ async function asMember(page: Page, opts: { removed?: boolean } = {}) {
   });
   return removed;
 }
+
+// D47: how far each member has got, as it said when the page asked.
+test("each member says how far it has got", async ({ page, server }) => {
+  await asMember(page);
+  await signIn(page, server);
+  await page.getByRole("link", { name: "Cluster" }).click();
+
+  await expect(page.getByRole("row", { name: /ns1/ })).toContainText("Current");
+  await expect(page.getByRole("row", { name: /ns2/ })).toContainText("3 behind");
+  await expect(page.getByRole("row", { name: /ns3/ })).toContainText("Not reached");
+});
 
 test("a member is taken out of the cluster from its row", async ({ page, server }) => {
   const removed = await asMember(page);

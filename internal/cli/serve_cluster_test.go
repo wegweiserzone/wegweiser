@@ -200,6 +200,12 @@ func TestTwoServersBecomeACluster(t *testing.T) {
 			if len(st.Members) != 2 || len(leaders) != 1 || !leaders[advertiseA] {
 				t.Errorf("%s lists %+v, want two members with the founder leading", s.APIAddress, st.Members)
 			}
+			// D47: the member asked asks the other how far it has got.
+			for _, m := range st.Members {
+				if m.Progress == nil || m.Progress.Applied == 0 {
+					t.Errorf("%s says of %s: %+v, want how far it has got", s.APIAddress, m.Id, m)
+				}
+			}
 		}
 
 		var stdout, stderr syncBuffer
@@ -208,7 +214,7 @@ func TestTwoServersBecomeACluster(t *testing.T) {
 		}, &stdout, &stderr); code != ExitOK {
 			t.Fatalf("cluster status: exit code %d; stderr: %s", code, stderr.String())
 		}
-		for _, want := range []string{"(this one)", "leader", "voter", advertiseB} {
+		for _, want := range []string{"(this one)", "leader", "voter", "current", advertiseB} {
 			if !strings.Contains(stdout.String(), want) {
 				t.Errorf("the status does not say %q:\n%s", want, stdout.String())
 			}

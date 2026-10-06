@@ -56,4 +56,6 @@ A member removed while it was off is in nobody's configuration, so nobody asks i
 
 ## Where this stands
 
-Not built.
+Built as described, behind `GET /cluster`, which `weg cluster status` and the Cluster page
+both read. The wait is two seconds, and a member that is not reached is listed with the
+error that stopped it.

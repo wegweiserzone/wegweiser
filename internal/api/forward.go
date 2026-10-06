@@ -56,6 +56,19 @@ type forwardedSubject struct {
 	Scopes  []Scope `json:"scopes"`
 }
 
+// forwardedAs is the header value that tells another member who a request is
+// made for.
+func forwardedAs(sub *subject) (string, error) {
+	identity, err := json.Marshal(forwardedSubject{
+		TokenID: string(sub.tokenID), Name: sub.name, Scopes: sub.scopes,
+	})
+	return string(identity), err
+}
+
+// viaClusterPort marks a request that another member made, on behalf of its
+// caller. A status asked that way answers for this member only (D47).
+type viaClusterPort struct{}
+
 // route names the route a request matched, the way [writes] lists it.
 func route(r *http.Request) string {
 	pattern := ""
@@ -90,10 +103,7 @@ func (s *Server) forwarding(next http.Handler) http.Handler {
 		}
 		// The authenticator ran before this, and every route that writes
 		// needs a caller.
-		sub := subjectOf(r.Context())
-		identity, err := json.Marshal(forwardedSubject{
-			TokenID: string(sub.tokenID), Name: sub.name, Scopes: sub.scopes,
-		})
+		identity, err := forwardedAs(subjectOf(r.Context()))
 		if err != nil {
 			writeProblem(w, r, internal(err))
 			return
@@ -106,7 +116,7 @@ func (s *Server) forwarding(next http.Handler) http.Handler {
 				pr.Out.URL.Host = leader
 				pr.Out.Header.Del("Authorization")
 				pr.Out.Header.Del("Cookie")
-				pr.Out.Header.Set(forwardedHeader, string(identity))
+				pr.Out.Header.Set(forwardedHeader, identity)
 			},
 			ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 				writeProblem(w, r, &apiError{
@@ -155,7 +165,8 @@ func (s *Server) forwardedIdentity(next http.Handler) http.Handler {
 			writeProblem(w, r, notAllowed(need))
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), subjectKey{}, sub)))
+		ctx := context.WithValue(r.Context(), subjectKey{}, sub)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, viaClusterPort{}, struct{}{})))
 	})
 }
 
