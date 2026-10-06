@@ -53,4 +53,8 @@ and each points at this record rather than at the other's code.
 
 ## Where this stands
 
-Not built.
+Built on both sides. A node with a store refuses a witness's identifier for itself, takes the
+role in the join stream, keeps witnesses fewer than half of the voters on joining and on
+removal, refuses writes while a witness leads, and names a witness in `weg cluster status`.
+`wegwitness` mints its identifier in the form above and hands leadership to the first voter
+without it that takes it.

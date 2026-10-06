@@ -1683,10 +1683,13 @@ export interface components {
             /**
              * @description A voter counts towards quorum and can lead. A non-voter receives
              *     the whole log and answers queries like any member, and is neither
-             *     counted nor waited for (docs/decisions/d25-cluster-shape.md).
+             *     counted nor waited for (docs/decisions/d25-cluster-shape.md). A
+             *     witness votes and keeps the log, answers no queries, and hands
+             *     leadership on when it wins an election
+             *     (docs/decisions/d39-the-witness.md).
              * @enum {string}
              */
-            role: "voter" | "nonvoter";
+            role: "voter" | "nonvoter" | "witness";
             leader: boolean;
             progress?: components["schemas"]["ClusterProgress"];
             /** @description Why the member could not be asked, or what it answered instead. */

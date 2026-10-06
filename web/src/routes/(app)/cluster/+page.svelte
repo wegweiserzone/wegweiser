@@ -58,6 +58,10 @@
       label: "Non-voter",
       what: "Receives the whole log and answers queries like any member, and is neither counted nor waited for.",
     },
+    witness: {
+      label: "Witness",
+      what: "Votes and keeps the log, answers no queries, and hands leadership on when it wins an election.",
+    },
   };
 
   const columns: Column[] = [

@@ -23,6 +23,8 @@ type follower struct {
 	stall   *cluster.Stall
 	removed bool
 	members []cluster.MemberState
+	// leaderID is who leads; empty is ns1.
+	leaderID string
 }
 
 func (f *follower) Init(context.Context) error { return cluster.ErrMember }
@@ -33,9 +35,14 @@ func (f *follower) Status(context.Context) (cluster.Status, error) {
 	return cluster.Status{Stall: f.stall, Removed: f.removed, Members: f.members}, nil
 }
 
-func (f *follower) IsLeader() bool            { return false }
-func (f *follower) Leader() (id, addr string) { return "ns1", f.leader }
-func (f *follower) Remove(string) error       { return cluster.ErrNotLeader }
+func (f *follower) IsLeader() bool { return false }
+func (f *follower) Leader() (id, addr string) {
+	if f.leaderID != "" {
+		return f.leaderID, f.leader
+	}
+	return "ns1", f.leader
+}
+func (f *follower) Remove(string) error { return cluster.ErrNotLeader }
 func (f *follower) Left() error {
 	switch {
 	case f.stall != nil:
@@ -153,6 +160,7 @@ func TestAWriteWithNoLeaderToTakeIt(t *testing.T) {
 			Entry: 7, Reason: errors.New("disk full"), At: time.Now(),
 		}}, "behind"},
 		{"this member has been taken out", &follower{leader: unreachableAddr(t), removed: true}, "has left"},
+		{"a witness leads", &follower{leader: unreachableAddr(t), leaderID: cluster.WitnessPrefix + "w"}, "able to take a write"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

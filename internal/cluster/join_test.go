@@ -104,17 +104,14 @@ func TestANodeCanJoinWithoutAVote(t *testing.T) {
 	holds(t, n, 1)
 }
 
-// The role is where a witness will say it is one (D44). Until the cluster
-// can tell which voters are witnesses, it is refused as a role this build
-// does not know.
 func TestARoleThisBuildDoesNotKnowIsRefused(t *testing.T) {
 	t.Parallel()
 	a := startAlone(t, "a")
 	w := startMember(t, "w")
 
-	err := w.node.Join(t.Context(), a.addr, Role("witness"))
+	err := w.node.Join(t.Context(), a.addr, Role("arbiter"))
 	if err == nil || !strings.Contains(err.Error(), "not a role") {
-		t.Errorf("Join as a witness = %v, want the role refused", err)
+		t.Errorf("Join as an arbiter = %v, want the role refused", err)
 	}
 }
 

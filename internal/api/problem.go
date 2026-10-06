@@ -125,6 +125,9 @@ func asProblem(err error) *apiError {
 			title:  "Not found",
 			detail: "the cluster has no member by that identifier",
 		}
+	case errors.Is(err, cluster.ErrWitnessMajority):
+		return conflict("witnesses have to stay fewer than half of the voters, and this change would " +
+			"leave them at least half (docs/decisions/d39-the-witness.md)")
 	case errors.Is(err, cluster.ErrLastVoter):
 		return conflict("that member is the cluster's only voter, and a cluster needs one. " +
 			"A cluster of one is left by stopping the server and discarding its Raft directory " +

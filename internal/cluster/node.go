@@ -433,6 +433,9 @@ func (n *Node) Remove(id string) error {
 	case voter && voters == 1:
 		return ErrLastVoter
 	}
+	if err := n.keepsWitnessesFew(id, false); err != nil {
+		return err
+	}
 	return n.membership(n.raft.RemoveServer(raft.ServerID(id), 0, membershipTimeout))
 }
 
@@ -547,7 +550,11 @@ func (n *Node) Status(ctx context.Context) (Status, error) {
 	leader, _ := n.Leader()
 	for _, srv := range f.Configuration().Servers {
 		role := RoleNonvoter
-		if srv.Suffrage == raft.Voter {
+		switch {
+		case srv.Suffrage != raft.Voter:
+		case IsWitness(string(srv.ID)):
+			role = RoleWitness
+		default:
 			role = RoleVoter
 		}
 		st.Members = append(st.Members, MemberState{

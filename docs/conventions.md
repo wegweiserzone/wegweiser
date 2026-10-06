@@ -141,7 +141,9 @@ server is under load ([D35](decisions/d35-cookieless-under-load.md),
 CLI core commands; GUI with zone overview, record editor and live query stream; Prometheus
 metrics and `/healthz`; a single node, or a cluster of them kept in step through Raft, in
 the shape [D25](decisions/d25-cluster-shape.md) gives it, with a write sent to any member
-reaching the leader ([D40](decisions/d40-a-write-reaches-the-leader.md)).
+reaching the leader ([D40](decisions/d40-a-write-reaches-the-leader.md)), and a witness
+for two servers that want a third vote ([D39](decisions/d39-the-witness.md)), which is
+`wegwitness` in a repository of its own.
 
 **Explicitly out:** DNSSEC, DoT/DoH/DoQ, Postgres backend, views and
 split-horizon, `weg tui`.
@@ -183,7 +185,6 @@ and the order is roughly what each costs against what it buys.
 
 | | Seam it uses |
 | --- | --- |
-| A witness | The join stream, whose role field is where a witness says it is one. [D39](decisions/d39-the-witness.md) says what it is; it is a program of its own, `wegwitness`, in another repository. |
 | PostgreSQL | The `Store` interface, which is why persistence is an interface at all. |
 | User accounts, and LDAP or AD behind them | D5 left the door open: the schema does not preclude users, and `sessionStore` is the seam. Tokens stay, because a program should not need an account. |
 | DNSSEC | Nothing yet. Signing touches the write path, the snapshot and the query path at once. |

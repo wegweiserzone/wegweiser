@@ -17,6 +17,11 @@ import (
 // history onto another's, so a file that disagrees with what the store holds
 // is refused rather than obeyed.
 func Identity(ctx context.Context, st store.Store, configured string) (string, error) {
+	if IsWitness(configured) {
+		return "", fmt.Errorf("cluster: %q begins %q, which is how a witness is named, and this node "+
+			"holds data; name it otherwise (docs/decisions/d48-a-witness-is-known-by-its-identifier.md)",
+			configured, WitnessPrefix)
+	}
 	var member string
 	err := st.Update(ctx, func(tx store.Tx) error {
 		held, err := tx.MemberID(ctx)

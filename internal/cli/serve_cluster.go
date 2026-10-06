@@ -37,8 +37,8 @@ func (j joinFlags) check(cfg *config.Config) error {
 		return errors.New("--join needs a cluster section in the configuration file: " +
 			"the address to advertise and the cluster's secret")
 	case j.role != string(cluster.RoleVoter) && j.role != string(cluster.RoleNonvoter):
-		return fmt.Errorf("--role %q is not a role; a node joins as %s or %s",
-			j.role, cluster.RoleVoter, cluster.RoleNonvoter)
+		return fmt.Errorf("--role %q is not a role; a node joins as %s or %s, and a witness is "+
+			"a program of its own, wegwitness", j.role, cluster.RoleVoter, cluster.RoleNonvoter)
 	}
 	return nil
 }

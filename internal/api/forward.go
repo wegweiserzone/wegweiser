@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/wegweiserzone/wegweiser/internal/cluster"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 )
 
@@ -96,9 +97,15 @@ func (s *Server) forwarding(next http.Handler) http.Handler {
 			writeProblem(w, r, err)
 			return
 		}
-		_, leader := c.Leader()
-		if leader == "" {
+		leaderID, leader := c.Leader()
+		switch {
+		case leader == "":
 			writeProblem(w, r, noLeader())
+			return
+		case cluster.IsWitness(leaderID):
+			// A witness holds no data to plan a write against, and is about
+			// to hand leadership on (D39, D48).
+			writeProblem(w, r, witnessLeads())
 			return
 		}
 		// The authenticator ran before this, and every route that writes
@@ -168,6 +175,19 @@ func (s *Server) forwardedIdentity(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), subjectKey{}, sub)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, viaClusterPort{}, struct{}{})))
 	})
+}
+
+// witnessLeads is a write while a witness leads, for the moment it takes to
+// hand leadership to a member that holds data
+// (docs/decisions/d39-the-witness.md).
+func witnessLeads() *apiError {
+	return &apiError{
+		status: http.StatusServiceUnavailable,
+		kind:   typeUnavailable,
+		title:  "No member able to take a write is leading yet",
+		detail: "a witness is leading the cluster for the moment, and is handing leadership to a member " +
+			"that holds data; try the write again shortly. Every member goes on answering queries",
+	}
 }
 
 // noLeader is a write while no member leads. Queries are answered as before,

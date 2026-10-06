@@ -78,3 +78,13 @@ The two-node arrangement stops being a workaround and becomes a shape the docume
 recommend: two servers answering DNS, one small machine holding the log. D25's ladder is
 unchanged above it, and a witness is available on every rung, always as a minority of the
 voters.
+
+## Where this stands
+
+Built, as `wegwitness` in a repository of its own, with the cluster's half here
+([D48](d48-a-witness-is-known-by-its-identifier.md)). A witness keeps a hundred times Raft's
+default log behind its snapshots, and a node with a store refuses to restore one a witness
+wrote and stops the way D29 describes. `make interop` in that repository runs a witness
+against real servers through the case above: a server that was down while a change was
+committed comes back after its partner has gone, and is brought current and handed
+leadership by the witness.

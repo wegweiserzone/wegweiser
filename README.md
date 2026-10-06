@@ -154,6 +154,11 @@ member out, and `weg cluster remove` takes out one that is off. A member that ha
 on answering what it held; [D46](docs/decisions/d46-a-member-that-has-left.md) says how it
 comes back.
 
+Two servers can have their third vote from a witness instead of a third copy of everything:
+[wegwitness](https://github.com/wegweiserzone/wegwitness) keeps the log, answers nothing, and
+hands leadership to a server whenever it wins an election
+([D39](docs/decisions/d39-the-witness.md)).
+
 ## Building
 
 Needs the Go version in [go.mod](go.mod), or newer. No cgo, no C toolchain.

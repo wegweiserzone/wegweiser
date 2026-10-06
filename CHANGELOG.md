@@ -52,6 +52,15 @@ public API is unstable and may change without a deprecation period.
   only voter cannot be removed. The API offers the same as
   `DELETE /cluster/members/{memberId}`.
 
+- A cluster takes witnesses: voters that keep the log and answer no queries,
+  for two servers that want a third vote without a third copy of the data. The
+  witness is a program of its own, `wegwitness`. It is known by an identifier
+  beginning `witness-`, which a server holding data refuses for itself.
+  Witnesses are kept fewer than half of the voters, on joining and on removal.
+  While one leads, for the moment it takes to hand leadership to a server, a
+  write is refused with 503. `weg cluster status` and the Cluster page name a
+  witness as one.
+
 - A member that has been taken out goes on answering queries with what it
   held and refuses writes with 503. `weg cluster status` on it says so, and
   how to join it again or run it on its own.

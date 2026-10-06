@@ -18,9 +18,12 @@ const (
 	// RoleNonvoter receives the whole log and answers queries like any member,
 	// and neither votes nor is waited for.
 	RoleNonvoter Role = "nonvoter"
+	// RoleWitness votes and keeps the log, and applies none of it
+	// (docs/decisions/d39-the-witness.md). Only wegwitness joins as one.
+	RoleWitness Role = "witness"
 )
 
-func (r Role) valid() bool { return r == RoleVoter || r == RoleNonvoter }
+func (r Role) valid() bool { return r == RoleVoter || r == RoleNonvoter || r == RoleWitness }
 
 // JoinRequest is what a node sends to be made a member
 // (docs/decisions/d44-starting-and-joining.md).
@@ -42,8 +45,12 @@ func (r JoinRequest) check() error {
 	case r.ID == "":
 		return errors.New("cluster: a node asking to join names no identifier")
 	case !r.Role.valid():
-		return fmt.Errorf("cluster: %q is not a role a node can join as; it joins as %s or %s",
-			r.Role, RoleVoter, RoleNonvoter)
+		return fmt.Errorf("cluster: %q is not a role a node can join as; it joins as %s, %s or %s",
+			r.Role, RoleVoter, RoleNonvoter, RoleWitness)
+	case IsWitness(r.ID) != (r.Role == RoleWitness):
+		return fmt.Errorf("cluster: %s asks to join as a %s; a witness joins as one, under an identifier "+
+			"beginning %q, and nothing else does (docs/decisions/d48-a-witness-is-known-by-its-identifier.md)",
+			r.ID, r.Role, WitnessPrefix)
 	}
 	if _, _, err := net.SplitHostPort(r.Address); err != nil {
 		return fmt.Errorf("cluster: a node asking to join has to say where it is reached, as host:port: %w", err)
@@ -230,6 +237,13 @@ func (n *Node) admit(req JoinRequest) joinReply {
 			return joinReply{Leader: addr}
 		}
 		return joinReply{Error: ErrNoLeader.Error()}
+	}
+
+	// A witness that could never be given its vote is not staged either.
+	if req.Role == RoleWitness {
+		if err := n.keepsWitnessesFew(req.ID, true); err != nil {
+			return joinReply{Error: err.Error()}
+		}
 	}
 
 	var err error

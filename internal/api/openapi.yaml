@@ -2221,11 +2221,14 @@ components:
         address: { type: string, example: "192.0.2.1:8054" }
         role:
           type: string
-          enum: [voter, nonvoter]
+          enum: [voter, nonvoter, witness]
           description: |
             A voter counts towards quorum and can lead. A non-voter receives
             the whole log and answers queries like any member, and is neither
-            counted nor waited for (docs/decisions/d25-cluster-shape.md).
+            counted nor waited for (docs/decisions/d25-cluster-shape.md). A
+            witness votes and keeps the log, answers no queries, and hands
+            leadership on when it wins an election
+            (docs/decisions/d39-the-witness.md).
         leader: { type: boolean }
         progress: { $ref: "#/components/schemas/ClusterProgress" }
         trouble:
