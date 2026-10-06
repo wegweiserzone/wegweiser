@@ -824,6 +824,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cluster/members/{memberId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The identifier the member is known by. */
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Take a member out of the cluster
+         * @description The member stops being one once the change is committed. Naming the
+         *     member asked is how it leaves, and naming another is how a member that
+         *     is off, or has stopped, is taken out
+         *     (docs/decisions/d44-starting-and-joining.md). Any member can be
+         *     asked; one that does not lead hands the request to the one that does.
+         *
+         *     A member taken out goes on answering queries with what it held, and
+         *     refuses writes until it is joined again or run on its own
+         *     (docs/decisions/d46-a-member-that-has-left.md).
+         *
+         *     A member the cluster does not have is 404. The cluster's only voter
+         *     cannot be removed, and is 409.
+         */
+        delete: operations["removeClusterMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/commits": {
         parameters: {
             query?: never;
@@ -958,11 +992,12 @@ export interface components {
             /** @description Records the query path currently answers from. */
             records: number;
             /**
-             * @description Present on a cluster member. False once it has left its cluster
-             *     over a change it could not apply: it still answers queries, with
-             *     what it held then, which is why this is a field beside `status`
-             *     rather than a reason to answer 503
-             *     (docs/decisions/d29-a-node-that-cannot-apply.md).
+             * @description Present on a cluster member. False once it has left its cluster,
+             *     over a change it could not apply or by being taken out: it still
+             *     answers queries, with what it held then, which is why this is a
+             *     field beside `status` rather than a reason to answer 503
+             *     (docs/decisions/d29-a-node-that-cannot-apply.md,
+             *     docs/decisions/d46-a-member-that-has-left.md).
              */
             current?: boolean;
         };
@@ -1608,6 +1643,13 @@ export interface components {
              */
             replicating: boolean;
             /**
+             * @description True once this node has been taken out of the cluster, by leaving
+             *     or by being removed. It answers queries with what it held and
+             *     refuses writes, and `members` is who it last knew to be in the
+             *     cluster (docs/decisions/d46-a-member-that-has-left.md).
+             */
+            removed: boolean;
+            /**
              * Format: int64
              * @description The last entry of the log this node has carried out.
              */
@@ -1621,8 +1663,8 @@ export interface components {
             behind?: components["schemas"]["ClusterStall"];
             /**
              * @description Every member, as this node's copy of the configuration lists them.
-             *     Empty on a node in no cluster, and on one that has left its
-             *     cluster, which no longer has a copy to read.
+             *     Empty on a node in no cluster, and on one that has stopped over
+             *     an entry it could not apply, which no longer has a copy to read.
              */
             members: components["schemas"]["ClusterMemberState"][];
         };
@@ -2737,6 +2779,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ClusterMember"];
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    removeClusterMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The identifier the member is known by. */
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The member has been taken out. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };

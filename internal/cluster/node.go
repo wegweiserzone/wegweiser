@@ -40,6 +40,23 @@ var ErrNotLeader = errors.New("cluster: this member is not the leader")
 // is started once, by one node (docs/decisions/d44-starting-and-joining.md).
 var ErrMember = errors.New("cluster: this node is a cluster member already")
 
+// ErrRemoved is a member that has been taken out of the cluster, by leaving or
+// by being removed (docs/decisions/d46-a-member-that-has-left.md).
+var ErrRemoved = errors.New("cluster: this member has been taken out of the cluster")
+
+// errRemoved is what a write arriving at such a member is refused with.
+var errRemoved = fmt.Errorf("%w; it answers queries with what it held and refuses writes, "+
+	"so send them to a member. Join it again by discarding its store and its Raft directory "+
+	"and starting it with --join, or run it alone by discarding its Raft directory only "+
+	"(docs/decisions/d46-a-member-that-has-left.md)", ErrRemoved)
+
+// ErrNoMember is a member named for removal that the cluster does not have.
+var ErrNoMember = errors.New("cluster: the cluster has no member by that identifier")
+
+// ErrLastVoter is the removal of the only voter. Raft refuses it too: a
+// cluster without a voter can neither lead nor commit anything again.
+var ErrLastVoter = errors.New("cluster: that member is the cluster's only voter, and a cluster needs one")
+
 // NodeConfig is what a [Node] needs.
 type NodeConfig struct {
 	// ID identifies this member for as long as it is one
@@ -228,6 +245,37 @@ func (n *Node) leave() {
 // Stalled reports whether this member has stopped applying the log, and where.
 func (n *Node) Stalled() (Stall, bool) { return n.machine.stalledAt() }
 
+// Left says why this member no longer takes part in the cluster, and is nil
+// while it does. It stopped over an entry it could not apply
+// (docs/decisions/d29-a-node-that-cannot-apply.md), or it was taken out
+// (docs/decisions/d46-a-member-that-has-left.md). Either way it answers
+// queries with what it held and refuses writes with this error.
+func (n *Node) Left() error {
+	if s, ok := n.Stalled(); ok {
+		return s.Err()
+	}
+	if n.removed() {
+		return errRemoved
+	}
+	return nil
+}
+
+// removed reports whether this member holds Raft state and its own copy of
+// the configuration no longer lists it. A follower is sent the change that
+// removes it; a leader that removes itself stops Raft, and still has the
+// change in its copy.
+func (n *Node) removed() bool {
+	if n.raft.LastIndex() == 0 {
+		return false
+	}
+	for _, srv := range n.raft.GetConfiguration().Configuration().Servers {
+		if srv.ID == n.id {
+			return false
+		}
+	}
+	return true
+}
+
 // electionWait bounds how long [Node.Init] waits for a member alone in its
 // new cluster to elect itself.
 const electionWait = 30 * time.Second
@@ -250,8 +298,8 @@ func (n *Node) Replicating() bool {
 // before anything is planned
 // (docs/decisions/d24-what-the-cluster-replicates.md).
 func (n *Node) Settle(ctx context.Context) error {
-	if s, ok := n.Stalled(); ok {
-		return s.Err()
+	if err := n.Left(); err != nil {
+		return err
 	}
 	timeout := proposeTimeout
 	if deadline, ok := ctx.Deadline(); ok {
@@ -363,14 +411,34 @@ func (n *Node) AddNonvoter(id, addr string) error {
 }
 
 // Remove takes a member out of the cluster. Leaving is an act rather than an
-// absence, and this is the act.
+// absence, and this is the act. A leader may remove itself, and stops taking
+// part once the change is committed
+// (docs/decisions/d46-a-member-that-has-left.md).
 func (n *Node) Remove(id string) error {
+	if err := n.Left(); err != nil {
+		return err
+	}
+	found, voter, voters := false, false, 0
+	for _, srv := range n.raft.GetConfiguration().Configuration().Servers {
+		if srv.Suffrage == raft.Voter {
+			voters++
+		}
+		if string(srv.ID) == id {
+			found, voter = true, srv.Suffrage == raft.Voter
+		}
+	}
+	switch {
+	case !found:
+		return ErrNoMember
+	case voter && voters == 1:
+		return ErrLastVoter
+	}
 	return n.membership(n.raft.RemoveServer(raft.ServerID(id), 0, membershipTimeout))
 }
 
 func (n *Node) membership(f raft.IndexFuture) error {
-	if s, ok := n.Stalled(); ok {
-		return s.Err()
+	if err := n.Left(); err != nil {
+		return err
 	}
 	if err := f.Error(); err != nil {
 		if errors.Is(err, raft.ErrNotLeader) {
@@ -387,8 +455,8 @@ func (n *Node) membership(f raft.IndexFuture) error {
 // A member that has stalled refuses it with an error saying that this member
 // is behind, rather than that the cluster is.
 func (n *Node) Propose(ctx context.Context, b *apply.Batch) error {
-	if s, ok := n.Stalled(); ok {
-		return s.Err()
+	if err := n.Left(); err != nil {
+		return err
 	}
 	if b.Empty() {
 		return nil
@@ -447,6 +515,10 @@ type Status struct {
 	// Stall is where this member stopped, if it has left the cluster over an
 	// entry it could not apply (docs/decisions/d29-a-node-that-cannot-apply.md).
 	Stall *Stall
+	// Removed says this member has been taken out of the cluster. Members is
+	// then who it last knew to be in it
+	// (docs/decisions/d46-a-member-that-has-left.md).
+	Removed bool
 }
 
 // Status reports what this member knows of the cluster and of itself.
@@ -458,7 +530,7 @@ type Status struct {
 // member that has stopped is the exception: Raft went on counting entries it
 // refused, and the store says where it really is.
 func (n *Node) Status(ctx context.Context) (Status, error) {
-	st := Status{Applied: n.raft.AppliedIndex(), Committed: n.raft.CommitIndex()}
+	st := Status{Applied: n.raft.AppliedIndex(), Committed: n.raft.CommitIndex(), Removed: n.removed()}
 	if s, ok := n.Stalled(); ok {
 		held, err := n.machine.store.AppliedIndex(ctx)
 		if err != nil {

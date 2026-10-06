@@ -19,8 +19,9 @@ import (
 // follower stands in for a member that does not lead. It reaches the leader
 // over plain TCP, which is all a test needs of the cluster port.
 type follower struct {
-	leader string
-	stall  *cluster.Stall
+	leader  string
+	stall   *cluster.Stall
+	removed bool
 }
 
 func (f *follower) Init(context.Context) error { return cluster.ErrMember }
@@ -28,16 +29,20 @@ func (f *follower) Member() (id, addr string)  { return "ns2", "192.0.2.2:8054" 
 func (f *follower) Replicating() bool          { return true }
 
 func (f *follower) Status(context.Context) (cluster.Status, error) {
-	return cluster.Status{Stall: f.stall}, nil
+	return cluster.Status{Stall: f.stall, Removed: f.removed}, nil
 }
 
 func (f *follower) IsLeader() bool            { return false }
 func (f *follower) Leader() (id, addr string) { return "ns1", f.leader }
-func (f *follower) Stalled() (cluster.Stall, bool) {
-	if f.stall == nil {
-		return cluster.Stall{}, false
+func (f *follower) Remove(string) error       { return cluster.ErrNotLeader }
+func (f *follower) Left() error {
+	switch {
+	case f.stall != nil:
+		return f.stall.Err()
+	case f.removed:
+		return cluster.ErrRemoved
 	}
-	return *f.stall, true
+	return nil
 }
 
 func (f *follower) DialForward(ctx context.Context, addr string) (net.Conn, error) {
@@ -146,6 +151,7 @@ func TestAWriteWithNoLeaderToTakeIt(t *testing.T) {
 		{"this member has left the cluster", &follower{leader: unreachableAddr(t), stall: &cluster.Stall{
 			Entry: 7, Reason: errors.New("disk full"), At: time.Now(),
 		}}, "behind"},
+		{"this member has been taken out", &follower{leader: unreachableAddr(t), removed: true}, "has left"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

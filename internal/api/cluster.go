@@ -16,12 +16,7 @@ func (s *Server) GetCluster(
 	ctx context.Context, _ gen.GetClusterRequestObject,
 ) (gen.GetClusterResponseObject, error) {
 	if s.cluster == nil {
-		return nil, &apiError{
-			status: http.StatusNotFound,
-			kind:   typeNotFound,
-			title:  "Not found",
-			detail: "this node has no cluster section in its configuration file, and is a single server",
-		}
+		return nil, noClusterSection()
 	}
 	st, err := s.cluster.Status(ctx)
 	if err != nil {
@@ -31,6 +26,7 @@ func (s *Server) GetCluster(
 	out := gen.GetCluster200JSONResponse{
 		Self:        gen.ClusterMember{Id: id, Address: addr},
 		Replicating: s.cluster.Replicating(),
+		Removed:     st.Removed,
 		Applied:     logIndex(st.Applied),
 		Committed:   logIndex(st.Committed),
 		Members:     make([]gen.ClusterMemberState, 0, len(st.Members)),
@@ -46,6 +42,16 @@ func (s *Server) GetCluster(
 		}
 	}
 	return out, nil
+}
+
+// noClusterSection is a cluster endpoint asked of a single server.
+func noClusterSection() *apiError {
+	return &apiError{
+		status: http.StatusNotFound,
+		kind:   typeNotFound,
+		title:  "Not found",
+		detail: "this node has no cluster section in its configuration file, and is a single server",
+	}
 }
 
 // logIndex puts a log position in the API's integer. A log that reached 2^63
@@ -79,4 +85,21 @@ func (s *Server) InitCluster(
 	}
 	id, addr := s.cluster.Member()
 	return gen.InitCluster200JSONResponse{Id: id, Address: addr}, nil
+}
+
+// RemoveClusterMember takes a member out of the cluster. The request reaches
+// the leader wherever it was sent (docs/decisions/d44-starting-and-joining.md).
+func (s *Server) RemoveClusterMember(
+	ctx context.Context, req gen.RemoveClusterMemberRequestObject,
+) (gen.RemoveClusterMemberResponseObject, error) {
+	if err := requireAdmin(ctx, "removing a cluster member"); err != nil {
+		return nil, err
+	}
+	if s.cluster == nil {
+		return nil, noClusterSection()
+	}
+	if err := s.cluster.Remove(req.MemberId); err != nil {
+		return nil, err
+	}
+	return gen.RemoveClusterMember204Response{}, nil
 }

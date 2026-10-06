@@ -44,6 +44,17 @@ public API is unstable and may change without a deprecation period.
   interface stays on the member it was made on. While no member leads, a write
   is refused with 503 and every member goes on answering queries.
 
+- `weg cluster leave` takes the server it is run against out of its cluster,
+  and `weg cluster remove <id>` takes out another member: one that is off, or
+  has stopped over a change it could not apply. Both need the admin scope, ask
+  first unless given `--yes`, and can be sent to any member. The cluster's
+  only voter cannot be removed. The API offers the same as
+  `DELETE /cluster/members/{memberId}`.
+
+- A member that has been taken out goes on answering queries with what it
+  held and refuses writes with 503. `weg cluster status` on it says so, and
+  how to join it again or run it on its own.
+
 #### Web interface
 
 - A Cluster page lists the members with the role each holds and which one
@@ -56,9 +67,10 @@ public API is unstable and may change without a deprecation period.
 
 #### Observation
 
-- `weg_cluster_behind` is 1 while this member has left its cluster over a
-  change it could not apply. It refuses writes then, answers queries with what
-  it held, and stays so until somebody repairs it.
+- `weg_cluster_behind` is 1 while this member has left its cluster, over a
+  change it could not apply or by being taken out. It refuses writes then,
+  answers queries with what it held, and stays so until it is joined again or
+  run on its own.
 
 - `/healthz` on a cluster member carries `current`, which is false in that same
   state, and `weg health` says so. The status stays `serving`, because the

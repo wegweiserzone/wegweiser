@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/spf13/cobra"
 
@@ -23,7 +24,8 @@ func newClusterCommand(opts *options) *cobra.Command {
 			"log, so that every one of them answers what any change made.\n\n" +
 			"A node takes part once its configuration file has a cluster section. One\n" +
 			"node starts the cluster with `weg cluster init`, and every other one joins\n" +
-			"it from its first start, with `weg serve --join`\n" +
+			"it from its first start, with `weg serve --join`. A member leaves with\n" +
+			"`weg cluster leave`, or is taken out from another with `weg cluster remove`\n" +
 			"(docs/decisions/d44-starting-and-joining.md).",
 		Args: usageArgs(cobra.NoArgs),
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
@@ -32,6 +34,8 @@ func newClusterCommand(opts *options) *cobra.Command {
 
 	cmd.AddCommand(newClusterStatusCommand(opts, &f))
 	cmd.AddCommand(newClusterInitCommand(opts, &f))
+	cmd.AddCommand(newClusterLeaveCommand(opts, &f))
+	cmd.AddCommand(newClusterRemoveCommand(opts, &f))
 	return cmd
 }
 
@@ -123,6 +127,10 @@ func runClusterStatus(ctx context.Context, opts *options, f *clientFlags) error 
 
 func printClusterStatus(w io.Writer, p *output.Printer, st *gen.ClusterStatus) error {
 	switch {
+	case st.Removed:
+		_, err := fmt.Fprintf(w, "%s %s at %s has been taken out of the cluster.\n%s",
+			p.Paint(output.ColorRed, "left:"), st.Self.Id, st.Self.Address, afterLeaving)
+		return err
 	case st.Behind != nil:
 		where := fmt.Sprintf("entry %d", st.Behind.Entry)
 		if st.Behind.Entry == 0 {
@@ -162,4 +170,132 @@ func printClusterStatus(w io.Writer, p *output.Printer, st *gen.ClusterStatus) e
 		t.row(name, m.Address, string(m.Role), lead)
 	}
 	return t.flush()
+}
+
+// afterLeaving is what becomes of a member taken out of its cluster, and the
+// two ways on from there (docs/decisions/d46-a-member-that-has-left.md).
+const afterLeaving = "It answers queries with what it held and refuses writes. To join it again,\n" +
+	"discard its database and its Raft directory and start it with --join; to run\n" +
+	"it on its own, discard its Raft directory only.\n"
+
+// clusterMemberRemoved is what leaving, or removing a member, reports.
+type clusterMemberRemoved struct {
+	Member string `json:"member"`
+}
+
+func newClusterLeaveCommand(opts *options, f *clientFlags) *cobra.Command {
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "leave",
+		Short: "Take this server out of its cluster",
+		Long: "Take the server out of the cluster it is a member of. Any member can be\n" +
+			"asked; the one leading carries it out. Needs the admin scope.\n\n" +
+			"The server goes on answering queries with what it held, and refuses\n" +
+			"writes. Joining it again takes an emptied database\n" +
+			"(docs/decisions/d46-a-member-that-has-left.md). A member that is off,\n" +
+			"or has stopped over a change it could not apply, cannot ask for itself:\n" +
+			"take it out from another with `weg cluster remove`.",
+		Args:    usageArgs(cobra.NoArgs),
+		Example: "  weg cluster leave --server http://10.0.0.6:8053\n  weg cluster leave --yes",
+
+		RunE: func(c *cobra.Command, _ []string) error {
+			return runClusterLeave(c.Context(), opts, f, yes)
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "leave without asking")
+	return cmd
+}
+
+func runClusterLeave(ctx context.Context, opts *options, f *clientFlags, yes bool) error {
+	client, err := f.client()
+	if err != nil {
+		return err
+	}
+	resp, err := client.GetClusterWithResponse(ctx)
+	if err != nil {
+		return reachable(err, f.server)
+	}
+	if resp.JSON200 == nil {
+		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
+	}
+	self := resp.JSON200.Self
+	if !resp.JSON200.Replicating {
+		return fmt.Errorf("%s at %s is in no cluster, so there is nothing to leave", self.Id, self.Address)
+	}
+
+	if !yes {
+		if cerr := confirm(opts, fmt.Sprintf(
+			"take %s at %s out of its cluster", self.Id, self.Address)); cerr != nil {
+			return cerr
+		}
+	}
+	if rerr := removeMember(ctx, client, f, self.Id); rerr != nil {
+		return rerr
+	}
+
+	got := clusterMemberRemoved{Member: self.Id}
+	return opts.Printer().Print(got, func(w io.Writer) error {
+		_, werr := fmt.Fprintf(w, "%s has left the cluster. %s", self.Id, afterLeaving)
+		return werr
+	})
+}
+
+func newClusterRemoveCommand(opts *options, f *clientFlags) *cobra.Command {
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:     "remove ID",
+		Aliases: []string{"rm"},
+		Short:   "Take another member out of the cluster",
+		Long: "Take a member out of the cluster, naming it the way `weg cluster status`\n" +
+			"does. This is for the member that cannot ask for itself: one that is off,\n" +
+			"or has stopped over a change it could not apply. Needs the admin scope.\n\n" +
+			"The cluster's only voter cannot be removed. Take out a member that is off\n" +
+			"before one that is running: removing a running voter while another is off\n" +
+			"can leave the rest without a majority\n" +
+			"(docs/decisions/d46-a-member-that-has-left.md).",
+		Args:    usageArgs(cobra.ExactArgs(1)),
+		Example: "  weg cluster remove ns3\n  weg cluster remove ns3 --yes",
+
+		RunE: func(c *cobra.Command, args []string) error {
+			return runClusterRemove(c.Context(), opts, f, args[0], yes)
+		},
+		ValidArgsFunction: completeClusterMembers(f),
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "remove without asking")
+	return cmd
+}
+
+func runClusterRemove(ctx context.Context, opts *options, f *clientFlags, id string, yes bool) error {
+	client, err := f.client()
+	if err != nil {
+		return err
+	}
+	if !yes {
+		if cerr := confirm(opts, fmt.Sprintf("take the member %s out of the cluster", id)); cerr != nil {
+			return cerr
+		}
+	}
+	if rerr := removeMember(ctx, client, f, id); rerr != nil {
+		return rerr
+	}
+
+	got := clusterMemberRemoved{Member: id}
+	return opts.Printer().Print(got, func(w io.Writer) error {
+		_, werr := fmt.Fprintf(w, "took %s out of the cluster; if it is running, it answers queries "+
+			"with what it held and refuses writes\n", id)
+		return werr
+	})
+}
+
+func removeMember(ctx context.Context, client *gen.ClientWithResponses, f *clientFlags, id string) error {
+	resp, err := client.RemoveClusterMemberWithResponse(ctx, id)
+	if err != nil {
+		return reachable(err, f.server)
+	}
+	if resp.HTTPResponse.StatusCode != http.StatusNoContent {
+		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
+	}
+	return nil
 }

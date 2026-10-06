@@ -481,7 +481,8 @@ func rotateCookies(ctx context.Context, applier *apply.Applier, report func(erro
 		// secret reaches the query path the way every other change does.
 		secrets, _, err := applier.RotateCookieSecrets(ctx)
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader), errors.Is(err, cluster.ErrBehind):
+		case errors.Is(err, cluster.ErrNotLeader), errors.Is(err, cluster.ErrBehind),
+			errors.Is(err, cluster.ErrRemoved):
 			// Rotating publishes a fact to every client, so in a cluster the
 			// leader does it alone (docs/decisions/d41-what-follows-applying-a-batch.md),
 			// and a member that has left the cluster has said why already.

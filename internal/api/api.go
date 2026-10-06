@@ -102,9 +102,11 @@ type Cluster interface {
 	IsLeader() bool
 	// Leader names the member leading, empty while none is.
 	Leader() (id, addr string)
-	// Stalled reports where this member stopped, if it has left the cluster
-	// over an entry it could not apply.
-	Stalled() (cluster.Stall, bool)
+	// Remove takes a member out of the cluster. Only the leader can.
+	Remove(id string) error
+	// Left says why this member no longer takes part in the cluster, and is
+	// nil while it does.
+	Left() error
 	// DialForward opens a stream to the member at addr that carries a
 	// forwarded write.
 	DialForward(ctx context.Context, addr string) (net.Conn, error)
@@ -403,8 +405,7 @@ func (s *Server) GetHealth(_ context.Context, _ gen.GetHealthRequestObject) (gen
 		Records: snap.Records(),
 	}
 	if c := s.cluster; c != nil && c.Replicating() {
-		_, stalled := c.Stalled()
-		current := !stalled
+		current := c.Left() == nil
 		out.Current = &current
 	}
 	return out, nil

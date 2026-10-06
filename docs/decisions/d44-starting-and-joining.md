@@ -87,4 +87,6 @@ non-voter and costs the cluster nothing.
 
 `weg cluster init` and `weg serve --join` with `--role` are built as described, with the wait
 for the log in front of the DNS listener, so a new member never answers from an empty
-database. `weg cluster leave` and `remove` do not exist yet.
+database. `weg cluster leave` and `weg cluster remove <id>` are built as described, both on
+`DELETE /cluster/members/{memberId}`; what the member is afterwards is
+[D46](d46-a-member-that-has-left.md).

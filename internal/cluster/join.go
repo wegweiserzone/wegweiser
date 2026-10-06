@@ -219,8 +219,8 @@ func (n *Node) answerJoin(conn net.Conn) {
 // addition and answers once it is committed; one that does not names the
 // member that does (D44). A voter is staged first, as [Node.Join] describes.
 func (n *Node) admit(req JoinRequest) joinReply {
-	if s, ok := n.Stalled(); ok {
-		return joinReply{Error: s.Err().Error()}
+	if err := n.Left(); err != nil {
+		return joinReply{Error: err.Error()}
 	}
 	if err := req.check(); err != nil {
 		return joinReply{Error: err.Error()}

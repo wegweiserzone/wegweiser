@@ -226,6 +226,47 @@ func TestTwoServersBecomeACluster(t *testing.T) {
 			t.Errorf("stderr = %q, want it to say this node is a member already", stderr.String())
 		}
 	})
+
+	// D46: a member that leaves keeps answering, refuses writes, and says so;
+	// the founder goes on alone.
+	t.Run("the new member leaves, and the founder goes on", func(t *testing.T) {
+		run := func(args ...string) (string, string, int) {
+			var stdout, stderr syncBuffer
+			code := Execute(t.Context(), append(args, "--token", token), &stdout, &stderr)
+			return stdout.String(), stderr.String(), code
+		}
+		if _, stderr, code := run("cluster", "leave", "--server", b.APIAddress, "--yes"); code != ExitOK {
+			t.Fatalf("cluster leave: exit code %d; stderr: %s", code, stderr)
+		}
+
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			stdout, _, _ := run("cluster", "status", "--server", b.APIAddress)
+			if strings.Contains(stdout, "taken out of the cluster") {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the member that left does not say so:\n%s", stdout)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if got := ask(t, b.Address, "two.example.", zone.TypeSOA); got.Rcode != wire.RcodeSuccess {
+			t.Errorf("the member that left answers %s for a zone it held", wire.RcodeToString[got.Rcode])
+		}
+		if _, stderr, code := run("zone", "create", "three.example.", "--server", b.APIAddress); code == ExitOK ||
+			!strings.Contains(stderr, "left the cluster") {
+			t.Errorf("a write on the member that left: exit code %d, stderr %q; want it refused", code, stderr)
+		}
+
+		if _, stderr, code := run("zone", "create", "three.example.", "--server", a.APIAddress); code != ExitOK {
+			t.Errorf("a write on the founder alone: exit code %d; stderr: %s", code, stderr)
+		}
+		stdout, _, _ := run("cluster", "status", "--server", a.APIAddress, "--output", "json")
+		var st gen.ClusterStatus
+		if err := json.Unmarshal([]byte(stdout), &st); err != nil || len(st.Members) != 1 {
+			t.Errorf("the founder lists %+v (%v), want itself alone", st.Members, err)
+		}
+	})
 }
 
 // What a node holds before it joins is in no entry of the cluster's log, so

@@ -111,6 +111,24 @@ func asProblem(err error) *apiError {
 			title:  "This member is behind the cluster",
 			detail: err.Error(),
 		}
+	case errors.Is(err, cluster.ErrRemoved):
+		return &apiError{
+			status: http.StatusServiceUnavailable,
+			kind:   typeUnavailable,
+			title:  "This member has left the cluster",
+			detail: err.Error(),
+		}
+	case errors.Is(err, cluster.ErrNoMember):
+		return &apiError{
+			status: http.StatusNotFound,
+			kind:   typeNotFound,
+			title:  "Not found",
+			detail: "the cluster has no member by that identifier",
+		}
+	case errors.Is(err, cluster.ErrLastVoter):
+		return conflict("that member is the cluster's only voter, and a cluster needs one. " +
+			"A cluster of one is left by stopping the server and discarding its Raft directory " +
+			"(docs/decisions/d46-a-member-that-has-left.md)")
 	case errors.Is(err, zone.ErrInvalid):
 		// The zone package validates what DNS itself requires, so its
 		// rejections are about the request and are safe to quote in full.

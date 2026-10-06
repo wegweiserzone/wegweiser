@@ -12,8 +12,12 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/cluster"
 )
 
-// member stands in for a node that starts its cluster once and refuses after.
-type member struct{ started bool }
+// member stands in for a node that starts its cluster once and refuses after,
+// and leads it.
+type member struct {
+	started bool
+	removed []string
+}
 
 func (m *member) Init(context.Context) error {
 	if m.started {
@@ -36,9 +40,20 @@ func (m *member) Status(context.Context) (cluster.Status, error) {
 	}}, nil
 }
 
-func (m *member) IsLeader() bool                 { return m.started }
-func (m *member) Leader() (id, addr string)      { return m.Member() }
-func (m *member) Stalled() (cluster.Stall, bool) { return cluster.Stall{}, false }
+func (m *member) IsLeader() bool            { return m.started }
+func (m *member) Leader() (id, addr string) { return m.Member() }
+func (m *member) Left() error               { return nil }
+
+func (m *member) Remove(id string) error {
+	switch id {
+	case "ns1":
+		return cluster.ErrLastVoter
+	case "ns2":
+		m.removed = append(m.removed, id)
+		return nil
+	}
+	return cluster.ErrNoMember
+}
 func (m *member) DialForward(context.Context, string) (net.Conn, error) {
 	return nil, errors.New("a member that leads forwards nothing")
 }
@@ -117,6 +132,16 @@ func TestGetCluster(t *testing.T) {
 		}
 	})
 
+	t.Run("a member that has been taken out says so", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t, func(cfg *Config) { cfg.Cluster = &follower{removed: true} })
+		var got gen.ClusterStatus
+		h.decode(h.do(http.MethodGet, "/cluster", nil), http.StatusOK, &got)
+		if !got.Removed || got.Behind != nil {
+			t.Errorf("status = %+v, want it removed and not behind", got)
+		}
+	})
+
 	t.Run("a single server has no cluster to show", func(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t)
@@ -141,6 +166,7 @@ func TestHealthSaysWhetherAMemberIsCurrent(t *testing.T) {
 		{"a node in no cluster yet says nothing about it", &member{}, nil},
 		{"a member that keeps up is current", &member{started: true}, ptr(true)},
 		{"a member that has left is not", &follower{stall: stall}, ptr(false)},
+		{"a member that has been taken out is not", &follower{removed: true}, ptr(false)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -154,5 +180,43 @@ func TestHealthSaysWhetherAMemberIsCurrent(t *testing.T) {
 				t.Errorf("current = %v, want %v", got.Current, *tc.want)
 			}
 		})
+	}
+}
+
+func TestRemoveClusterMember(t *testing.T) {
+	t.Parallel()
+	m := &member{started: true}
+	h := newHarness(t, func(cfg *Config) { cfg.Cluster = m })
+
+	if resp := h.do(http.MethodDelete, "/cluster/members/ns2", nil); resp.StatusCode != http.StatusNoContent {
+		t.Errorf("removing ns2 is %d, want 204", resp.StatusCode)
+	}
+	if len(m.removed) != 1 || m.removed[0] != "ns2" {
+		t.Errorf("removed = %v, want ns2", m.removed)
+	}
+	for _, tc := range []struct {
+		id   string
+		want int
+	}{
+		{"nobody", http.StatusNotFound},
+		{"ns1", http.StatusConflict}, // the only voter
+	} {
+		if resp := h.do(http.MethodDelete, "/cluster/members/"+tc.id, nil); resp.StatusCode != tc.want {
+			t.Errorf("removing %s is %d, want %d", tc.id, resp.StatusCode, tc.want)
+		}
+	}
+
+	var minted gen.TokenCreated
+	h.decode(h.do(http.MethodPost, "/tokens", gen.CreateToken{
+		Name: "writer", Scopes: []gen.Scope{gen.ScopeWrite},
+	}), http.StatusCreated, &minted)
+	as := func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+minted.Secret) }
+	if resp := h.do(http.MethodDelete, "/cluster/members/ns2", nil, as); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("removing a member with a write token is %d, want 403", resp.StatusCode)
+	}
+
+	single := newHarness(t)
+	if resp := single.do(http.MethodDelete, "/cluster/members/ns2", nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("removing a member of no cluster is %d, want 404", resp.StatusCode)
 	}
 }

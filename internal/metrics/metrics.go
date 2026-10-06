@@ -207,9 +207,10 @@ func New() *Metrics {
 
 	clusterBehind := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: namespace, Subsystem: "cluster", Name: "behind",
-		Help: "1 while this member has left its cluster over a change it could not apply. " +
-			"It refuses writes and answers queries with what it held then, and stays so " +
-			"until it is repaired (docs/decisions/d29-a-node-that-cannot-apply.md).",
+		Help: "1 while this member has left its cluster, over a change it could not apply " +
+			"or by being taken out. It refuses writes and answers queries with what it held " +
+			"then, until it is joined again or run on its own (docs/decisions/d29-a-node-that-cannot-apply.md, " +
+			"docs/decisions/d46-a-member-that-has-left.md).",
 	}, m.clusterBehind)
 
 	m.reg.MustRegister(

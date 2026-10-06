@@ -35,6 +35,7 @@ var writes = map[string]bool{
 	"POST /records/{recordId}/detach":    true,
 	"POST /records/{recordId}/canonical": true,
 	"PATCH /settings":                    true,
+	"DELETE /cluster/members/{memberId}": true,
 	"POST /tokens":                       true,
 	"DELETE /tokens/{tokenId}":           true,
 	"POST /tsig-keys":                    true,
@@ -78,8 +79,8 @@ func (s *Server) forwarding(next http.Handler) http.Handler {
 		// A member that has left the cluster refuses rather than forwards:
 		// what it would answer afterwards would not show the change
 		// (docs/decisions/d29-a-node-that-cannot-apply.md).
-		if stall, ok := c.Stalled(); ok {
-			writeProblem(w, r, stall.Err())
+		if err := c.Left(); err != nil {
+			writeProblem(w, r, err)
 			return
 		}
 		_, leader := c.Leader()

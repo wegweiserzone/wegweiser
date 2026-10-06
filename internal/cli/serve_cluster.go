@@ -95,7 +95,7 @@ func startMember(
 		return nil, err
 	}
 	port.repl.Bind(node)
-	met.SetStallSource(func() bool { _, stalled := node.Stalled(); return stalled })
+	met.SetStallSource(func() bool { return node.Left() != nil })
 
 	switch {
 	case join.addr == "":

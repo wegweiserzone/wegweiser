@@ -248,3 +248,32 @@ func registerFlagCompletion(cmd *cobra.Command, flag string, fn cobra.Completion
 		panic("cli: completion for --" + flag + " on " + cmd.Name() + ": " + err.Error())
 	}
 }
+
+// completeClusterMembers suggests the members the server asked knows of.
+func completeClusterMembers(f *clientFlags) cobra.CompletionFunc {
+	return func(c *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		ctx, cancel := context.WithTimeout(c.Context(), completionTimeout)
+		defer cancel()
+
+		client, err := f.client()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		resp, err := client.GetClusterWithResponse(ctx)
+		if err != nil || resp.JSON200 == nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		var ids []string
+		for _, m := range resp.JSON200.Members {
+			if strings.HasPrefix(m.Id, prefix) {
+				ids = append(ids, m.Id)
+			}
+		}
+		return ids, cobra.ShellCompDirectiveNoFileComp
+	}
+}

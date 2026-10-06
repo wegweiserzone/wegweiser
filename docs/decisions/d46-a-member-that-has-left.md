@@ -60,4 +60,8 @@ The order is the operator's: remove the member that is off first.
 
 ## Where this stands
 
-Not built.
+Built as described, in `internal/cluster` and on the API's
+`DELETE /cluster/members/{memberId}`. `weg cluster status` on a member that has been taken
+out says so and names both ways on, `/healthz` reports it as not `current`, and
+`weg_cluster_behind` is 1, the same three places a member stopped by D29 shows up. A member
+removed while it was off still believes it is one, as described above.
