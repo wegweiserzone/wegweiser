@@ -8,7 +8,14 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+#### Cluster
+
+- `weg health` on a member that had been taken out of its cluster said it had
+  stopped over a change it could not apply. `/healthz` cannot tell the two
+  apart, so it now says only that the member no longer takes part and refuses
+  writes, and `weg cluster status` says why.
 
 ## [0.5.0] - 2026-10-06
 

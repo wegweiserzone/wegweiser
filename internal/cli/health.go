@@ -94,9 +94,12 @@ func runHealth(ctx context.Context, opts *options, f *clientFlags) error {
 			p.Paint(colour, got.Status), got.Zones, got.Records, got.Version); werr != nil {
 			return werr
 		}
+		// /healthz says only that the member is not current. Whether it
+		// stopped over a change (D29) or was taken out (D46) is the status's
+		// to say, so this names neither.
 		if got.Current != nil && !*got.Current {
-			_, werr := fmt.Fprintf(w, "%s it has left its cluster over a change it could not apply; "+
-				"`weg cluster status` says where and why\n", p.Paint(output.ColorRed, "behind:"))
+			_, werr := fmt.Fprintf(w, "%s it no longer takes part in its cluster and refuses writes; "+
+				"`weg cluster status` says why\n", p.Paint(output.ColorRed, "left:"))
 			return werr
 		}
 		return nil

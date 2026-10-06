@@ -259,6 +259,11 @@ func TestTwoServersBecomeACluster(t *testing.T) {
 		if got := ask(t, b.Address, "two.example.", zone.TypeSOA); got.Rcode != wire.RcodeSuccess {
 			t.Errorf("the member that left answers %s for a zone it held", wire.RcodeToString[got.Rcode])
 		}
+		// Health knows only that it is not current, and must not claim why.
+		if stdout, _, _ := run("health", "--server", b.APIAddress); !strings.Contains(stdout, "no longer takes part") ||
+			strings.Contains(stdout, "could not apply") {
+			t.Errorf("weg health on the member that left says:\n%s", stdout)
+		}
 		if _, stderr, code := run("zone", "create", "three.example.", "--server", b.APIAddress); code == ExitOK ||
 			!strings.Contains(stderr, "left the cluster") {
 			t.Errorf("a write on the member that left: exit code %d, stderr %q; want it refused", code, stderr)
