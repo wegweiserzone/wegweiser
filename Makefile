@@ -122,7 +122,7 @@ demo: ## Run a Wegweiser with something in it, to look at
 	@scripts/demo.sh start
 
 .PHONY: demo-stop
-demo-stop: ## Stop the demo and remove its database
+demo-stop: ## Stop the demo and remove its databases
 	@scripts/demo.sh stop
 
 .PHONY: unit-check

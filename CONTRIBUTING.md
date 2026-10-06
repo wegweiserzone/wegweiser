@@ -90,8 +90,8 @@ sooner, and adds two the gate leaves out: a short fuzz campaign and a vulnerabil
 rather than a list here that would drift the first time the build changes.
 
 For a change that leaves `web/` alone, `make test` and `make lint` are the two worth running
-on their own while you work. `make demo` brings up a server with zones in it, which is the
-shortest way to watch a change behave.
+on their own while you work. `make demo` brings up a cluster of three servers with zones in
+it, which is the shortest way to watch a change behave; `WEG_DEMO_NODES=1` makes it one.
 
 Building is in the [README](README.md#building). `make tools` installs the Go tools; the web
 half needs Node and a browser for its tests, and `make web-deps` fetches both. The Node

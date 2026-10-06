@@ -4,9 +4,11 @@
 #
 # It is a demonstration and not a fixture: the data is what a small network
 # actually looks like, including the reverse zones that fill themselves, so
-# what the interface shows is what a real one would.
+# what the interface shows is what a real one would. By default it is three
+# servers in one cluster, because a cluster is what a real deployment of more
+# than one server is, and the Cluster page has nothing to show on a single one.
 #
-# Nothing here touches a system directory. The database goes to a temporary
+# Nothing here touches a system directory. The databases go to a temporary
 # directory and the ports are unprivileged, so it needs no capability and no
 # root.
 
@@ -17,30 +19,51 @@ DIR=${WEG_DEMO_DIR:-/tmp/weg-demo}
 # CAP_NET_BIND_SERVICE, which a demonstration has no business asking for.
 DNS=${WEG_DEMO_DNS:-127.0.0.1:5300}
 API=${WEG_DEMO_API:-127.0.0.1:8053}
+NODES=${WEG_DEMO_NODES:-3}
 
 usage() {
   cat <<USAGE
 usage: scripts/demo.sh [start|stop]
 
   start   build weg, run it on unprivileged ports, and fill it (default)
-  stop    stop the demo and remove its database
+  stop    stop the demo and remove its databases
 
 environment:
-  WEG_DEMO_DIR   where the database goes    (default $DIR)
-  WEG_DEMO_DNS   address for queries        (default $DNS)
-  WEG_DEMO_API   address for the API and UI (default $API)
+  WEG_DEMO_DIR     where the databases go                   (default $DIR)
+  WEG_DEMO_DNS     address for queries to the first server  (default $DNS)
+  WEG_DEMO_API     address for its API and UI               (default $API)
+  WEG_DEMO_NODES   how many servers: 1, or a cluster of 3   (default $NODES)
+
+The other servers of a cluster take the next ports: queries one up from the
+first server's, the API ten up, and the cluster port one above each API.
 USAGE
 }
 
+# Addresses for server n, counting from 1.
+dns_of() { echo "${DNS%:*}:$((${DNS##*:} + $1 - 1))"; }
+api_of() { echo "${API%:*}:$((${API##*:} + 10 * ($1 - 1)))"; }
+cluster_of() { echo "${API%:*}:$((${API##*:} + 10 * ($1 - 1) + 1))"; }
+
 stop() {
-  if [[ -f "$DIR/pid" ]] && kill -0 "$(cat "$DIR/pid")" 2>/dev/null; then
-    kill "$(cat "$DIR/pid")"
-    # Give it a moment to release the sockets, so an immediate restart does
-    # not fail on an address that is still winding down.
+  local pidfile pid stopped=0
+  for pidfile in "$DIR"/ns*/pid; do
+    [[ -f "$pidfile" ]] || continue
+    pid=$(cat "$pidfile")
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid"
+      stopped=1
+    fi
+  done
+  # Give them a moment to release the sockets, so an immediate restart does
+  # not fail on an address that is still winding down.
+  for pidfile in "$DIR"/ns*/pid; do
+    [[ -f "$pidfile" ]] || continue
     for _ in $(seq 20); do
-      kill -0 "$(cat "$DIR/pid")" 2>/dev/null || break
+      kill -0 "$(cat "$pidfile")" 2>/dev/null || break
       sleep 0.1
     done
+  done
+  if ((stopped)); then
     echo "stopped the demo"
   fi
   rm -rf "$DIR"
@@ -54,36 +77,76 @@ taken() {
   return 1
 }
 
+# serve starts server n, joining the first when it is not the first, and waits
+# until it answers. A server that joins answers only once the cluster's data
+# has reached it, so the wait covers that too.
+serve() {
+  local n=$1 here="$DIR/ns$1"
+  mkdir -p "$here"
+  local args=(serve --listen "$(dns_of "$n")" --api-listen "$(api_of "$n")" --db "$here/weg.db")
+  if ((NODES > 1)); then
+    cat >"$here/config.yaml" <<CONFIG
+cluster:
+  id: "ns$n"
+  listen: "$(cluster_of "$n")"
+  advertise: "$(cluster_of "$n")"
+  secret: "$SECRET"
+CONFIG
+    args+=(--config "$here/config.yaml")
+    if ((n > 1)); then
+      args+=(--join "$(cluster_of 1)")
+    fi
+  fi
+
+  ./bin/weg "${args[@]}" >"$here/log" 2>&1 &
+  echo $! >"$here/pid"
+
+  for _ in $(seq 300); do
+    grep -q 'the API is on' "$here/log" && return 0
+    kill -0 "$(cat "$here/pid")" 2>/dev/null || break
+    sleep 0.1
+  done
+  echo "ns$n did not start:" >&2
+  cat "$here/log" >&2
+  exit 1
+}
+
 start() {
   stop
+  case "$NODES" in
+    1 | 3) ;;
+    *)
+      echo "WEG_DEMO_NODES is $NODES; the demo runs 1 server, or a cluster of 3." >&2
+      echo "Two servers make no honest cluster: docs/decisions/d25-cluster-shape.md says why." >&2
+      exit 2
+      ;;
+  esac
   mkdir -p "$DIR"
 
-  local where
-  for where in "$DNS" "$API"; do
-    if taken "$where"; then
-      echo "something is already listening on $where." >&2
-      echo "stop it, or choose another: WEG_DEMO_DNS=127.0.0.1:5301 make demo" >&2
-      exit 1
+  local n where addrs
+  for n in $(seq "$NODES"); do
+    addrs=("$(dns_of "$n")" "$(api_of "$n")")
+    if ((NODES > 1)); then
+      addrs+=("$(cluster_of "$n")")
     fi
+    for where in "${addrs[@]}"; do
+      if taken "$where"; then
+        echo "something is already listening on $where." >&2
+        echo "stop it, or choose other ports: WEG_DEMO_DNS=127.0.0.1:5310 WEG_DEMO_API=127.0.0.1:8153 make demo" >&2
+        exit 1
+      fi
+    done
   done
 
   make --no-print-directory build
 
-  ./bin/weg serve --listen "$DNS" --api-listen "$API" --db "$DIR/weg.db" >"$DIR/log" 2>&1 &
-  echo $! >"$DIR/pid"
+  # The cluster's shared secret. It lives as long as the demonstration does.
+  SECRET=$(head -c 32 /dev/urandom | base64)
 
-  for _ in $(seq 50); do
-    grep -q 'the API is on' "$DIR/log" && break
-    sleep 0.1
-  done
-  if ! grep -q 'the API is on' "$DIR/log"; then
-    echo "the server did not start:" >&2
-    cat "$DIR/log" >&2
-    exit 1
-  fi
+  serve 1
 
-  export WEG_SERVER="http://$API"
-  WEG_TOKEN=$(grep -oE 'weg_[A-Za-z0-9_-]+' "$DIR/log" | head -1)
+  export WEG_SERVER="http://$(api_of 1)"
+  WEG_TOKEN=$(grep -oE 'weg_[A-Za-z0-9_-]+' "$DIR/ns1/log" | head -1)
   export WEG_TOKEN
 
   # The advisory notes the CLI writes to standard error are for somebody
@@ -91,12 +154,22 @@ start() {
   # they go to the log. A failure goes there too, and is then shown: `set -e`
   # would otherwise end the demonstration without saying what stopped it.
   weg() {
-    if ! ./bin/weg "$@" >/dev/null 2>>"$DIR/log"; then
+    if ! ./bin/weg "$@" >/dev/null 2>>"$DIR/ns1/log"; then
       echo "the demo stopped at: weg $*" >&2
-      tail -3 "$DIR/log" >&2
+      tail -3 "$DIR/ns1/log" >&2
       exit 1
     fi
   }
+
+  # --- the cluster ----------------------------------------------------------
+  # The first server starts the cluster, and the other two join it from their
+  # first start, with empty databases (D44). Everything after this goes
+  # through the cluster's log and reaches all three.
+  if ((NODES > 1)); then
+    weg cluster init
+    serve 2
+    serve 3
+  fi
 
   local host=${DNS%:*} port=${DNS##*:}
 
@@ -187,7 +260,7 @@ start() {
 
   cat <<READY
 
-  open    http://$API/
+  open    http://$(api_of 1)/
   token   $WEG_TOKEN
 
   The zones a small network has, and the reverse entries nobody wrote.
@@ -203,14 +276,39 @@ start() {
                    every zone reads unasked. Set one up writes the file BIND or
                    Knot would need.
     Overview       what the queries below did.
+READY
+
+  if ((NODES > 1)); then
+    cat <<CLUSTER
+    Cluster        three servers, ns1 leading, every one of them current. All
+                   of the above went in through ns1 and reached the other two
+                   through the cluster's log.
+
+  servers ns1     http://$(api_of 1)/   queries on $(dns_of 1)
+          ns2     http://$(api_of 2)/   queries on $(dns_of 2)
+          ns3     http://$(api_of 3)/   queries on $(dns_of 3)
+          The token works on every one; a write sent to any of them reaches
+          the leader. Stop one and its row on the Cluster page reads not
+          reached, while the other two go on taking writes:
+          kill \$(cat $DIR/ns3/pid)
+CLUSTER
+  fi
+
+  # A single server has no cluster to show, and says so with a 404.
+  local third="./bin/weg secondary status"
+  if ((NODES > 1)); then
+    third="./bin/weg cluster status"
+  fi
+
+  cat <<READY
 
   queries dig +short @$host -p $port www.example.com
           dig +short @$host -p $port -x 192.168.0.25    # the PTR nobody wrote
           dig +short @$host -p $port -x 192.168.0.200   # and one through a CNAME
 
-  cli     export WEG_SERVER=http://$API WEG_TOKEN=$WEG_TOKEN
+  cli     export WEG_SERVER=http://$(api_of 1) WEG_TOKEN=$WEG_TOKEN
           ./bin/weg zone list
-          ./bin/weg secondary status
+          $third
           ./bin/weg zone check example.com --reverse
 
   stop    make demo-stop

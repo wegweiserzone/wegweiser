@@ -116,9 +116,10 @@ www.example.com.
 The reverse zone had to exist first. Wegweiser fills the reverse zones it holds; it does not
 conjure them behind your back.
 
-To see a fuller instance without installing one, `make demo` builds the binary, starts it on
-unprivileged ports and fills it with what a small network actually looks like, reverse zones
-and all. `make demo-stop` takes it away again.
+To see a fuller instance without installing one, `make demo` builds the binary, starts three
+servers as a cluster on unprivileged ports and fills it with what a small network actually
+looks like, reverse zones and all. `WEG_DEMO_NODES=1 make demo` runs a single server instead,
+and `make demo-stop` takes either away again.
 
 ### Running it for real
 
