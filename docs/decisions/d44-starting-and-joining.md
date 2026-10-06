@@ -2,6 +2,7 @@
 
 - Decided: 2026-09-11
 - Amends: [D43](d43-the-cluster-transport.md)
+- Amended by: [D46](d46-a-member-that-has-left.md)
 
 ## Context
 

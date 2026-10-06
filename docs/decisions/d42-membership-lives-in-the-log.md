@@ -1,6 +1,7 @@
 # D42 — Membership lives in the log, and a node joins by asking a member
 
 - Decided: 2026-09-10
+- Amended by: [D46](d46-a-member-that-has-left.md)
 
 ## Context
 

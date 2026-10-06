@@ -73,6 +73,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D43** | [The cluster transport is TLS, and the secret is proved inside it](d43-the-cluster-transport.md) |
 | **D44** | [A cluster is started through the API, and a new member asks to join from its first start](d44-starting-and-joining.md) |
 | **D45** | [AGPL-3.0, or any later version](d45-agpl-or-later.md) |
+| **D46** | [A member that has left keeps answering, and says it has left](d46-a-member-that-has-left.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they
