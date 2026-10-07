@@ -26,6 +26,13 @@ public API is unstable and may change without a deprecation period.
   instead of quoting the whole error chain, and points at the setting the
   address came from.
 
+#### Web interface
+
+- The Check tab offered *Fill them in* for any reverse finding, including an
+  address that another name already answers for, where there is nothing to
+  fill in. It now offers it only when entries are missing. After *Make this the
+  answer* the notice no longer says that missing entries were written.
+
 ## [0.5.0] - 2026-10-06
 
 ### Added

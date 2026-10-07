@@ -99,8 +99,12 @@ test("the name an address reverses to can be changed from the finding", async ({
   await page.getByRole("button", { name: "Check this zone" }).click();
 
   await expect(page.getByText(/answered in reverse as www\.claim\.example\./)).toBeVisible();
+  // A claim on an address is not a missing entry, and filling in would write
+  // nothing for it.
+  await expect(page.getByRole("button", { name: "Fill them in" })).toHaveCount(0);
   await page.getByRole("button", { name: "Make this the answer" }).click();
 
+  await expect(page.getByText("The reverse entry was handed over")).toBeVisible();
   await expect(page.getByText("The address now reverses to that name.")).toBeVisible();
   await expect(page.getByText(/answered in reverse as mail\.claim\.example\./)).toBeVisible();
 });

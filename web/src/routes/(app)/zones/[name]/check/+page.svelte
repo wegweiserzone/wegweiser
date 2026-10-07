@@ -35,15 +35,21 @@
   let reconciling = $state(false);
   /** The record whose claim is being written, so one button at a time waits. */
   let claiming = $state<string | null>(null);
-  let reconciled = $state<string | null>(null);
+  /** What the last button did, said under a title that matches it. */
+  let done = $state<{ title: string; text: string } | null>(null);
 
   const errors = $derived(findings.filter((f) => f.severity === "error").length);
   const warnings = $derived(findings.length - errors);
-  const missingReverse = $derived(findings.some((f) => f.scope === "reverse"));
+  /**
+   * A reverse finding naming a record is an address another name already
+   * holds, and filling in would write nothing for it. The ones naming no
+   * record are the entries nobody has written, which is what filling in is.
+   */
+  const missingReverse = $derived(findings.some((f) => f.scope === "reverse" && !f.record));
 
   /** check is the button: a fresh answer, and last time's outcome cleared. */
   async function check() {
-    reconciled = null;
+    done = null;
     await run();
   }
 
@@ -82,7 +88,10 @@
     try {
       await api.post("/records/{recordId}/canonical", { path: { recordId: record } });
       await run();
-      reconciled = "The address now reverses to that name.";
+      done = {
+        title: "The reverse entry was handed over",
+        text: "The address now reverses to that name.",
+      };
     } catch (err) {
       trouble =
         err instanceof ApiError ? (err.detail ?? err.title) : "The entry could not be handed over.";
@@ -103,7 +112,7 @@
         ? `Written, and the zone is now at serial ${result.commit.serialTo}.`
         : "The zone needed nothing after all.";
       await run();
-      reconciled = outcome;
+      done = { title: "The missing entries were written", text: outcome };
     } catch (err) {
       trouble =
         err instanceof ApiError ? (err.detail ?? err.title) : "The entries could not be written.";
@@ -149,8 +158,8 @@
     <Notice tone="crit" title="The check did not finish">{trouble}</Notice>
   {/if}
 
-  {#if reconciled}
-    <Notice tone="signal" title="The missing entries were written">{reconciled}</Notice>
+  {#if done}
+    <Notice tone="signal" title={done.title}>{done.text}</Notice>
   {/if}
 
   {#if checked && findings.length === 0}
