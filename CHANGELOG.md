@@ -17,6 +17,15 @@ public API is unstable and may change without a deprecation period.
   apart, so it now says only that the member no longer takes part and refuses
   writes, and `weg cluster status` says why.
 
+#### CLI
+
+- When no server answered, the message left out the address it had tried
+  whenever that address came from `$WEG_SERVER` or the configuration file, and
+  always told you to check `--server`. It now names the address, says in a few
+  words why the connection failed (refused, no such host, no answer in time)
+  instead of quoting the whole error chain, and points at the setting the
+  address came from.
+
 ## [0.5.0] - 2026-10-06
 
 ### Added

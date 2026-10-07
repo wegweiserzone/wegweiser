@@ -146,7 +146,7 @@ func runSecondaryConfig(
 
 	resp, err := client.GetSecondaryConfigWithResponse(ctx, &params)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -199,7 +199,8 @@ func missingPrimary(f *clientFlags) error {
 // apiHost is the address the API was reached at, or empty where that says
 // nothing: loopback and the unspecified address are where a client starts.
 func apiHost(f *clientFlags) string {
-	u, err := url.Parse(f.address())
+	server, _ := f.address()
+	u, err := url.Parse(server)
 	if err != nil {
 		return ""
 	}
@@ -276,7 +277,7 @@ func runSecondaryStatus(ctx context.Context, opts *options, f *clientFlags) erro
 
 	resp, err := client.GetSecondaryStatusWithResponse(ctx)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

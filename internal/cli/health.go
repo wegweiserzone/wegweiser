@@ -64,7 +64,7 @@ func runHealth(ctx context.Context, opts *options, f *clientFlags) error {
 
 	resp, err := client.GetHealthWithResponse(ctx)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		// A server that is up and not ready answers 503 with a problem

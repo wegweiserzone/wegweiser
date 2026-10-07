@@ -72,14 +72,14 @@ func runZoneCheck(
 		return err
 	}
 
-	z, err := findZone(ctx, client, f, name)
+	z, err := findZone(ctx, client, name)
 	if err != nil {
 		return err
 	}
 
 	resp, err := client.CheckZoneWithResponse(ctx, z.Id, &gen.CheckZoneParams{Reverse: &reverse})
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -190,14 +190,14 @@ func runZoneReconcile(ctx context.Context, opts *options, f *clientFlags, name s
 		return err
 	}
 
-	z, err := findZone(ctx, client, f, name)
+	z, err := findZone(ctx, client, name)
 	if err != nil {
 		return err
 	}
 
 	resp, err := client.ReconcileZoneWithResponse(ctx, z.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

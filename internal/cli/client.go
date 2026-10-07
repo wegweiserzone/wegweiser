@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -80,22 +83,33 @@ func (f *clientFlags) streamClient() (*gen.Client, error) {
 // fail for a reason unrelated to health, which is the whole thing that
 // endpoint exists to avoid.
 func (f *clientFlags) openClient(timeout time.Duration) (*gen.ClientWithResponses, error) {
-	return gen.NewClientWithResponses(f.address(),
-		gen.WithHTTPClient(&http.Client{Timeout: timeout}))
+	server, check := f.address()
+	return gen.NewClientWithResponses(server+basePath,
+		gen.WithHTTPClient(advising{&http.Client{Timeout: timeout}, server, check}))
 }
 
-// address is where the server is, by the precedence of D11.
-func (f *clientFlags) address() string {
-	server := firstNonEmpty(f.server, os.Getenv(serverEnv), configuredServer(), defaultServer)
+// address is where the server is, by the precedence of D11, and what to check
+// when nothing answers there: the advice depends on which source named it.
+func (f *clientFlags) address() (server, check string) {
+	switch env, file := os.Getenv(serverEnv), configuredServer(); {
+	case f.server != "":
+		server, check = f.server, "is it running, and is --server right?"
+	case env != "":
+		server, check = env, "is it running, and is $"+serverEnv+" right?"
+	case file != "":
+		server, check = file, "is it running? The address is api.listen from the configuration file."
+	default:
+		server, check = defaultServer, "is it running? Name another with --server or $"+serverEnv+"."
+	}
 	if !strings.Contains(server, "://") {
 		server = "http://" + server
 	}
-	return strings.TrimSuffix(server, "/") + basePath
+	return strings.TrimSuffix(server, "/"), check
 }
 
 // dial works out where the server is and how to authenticate to it.
 func (f *clientFlags) dial(timeout time.Duration) (string, []gen.ClientOption, error) {
-	server := f.address()
+	server, check := f.address()
 
 	token := firstNonEmpty(f.token, os.Getenv(tokenEnv))
 	if token == "" {
@@ -104,8 +118,8 @@ func (f *clientFlags) dial(timeout time.Duration) (string, []gen.ClientOption, e
 				"prints one", tokenEnv)}
 	}
 
-	return server, []gen.ClientOption{
-		gen.WithHTTPClient(&http.Client{Timeout: timeout}),
+	return server + basePath, []gen.ClientOption{
+		gen.WithHTTPClient(advising{&http.Client{Timeout: timeout}, server, check}),
 		gen.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
 			r.Header.Set("Authorization", "Bearer "+token)
 			return nil
@@ -153,15 +167,40 @@ func apiError(status int, body []byte) error {
 	return fmt.Errorf("the server answered %d", status)
 }
 
-// errNoServer is what a refused connection is turned into, since the wrapped
-// dial error says nothing about what to do.
-var errNoServer = errors.New("no Wegweiser server answered")
+// advising is the HTTP client every command talks through. A request that
+// reaches no server comes back as advice, because the dial error underneath
+// says what failed and nothing about what to do.
+type advising struct {
+	client *http.Client
+	server string
+	check  string
+}
 
-// reachable turns a transport failure into advice.
-func reachable(err error, server string) error {
-	if err == nil {
-		return nil
+// Do sends the request. An interrupt stays what it is, so that Execute still
+// recognises it.
+func (a advising) Do(r *http.Request) (*http.Response, error) {
+	resp, err := a.client.Do(r) //nolint:gosec // G704: the server the operator named is where weg is meant to go
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return nil, fmt.Errorf("no Wegweiser server answered at %s (%s): %s",
+			a.server, why(err), a.check)
 	}
-	return fmt.Errorf("%w at %s: is it running, and is --server right? (%w)",
-		errNoServer, server, err)
+	return resp, err
+}
+
+// why is the part of a transport failure a person can act on.
+func why(err error) string {
+	var dnsErr *net.DNSError
+	var netErr net.Error
+	var urlErr *url.Error
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "connection refused"
+	case errors.As(err, &dnsErr):
+		return dnsErr.Err
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return "no answer in time"
+	case errors.As(err, &urlErr):
+		return urlErr.Err.Error()
+	}
+	return err.Error()
 }

@@ -109,7 +109,7 @@ func runZoneImport(
 
 	resp, err := client.ImportZoneWithBodyWithResponse(ctx, &params, "text/dns", body)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON201 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -189,14 +189,14 @@ func runZoneExport(ctx context.Context, opts *options, f *clientFlags, name stri
 		return err
 	}
 
-	z, err := findZone(ctx, client, f, name)
+	z, err := findZone(ctx, client, name)
 	if err != nil {
 		return err
 	}
 
 	resp, err := client.ExportZoneWithResponse(ctx, z.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.HTTPResponse.StatusCode != http.StatusOK {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -214,7 +214,7 @@ func runZoneExport(ctx context.Context, opts *options, f *clientFlags, name stri
 
 // findZone turns a name a person typed into the zone it belongs to.
 func findZone(
-	ctx context.Context, client *gen.ClientWithResponses, f *clientFlags, name string,
+	ctx context.Context, client *gen.ClientWithResponses, name string,
 ) (*gen.Zone, error) {
 	qualified, err := zoneArgument(name)
 	if err != nil {
@@ -224,7 +224,7 @@ func findZone(
 	resp, lerr := client.ListZonesWithResponse(ctx, &gen.ListZonesParams{Name: &qualified})
 	err = lerr
 	if err != nil {
-		return nil, reachable(err, f.server)
+		return nil, err
 	}
 	if resp.JSON200 == nil {
 		return nil, apiError(resp.HTTPResponse.StatusCode, resp.Body)

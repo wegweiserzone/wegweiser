@@ -96,7 +96,7 @@ func runRecordList(
 	if err != nil {
 		return err
 	}
-	z, err := findZone(ctx, client, f, zoneName)
+	z, err := findZone(ctx, client, zoneName)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func runRecordList(
 		params.Search = ptr(search)
 	}
 
-	records, err := allRecords(ctx, client, f, z.Id, params, limit)
+	records, err := allRecords(ctx, client, z.Id, params, limit)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func runRecordList(
 
 // allRecords follows the cursor to the end, or until limit rows are in hand.
 func allRecords(
-	ctx context.Context, client *gen.ClientWithResponses, f *clientFlags,
+	ctx context.Context, client *gen.ClientWithResponses,
 	zoneID string, params gen.ListRecordsParams, limit int,
 ) ([]gen.Record, error) {
 	var out []gen.Record
@@ -163,7 +163,7 @@ func allRecords(
 	for {
 		resp, err := client.ListRecordsWithResponse(ctx, zoneID, &params)
 		if err != nil {
-			return nil, reachable(err, f.server)
+			return nil, err
 		}
 		if resp.JSON200 == nil {
 			return nil, apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -291,7 +291,7 @@ func runRecordAdd(
 	if err != nil {
 		return err
 	}
-	z, err := findZone(ctx, client, f, zoneName)
+	z, err := findZone(ctx, client, zoneName)
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func runRecordAdd(
 
 	resp, err := client.CreateRecordWithResponse(ctx, z.Id, in)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON201 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -347,12 +347,12 @@ func runRecordDelete(
 	if err != nil {
 		return err
 	}
-	z, err := findZone(ctx, client, f, zoneName)
+	z, err := findZone(ctx, client, zoneName)
 	if err != nil {
 		return err
 	}
 
-	target, err := resolveRecord(ctx, client, f, z, name, typ, data)
+	target, err := resolveRecord(ctx, client, z, name, typ, data)
 	if err != nil {
 		return err
 	}
@@ -366,7 +366,7 @@ func runRecordDelete(
 
 	resp, err := client.DeleteRecordWithResponse(ctx, target.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.HTTPResponse.StatusCode != http.StatusNoContent {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -382,11 +382,11 @@ func runRecordDelete(
 // resolveRecord finds the one record a name, a type and possibly some data
 // describe, inside a zone that has already been looked up.
 func resolveRecord(
-	ctx context.Context, client *gen.ClientWithResponses, f *clientFlags,
+	ctx context.Context, client *gen.ClientWithResponses,
 	z *gen.Zone, name, typ, data string,
 ) (*gen.Record, error) {
 	owner := qualify(name, z.Name)
-	found, err := allRecords(ctx, client, f, z.Id, gen.ListRecordsParams{
+	found, err := allRecords(ctx, client, z.Id, gen.ListRecordsParams{
 		Name: &owner, Type: &typ,
 	}, 0)
 	if err != nil {

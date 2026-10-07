@@ -76,7 +76,7 @@ func runTokenList(ctx context.Context, opts *options, f *clientFlags) error {
 		return err
 	}
 
-	tokens, err := fetchTokens(ctx, client, f)
+	tokens, err := fetchTokens(ctx, client)
 	if err != nil {
 		return err
 	}
@@ -109,11 +109,11 @@ func runTokenList(ctx context.Context, opts *options, f *clientFlags) error {
 }
 
 func fetchTokens(
-	ctx context.Context, client *gen.ClientWithResponses, f *clientFlags,
+	ctx context.Context, client *gen.ClientWithResponses,
 ) ([]gen.Token, error) {
 	resp, err := client.ListTokensWithResponse(ctx)
 	if err != nil {
-		return nil, reachable(err, f.server)
+		return nil, err
 	}
 	if resp.JSON200 == nil {
 		return nil, apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -233,7 +233,7 @@ func runTokenCreate(
 
 	resp, err := client.CreateTokenWithResponse(ctx, in)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON201 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -303,7 +303,7 @@ func runTokenRevoke(
 		return err
 	}
 
-	tokens, err := fetchTokens(ctx, client, f)
+	tokens, err := fetchTokens(ctx, client)
 	if err != nil {
 		return err
 	}
@@ -321,7 +321,7 @@ func runTokenRevoke(
 
 	resp, err := client.RevokeTokenWithResponse(ctx, target.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.HTTPResponse.StatusCode != http.StatusNoContent {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

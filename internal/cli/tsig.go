@@ -74,7 +74,7 @@ func runTSIGList(ctx context.Context, opts *options, f *clientFlags) error {
 		return err
 	}
 
-	keys, err := fetchTSIGKeys(ctx, client, f)
+	keys, err := fetchTSIGKeys(ctx, client)
 	if err != nil {
 		return err
 	}
@@ -107,11 +107,11 @@ func runTSIGList(ctx context.Context, opts *options, f *clientFlags) error {
 }
 
 func fetchTSIGKeys(
-	ctx context.Context, client *gen.ClientWithResponses, f *clientFlags,
+	ctx context.Context, client *gen.ClientWithResponses,
 ) ([]gen.TSIGKey, error) {
 	resp, err := client.ListTSIGKeysWithResponse(ctx)
 	if err != nil {
-		return nil, reachable(err, f.server)
+		return nil, err
 	}
 	if resp.JSON200 == nil {
 		return nil, apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -202,7 +202,7 @@ func runTSIGCreate(
 
 	resp, err := client.CreateTSIGKeyWithResponse(ctx, in)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON201 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -239,14 +239,14 @@ func runTSIGShow(ctx context.Context, opts *options, f *clientFlags, name string
 		return err
 	}
 
-	target, err := pickTSIGKey(ctx, client, f, name)
+	target, err := pickTSIGKey(ctx, client, name)
 	if err != nil {
 		return err
 	}
 
 	resp, err := client.ReadTSIGKeySecretWithResponse(ctx, target.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -319,7 +319,7 @@ func runTSIGRevoke(
 		return err
 	}
 
-	target, err := pickTSIGKey(ctx, client, f, name)
+	target, err := pickTSIGKey(ctx, client, name)
 	if err != nil {
 		return err
 	}
@@ -333,7 +333,7 @@ func runTSIGRevoke(
 
 	resp, err := client.RevokeTSIGKeyWithResponse(ctx, target.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.StatusCode() != http.StatusNoContent {
 		return apiError(resp.StatusCode(), resp.Body)
@@ -349,9 +349,9 @@ func runTSIGRevoke(
 // pickTSIGKey resolves the name a command was given, accepting it with or
 // without its trailing dot.
 func pickTSIGKey(
-	ctx context.Context, client *gen.ClientWithResponses, f *clientFlags, name string,
+	ctx context.Context, client *gen.ClientWithResponses, name string,
 ) (*gen.TSIGKey, error) {
-	keys, err := fetchTSIGKeys(ctx, client, f)
+	keys, err := fetchTSIGKeys(ctx, client)
 	if err != nil {
 		return nil, err
 	}

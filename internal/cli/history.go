@@ -167,14 +167,14 @@ func runHistoryList(
 		return err
 	}
 	if zoneName != "" {
-		z, zerr := findZone(ctx, client, f, zoneName)
+		z, zerr := findZone(ctx, client, zoneName)
 		if zerr != nil {
 			return zerr
 		}
 		params.ZoneId = &z.Id
 	}
 
-	commits, err := allCommits(ctx, client, f, params, limit)
+	commits, err := allCommits(ctx, client, params, limit)
 	if err != nil {
 		return err
 	}
@@ -219,7 +219,7 @@ func runHistoryList(
 
 // allCommits follows the cursor to the end, or until limit rows are in hand.
 func allCommits(
-	ctx context.Context, client *gen.ClientWithResponses, f *clientFlags,
+	ctx context.Context, client *gen.ClientWithResponses,
 	params gen.ListCommitsParams, limit int,
 ) ([]gen.Commit, error) {
 	var out []gen.Commit
@@ -232,7 +232,7 @@ func allCommits(
 	for {
 		resp, err := client.ListCommitsWithResponse(ctx, &params)
 		if err != nil {
-			return nil, reachable(err, f.server)
+			return nil, err
 		}
 		if resp.JSON200 == nil {
 			return nil, apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -306,7 +306,7 @@ func runHistoryShow(ctx context.Context, opts *options, f *clientFlags, id strin
 
 	resp, err := client.GetCommitWithResponse(ctx, id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

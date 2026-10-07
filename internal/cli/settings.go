@@ -68,7 +68,7 @@ func runSettingsShow(ctx context.Context, opts *options, f *clientFlags) error {
 
 	resp, err := client.GetSettingsWithResponse(ctx)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -178,7 +178,7 @@ func runSettingsSet(
 
 	resp, err := client.UpdateSettingsWithResponse(ctx, body)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

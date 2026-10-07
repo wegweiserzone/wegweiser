@@ -47,7 +47,7 @@ func runStatus(ctx context.Context, opts *options, f *clientFlags) error {
 
 	resp, err := client.GetMetricsWithResponse(ctx)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.HTTPResponse.StatusCode != http.StatusOK {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

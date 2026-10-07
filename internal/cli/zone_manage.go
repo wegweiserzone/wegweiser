@@ -90,7 +90,7 @@ func runZoneList(
 		return err
 	}
 
-	zones, err := allZones(ctx, client, f, params, limit)
+	zones, err := allZones(ctx, client, params, limit)
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func runZoneList(
 
 // allZones follows the cursor to the end, or until limit rows are in hand.
 func allZones(
-	ctx context.Context, client *gen.ClientWithResponses, f *clientFlags,
+	ctx context.Context, client *gen.ClientWithResponses,
 	params gen.ListZonesParams, limit int,
 ) ([]gen.Zone, error) {
 	var out []gen.Zone
@@ -138,7 +138,7 @@ func allZones(
 	for {
 		resp, err := client.ListZonesWithResponse(ctx, &params)
 		if err != nil {
-			return nil, reachable(err, f.server)
+			return nil, err
 		}
 		if resp.JSON200 == nil {
 			return nil, apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -194,7 +194,7 @@ func runZoneShow(ctx context.Context, opts *options, f *clientFlags, name string
 	if err != nil {
 		return err
 	}
-	found, err := findZone(ctx, client, f, name)
+	found, err := findZone(ctx, client, name)
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func runZoneShow(ctx context.Context, opts *options, f *clientFlags, name string
 	// points at and has no address for (D31).
 	resp, err := client.GetZoneWithResponse(ctx, found.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -403,7 +403,7 @@ func runZoneCreate(
 
 	resp, err := client.CreateZoneWithResponse(ctx, in)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON201 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -432,7 +432,7 @@ func runZoneCreate(
 			Data: addr,
 		})
 		if rerr != nil {
-			return reachable(rerr, f.server)
+			return rerr
 		}
 		if rec.JSON201 == nil {
 			return apiError(rec.HTTPResponse.StatusCode, rec.Body)
@@ -516,7 +516,7 @@ func runZoneDelete(
 	if err != nil {
 		return err
 	}
-	z, err := findZone(ctx, client, f, name)
+	z, err := findZone(ctx, client, name)
 	if err != nil {
 		return err
 	}
@@ -530,7 +530,7 @@ func runZoneDelete(
 
 	resp, err := client.DeleteZoneWithResponse(ctx, z.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.HTTPResponse.StatusCode != http.StatusNoContent {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -639,7 +639,7 @@ func runZoneRollback(
 	if err != nil {
 		return err
 	}
-	z, err := findZone(ctx, client, f, zoneName)
+	z, err := findZone(ctx, client, zoneName)
 	if err != nil {
 		return err
 	}
@@ -657,7 +657,7 @@ func runZoneRollback(
 	}
 	resp, err := client.RollbackZoneWithResponse(ctx, z.Id, in)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

@@ -118,11 +118,11 @@ func runRecordEdit(
 	if err != nil {
 		return err
 	}
-	z, err := findZone(ctx, client, f, zoneName)
+	z, err := findZone(ctx, client, zoneName)
 	if err != nil {
 		return err
 	}
-	target, err := resolveRecord(ctx, client, f, z, name, typ, data)
+	target, err := resolveRecord(ctx, client, z, name, typ, data)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func runRecordEdit(
 
 	resp, err := client.UpdateRecordWithResponse(ctx, target.Id, in)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -171,11 +171,11 @@ func runRecordDetach(
 	if err != nil {
 		return err
 	}
-	z, err := findZone(ctx, client, f, zoneName)
+	z, err := findZone(ctx, client, zoneName)
 	if err != nil {
 		return err
 	}
-	target, err := resolveRecord(ctx, client, f, z, name, typ, data)
+	target, err := resolveRecord(ctx, client, z, name, typ, data)
 	if err != nil {
 		return err
 	}
@@ -183,7 +183,7 @@ func runRecordDetach(
 
 	resp, err := client.DetachRecordWithResponse(ctx, target.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -290,18 +290,18 @@ func runRecordCanonical(
 	if err != nil {
 		return err
 	}
-	z, err := findZone(ctx, client, f, zoneName)
+	z, err := findZone(ctx, client, zoneName)
 	if err != nil {
 		return err
 	}
-	target, err := resolveRecord(ctx, client, f, z, name, typ, data)
+	target, err := resolveRecord(ctx, client, z, name, typ, data)
 	if err != nil {
 		return err
 	}
 
 	resp, err := client.MakeRecordCanonicalWithResponse(ctx, target.Id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

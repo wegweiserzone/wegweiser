@@ -108,7 +108,7 @@ func runQueryTail(ctx context.Context, opts *options, f *clientFlags, filter tai
 
 	resp, err := client.StreamQueries(ctx, params)
 	if err != nil {
-		return reachable(err, client.Server)
+		return err
 	}
 	defer resp.Body.Close()
 

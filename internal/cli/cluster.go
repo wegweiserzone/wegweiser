@@ -71,7 +71,7 @@ func runClusterInit(ctx context.Context, opts *options, f *clientFlags) error {
 	}
 	resp, err := client.InitClusterWithResponse(ctx)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -115,7 +115,7 @@ func runClusterStatus(ctx context.Context, opts *options, f *clientFlags) error 
 	}
 	resp, err := client.GetClusterWithResponse(ctx)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -249,7 +249,7 @@ func runClusterLeave(ctx context.Context, opts *options, f *clientFlags, yes boo
 	}
 	resp, err := client.GetClusterWithResponse(ctx)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
@@ -265,7 +265,7 @@ func runClusterLeave(ctx context.Context, opts *options, f *clientFlags, yes boo
 			return cerr
 		}
 	}
-	if rerr := removeMember(ctx, client, f, self.Id); rerr != nil {
+	if rerr := removeMember(ctx, client, self.Id); rerr != nil {
 		return rerr
 	}
 
@@ -312,7 +312,7 @@ func runClusterRemove(ctx context.Context, opts *options, f *clientFlags, id str
 			return cerr
 		}
 	}
-	if rerr := removeMember(ctx, client, f, id); rerr != nil {
+	if rerr := removeMember(ctx, client, id); rerr != nil {
 		return rerr
 	}
 
@@ -324,10 +324,10 @@ func runClusterRemove(ctx context.Context, opts *options, f *clientFlags, id str
 	})
 }
 
-func removeMember(ctx context.Context, client *gen.ClientWithResponses, f *clientFlags, id string) error {
+func removeMember(ctx context.Context, client *gen.ClientWithResponses, id string) error {
 	resp, err := client.RemoveClusterMemberWithResponse(ctx, id)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.HTTPResponse.StatusCode != http.StatusNoContent {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

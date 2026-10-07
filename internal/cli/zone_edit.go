@@ -193,14 +193,14 @@ func runZoneUpdate(
 	if err != nil {
 		return err
 	}
-	before, err := findZone(ctx, client, f, name)
+	before, err := findZone(ctx, client, name)
 	if err != nil {
 		return err
 	}
 
 	resp, err := client.UpdateZoneWithResponse(ctx, before.Id, in)
 	if err != nil {
-		return reachable(err, f.server)
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)

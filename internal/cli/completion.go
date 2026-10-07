@@ -132,12 +132,12 @@ func completionRecords(
 	if err != nil {
 		return nil, err
 	}
-	z, err := findZone(ctx, client, f, zoneName)
+	z, err := findZone(ctx, client, zoneName)
 	if err != nil {
 		return nil, err
 	}
 	// Bounded: a suggestion list nobody can read is not worth a slow keystroke.
-	return allRecords(ctx, client, f, z.Id, params, 2000)
+	return allRecords(ctx, client, z.Id, params, 2000)
 }
 
 // zonesAndClient reads the zones for a suggestion, under the same bound.
@@ -156,7 +156,7 @@ func zonesAndClient(
 	if prefix != "" {
 		params.Search = &prefix
 	}
-	zones, err := allZones(ctx, client, f, params, 2000)
+	zones, err := allZones(ctx, client, params, 2000)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -179,7 +179,7 @@ func completeTokens(f *clientFlags) cobra.CompletionFunc {
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		tokens, err := fetchTokens(ctx, client, f)
+		tokens, err := fetchTokens(ctx, client)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
@@ -210,7 +210,7 @@ func completeTSIGKeys(f *clientFlags) cobra.CompletionFunc {
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		keys, err := fetchTSIGKeys(ctx, client, f)
+		keys, err := fetchTSIGKeys(ctx, client)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
