@@ -106,7 +106,8 @@
    */
   const latencyBars = $derived.by(() => {
     const buckets = readings?.latency ?? [];
-    if (buckets.length === 0) return [];
+    // Seven empty rows say less than one line saying nothing was answered.
+    if (buckets.every((b) => b.count === 0)) return [];
 
     const finite = buckets.filter((b) => Number.isFinite(b.bound));
     const overflow = buckets.find((b) => !Number.isFinite(b.bound));
@@ -258,7 +259,9 @@
       <div class="flex items-baseline gap-3">
         <h2 class="sign text-[11px] text-ink-faint">Latency</h2>
         <span class="num ml-auto text-[12px] text-ink-mute">
-          {readings ? `${(readings.withinTarget * 100).toFixed(2)}% under 1 ms` : "—"}
+          {readings?.withinTarget != null
+            ? `${(readings.withinTarget * 100).toFixed(2)}% under 1 ms`
+            : "—"}
         </span>
       </div>
       <Bars

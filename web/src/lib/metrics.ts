@@ -33,8 +33,9 @@ export interface Readings {
   dropped: number;
   /** Responses cut to fit the transport and marked TC (RFC 1035 §4.1.1). */
   truncated: number;
-  /** The share answered inside a millisecond, which is what D12 targets. */
-  withinTarget: number;
+  /** The share answered inside a millisecond, which is what D12 targets,
+   * or null while nothing has been timed: a share of nothing is not 100%. */
+  withinTarget: number | null;
   /** The latency buckets, as upper bounds in seconds and how many fell under. */
   latency: { bound: number; count: number }[];
   /** When this process started, for the uptime. */
@@ -224,7 +225,7 @@ function summarise(samples: Sample[]): Readings {
     tcp: byTransport.get("tcp") ?? 0,
     dropped: all("weg_dns_queries_dropped_total").reduce((sum, s) => sum + s.value, 0),
     truncated: all("weg_dns_responses_truncated_total").reduce((sum, s) => sum + s.value, 0),
-    withinTarget: counted === 0 ? 1 : withinMillisecond / counted,
+    withinTarget: counted === 0 ? null : withinMillisecond / counted,
     latency,
     startedAt: seconds("process_start_time_seconds"),
     snapshotAt: seconds("weg_snapshot_published_timestamp_seconds"),

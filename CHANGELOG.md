@@ -38,6 +38,10 @@ public API is unstable and may change without a deprecation period.
   that there were none yet. It now gets the first, which says the list needs
   the admin scope too, and nothing else.
 
+- On a server that had answered nothing yet, the overview claimed 100.00% of
+  queries under 1 ms and drew seven empty latency rows. It now says nothing
+  has been answered.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary
