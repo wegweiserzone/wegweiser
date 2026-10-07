@@ -8,6 +8,16 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
+### Changed
+
+#### CLI
+
+- A command line `weg` cannot use is answered in one line, with the command
+  or flag that was probably meant (`weg zoen list` asks whether you meant
+  `weg zone`, `--serach` whether you meant `--search`) and the `--help` to read
+  next. It used to print the whole usage text after the error, which pushed
+  the line that mattered off the screen.
+
 ### Fixed
 
 #### Cluster

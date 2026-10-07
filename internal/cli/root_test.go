@@ -127,17 +127,41 @@ func TestBareInvocationShowsHelp(t *testing.T) {
 	}
 }
 
-// TestUsageErrorPrintsUsageOfFailingCommand guards the detail that makes a
-// usage error actually helpful: the usage block shown belongs to the
-// subcommand that failed, not to the root.
-func TestUsageErrorPrintsUsageOfFailingCommand(t *testing.T) {
+// A usage error is the line that says what was wrong and where to read on,
+// for the subcommand that failed rather than the root. The whole usage block
+// would push that line off the screen.
+func TestUsageErrorPointsAtTheFailingCommand(t *testing.T) {
 	t.Parallel()
 
 	code, _, stderr := run(t, "version", "extra")
 	if code != cli.ExitUsage {
 		t.Fatalf("exit = %d, want %d", code, cli.ExitUsage)
 	}
-	if !strings.Contains(stderr, "Usage:\n  weg version") {
-		t.Errorf("stderr should show usage for 'weg version', got:\n%s", stderr)
+	if !strings.HasSuffix(stderr, "Run 'weg version --help' for usage.\n") || strings.Contains(stderr, "Usage:") {
+		t.Errorf("stderr should end by pointing at 'weg version --help', got:\n%s", stderr)
+	}
+}
+
+// A slip in a command or a flag is answered with what was probably meant.
+func TestUsageErrorsSuggest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"zoen", "list"}, `unknown command "zoen" for "weg"; did you mean weg zone?`},
+		{[]string{"rec", "list"}, "did you mean weg record?"},
+		{[]string{"zone", "lsit"}, "did you mean weg zone list?"},
+		{[]string{"record", "ad"}, "did you mean weg record add?"},
+		{[]string{"zone", "list", "--serach", "x"}, "did you mean --search?"},
+		{[]string{"zone", "list", "--sever", "x"}, "did you mean --server?"},
+	}
+	for _, tt := range tests {
+		code, _, stderr := run(t, tt.args...)
+		if code != cli.ExitUsage || !strings.Contains(stderr, tt.want) {
+			t.Errorf("weg %s: exit %d, stderr %q; want %d and %q",
+				strings.Join(tt.args, " "), code, stderr, cli.ExitUsage, tt.want)
+		}
 	}
 }

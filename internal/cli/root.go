@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/wegweiserzone/wegweiser/internal/cli/output"
 )
@@ -64,10 +66,56 @@ func (e usageError) Unwrap() error { return e.err }
 func usageArgs(fn cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(c *cobra.Command, args []string) error {
 		if err := fn(c, args); err != nil {
+			// A group handed a word it does not know was most likely handed a
+			// command with a slip in it.
+			if c.HasAvailableSubCommands() && len(args) > 0 {
+				return usageError{unknownCommand(c, args[0])}
+			}
 			return usageError{err}
 		}
 		return nil
 	}
+}
+
+// unknownCommand says a group has no such command, and which one was probably
+// meant. Cobra would say so itself, but only for a group without an argument
+// validator, and every group here has one.
+func unknownCommand(c *cobra.Command, typed string) error {
+	var names []string
+	for _, sub := range c.Commands() {
+		if sub.IsAvailableCommand() {
+			names = append(names, sub.Name())
+		}
+	}
+	// The closest one, or else what the word begins: "rec" is three letters
+	// from record and plainly meant it.
+	meant := nearest(typed, names)
+	for _, name := range names {
+		if meant == "" && strings.HasPrefix(name, strings.ToLower(typed)) {
+			meant = name
+		}
+	}
+	err := fmt.Errorf("unknown command %q for %q", typed, c.CommandPath())
+	if meant != "" {
+		return fmt.Errorf("%w; did you mean %s %s?", err, c.CommandPath(), meant)
+	}
+	return err
+}
+
+// unknownFlag says a command has no such flag, and which one was probably
+// meant.
+func unknownFlag(c *cobra.Command, err error) error {
+	var missing *pflag.NotExistError
+	if !errors.As(err, &missing) || missing.GetSpecifiedName() == "" {
+		return err
+	}
+	var names []string
+	c.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
+	c.InheritedFlags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
+	if meant := nearest(missing.GetSpecifiedName(), names); meant != "" {
+		return fmt.Errorf("%w; did you mean --%s?", err, meant)
+	}
+	return err
 }
 
 // Execute builds the command tree, runs it against args, and returns the
@@ -102,8 +150,9 @@ func Execute(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			if failed == nil {
 				failed = root
 			}
-			fmt.Fprintln(stderr)
-			fmt.Fprint(stderr, failed.UsageString())
+			// Where to read on rather than the whole usage, which would push
+			// the one line that says what was wrong off the screen.
+			fmt.Fprintf(stderr, "Run '%s --help' for usage.\n", failed.CommandPath())
 			return ExitUsage
 		}
 		return ExitError
@@ -151,8 +200,8 @@ func newRootCommand(opts *options) *cobra.Command {
 
 	// Malformed flags are a usage error, not a runtime failure. Set on the
 	// root, which Cobra propagates to every subcommand.
-	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		return usageError{err}
+	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		return usageError{unknownFlag(c, err)}
 	})
 
 	cmd.PersistentFlags().StringVarP(&format, "output", "o", string(output.FormatText),
