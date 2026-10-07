@@ -118,8 +118,11 @@ conjure them behind your back.
 
 To see a fuller instance without installing one, `make demo` builds the binary, starts three
 servers as a cluster on unprivileged ports and fills it with what a small network actually
-looks like, reverse zones and all. `WEG_DEMO_NODES=1 make demo` runs a single server instead,
-and `make demo-stop` takes either away again.
+looks like, reverse zones and all. It keeps two questions a second going to them, so the
+overview and the query stream have something to show without `dig` installed.
+`WEG_DEMO_NODES=1 make demo` runs a single server instead, and `make demo-stop` takes either
+away again. `scripts/demo.sh help` lists the rest, such as switching one server off to watch
+the cluster do without it.
 
 ### Running it for real
 
