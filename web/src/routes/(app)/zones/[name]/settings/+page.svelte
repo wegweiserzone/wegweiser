@@ -284,6 +284,10 @@
         <span class="sign text-[11px] text-ok">Saved</span>
       {/if}
     </div>
+  {:else}
+    <Notice tone="signal" title="Read only">
+      Changing a zone's settings needs a token with the write scope.
+    </Notice>
   {/if}
 
   <p class="num text-xs text-ink-faint">

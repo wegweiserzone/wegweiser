@@ -127,6 +127,28 @@ test("a session that may only read is told once why it sees no credentials", asy
   await expect(page.getByText("No keys yet")).toHaveCount(0);
 });
 
+// Where a change would be, a session that may only read is told so rather than
+// shown a gap.
+test("a session that may only read sees where it could not change anything", async ({
+  page,
+  server,
+}) => {
+  await seed(server, "POST", "/zones", { name: "readonly.example" });
+  const reader = await seed(server, "POST", "/tokens", { name: "looker", scopes: ["read"] });
+  await signIn(page, server, reader.secret as string);
+
+  await page.goto(`${server.url}/zones`);
+  await expect(page.getByText("Read only")).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ New zone" })).toHaveCount(0);
+
+  await page.goto(`${server.url}/zones/readonly.example.`);
+  await expect(page.getByText("Read only")).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ New record" })).toHaveCount(0);
+
+  await page.goto(`${server.url}/zones/readonly.example./settings`);
+  await expect(page.getByText("Changing a zone's settings needs a token")).toBeVisible();
+});
+
 test("a page that does not exist is designed, not SvelteKit's", async ({ page, server }) => {
   // Typed into the address bar, not navigated to from inside: the fallback
   // document is served (internal/api/ui.go) and the client-side router then

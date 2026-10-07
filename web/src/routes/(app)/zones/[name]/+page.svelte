@@ -15,6 +15,7 @@
   import { everyType } from "$lib/records";
   import { session } from "$lib/session.svelte";
   import Button from "$lib/components/Button.svelte";
+  import ReadOnly from "$lib/components/ReadOnly.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import Dialog from "$lib/components/Dialog.svelte";
   import Empty from "$lib/components/Empty.svelte";
@@ -389,6 +390,8 @@
     >
       + New record
     </Button>
+  {:else}
+    <ReadOnly class="ml-auto" />
   {/if}
 </div>
 

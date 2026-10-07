@@ -12,6 +12,7 @@
   import type { Finding } from "$lib/api";
   import { session } from "$lib/session.svelte";
   import Button from "$lib/components/Button.svelte";
+  import ReadOnly from "$lib/components/ReadOnly.svelte";
   import Empty from "$lib/components/Empty.svelte";
   import Notice from "$lib/components/Notice.svelte";
 
@@ -176,14 +177,18 @@
       {summary} in {count(records, "record")}.
     </p>
 
-    {#if missingReverse && writable}
+    {#if missingReverse}
       <Notice tone="signal" title="The missing reverse entries can be written">
         Reverse automation reacts to changes, so a zone that arrived after the records it
         should hold has nothing to react to. Filling it is one commit, and it only adds.
         {#snippet actions()}
-          <Button weight="primary" onclick={reconcile} disabled={reconciling}>
-            {reconciling ? "Writing…" : "Fill them in"}
-          </Button>
+          {#if writable}
+            <Button weight="primary" onclick={reconcile} disabled={reconciling}>
+              {reconciling ? "Writing…" : "Fill them in"}
+            </Button>
+          {:else}
+            <ReadOnly />
+          {/if}
         {/snippet}
       </Notice>
     {/if}
@@ -200,7 +205,9 @@
             </span>
             {finding.detail}
             {#snippet actions()}
-              {#if finding.record && writable}
+              {#if finding.record && !writable}
+                <ReadOnly />
+              {:else if finding.record}
                 <Button
                   onclick={() => makeCanonical(finding.record!)}
                   disabled={claiming !== null}

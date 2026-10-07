@@ -11,6 +11,7 @@
   import { session } from "$lib/session.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import Button from "$lib/components/Button.svelte";
+  import ReadOnly from "$lib/components/ReadOnly.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import Dialog from "$lib/components/Dialog.svelte";
   import Empty from "$lib/components/Empty.svelte";
@@ -306,6 +307,8 @@
       <Button weight="primary" onclick={() => ((creating = true), (refused = null))}>
         + New zone
       </Button>
+    {:else}
+      <ReadOnly />
     {/if}
   {/snippet}
 </Bar>

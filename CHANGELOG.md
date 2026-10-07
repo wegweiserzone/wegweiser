@@ -47,6 +47,10 @@ public API is unstable and may change without a deprecation period.
   the zone it most likely meant when one is a letter or two away, and leads
   to the list of zones.
 
+- A session that may only read lost the buttons it could not use, on the zone
+  list, a zone's records, its check and the history, and a zone's settings
+  were greyed out without a word. Each of those places now says *Read only*.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary

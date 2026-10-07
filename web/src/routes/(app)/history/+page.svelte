@@ -12,6 +12,7 @@
   import { session } from "$lib/session.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import Button from "$lib/components/Button.svelte";
+  import ReadOnly from "$lib/components/ReadOnly.svelte";
   import Chip from "$lib/components/Chip.svelte";
   import Diff from "$lib/components/Diff.svelte";
   import Dialog from "$lib/components/Dialog.svelte";
@@ -392,6 +393,8 @@
           >
             Revert to this state
           </Button>
+        {:else if !writable}
+          <ReadOnly class="ml-auto" />
         {/if}
       </div>
 
