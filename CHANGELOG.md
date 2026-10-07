@@ -17,6 +17,9 @@ public API is unstable and may change without a deprecation period.
   `store: not found: no commit with the identifier …` or `invalid record data:
   bad A A: "1.2.3"`, which now reads `"1.2.3" is not an IPv4 address`.
 
+- A record type that is not one is refused with the type it was probably
+  meant to be: `"AAA" is not a record type; did you mean AAAA?`.
+
 #### CLI
 
 - An error from the server is that sentence alone. `weg` used to put the
@@ -28,6 +31,12 @@ public API is unstable and may change without a deprecation period.
   `weg zone`, `--serach` whether you meant `--search`) and the `--help` to read
   next. It used to print the whole usage text after the error, which pushed
   the line that mattered off the screen.
+
+- A value a flag does not take, and a zone, token or key that is not there,
+  are answered the same way: `weg zone show exmaple.com` asks whether you
+  meant `example.com.`. A reverse conflict policy `weg settings set` does not
+  know is now a usage error with exit status 2, like any other flag given a
+  value it does not take.
 
 ### Fixed
 

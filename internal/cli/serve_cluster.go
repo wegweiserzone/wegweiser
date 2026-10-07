@@ -15,6 +15,7 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/config"
 	"github.com/wegweiserzone/wegweiser/internal/metrics"
 	"github.com/wegweiserzone/wegweiser/internal/store"
+	"github.com/wegweiserzone/wegweiser/internal/suggest"
 )
 
 // joinFlags say which member to ask, and in what role, when this node is to
@@ -38,7 +39,8 @@ func (j joinFlags) check(cfg *config.Config) error {
 			"the address to advertise and the cluster's secret")
 	case j.role != string(cluster.RoleVoter) && j.role != string(cluster.RoleNonvoter):
 		return fmt.Errorf("--role %q is not a role; a node joins as %s or %s, and a witness is "+
-			"a program of its own, wegwitness", j.role, cluster.RoleVoter, cluster.RoleNonvoter)
+			"a program of its own, wegwitness%s", j.role, cluster.RoleVoter, cluster.RoleNonvoter,
+			suggest.DidYouMean(j.role, []string{string(cluster.RoleVoter), string(cluster.RoleNonvoter)}))
 	}
 	return nil
 }

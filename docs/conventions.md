@@ -97,6 +97,7 @@ internal/stream/    Live query stream: per-watcher filters, ring buffer, samplin
 internal/store/     Store interface, sqlite/, and postgres/ when it exists
 internal/journal/   Commit and event types: data only, no persistence
 internal/id/        ULID primary keys, assignable before the write that stores them
+internal/suggest/   The word a mistyped one was probably meant to be, for "did you mean"
 internal/apply/     The write path: commands to events, serials, rollback
 internal/publish/   Copies the store into the data plane, at start and after every batch (D41)
 internal/api/       HTTP handlers, OpenAPI, auth

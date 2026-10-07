@@ -11,6 +11,7 @@ import (
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/cli/output"
+	"github.com/wegweiserzone/wegweiser/internal/suggest"
 )
 
 // zoneUpdated is what changing a zone reports: what it now is, and what the
@@ -134,7 +135,7 @@ func autoReverse(s string) (nullable.Nullable[bool], error) {
 		return nullable.NewNullNullable[bool](), nil
 	}
 	return nullable.Nullable[bool]{}, usageError{fmt.Errorf(
-		"%q is not one of on, off or server", s)}
+		"%q is not one of on, off or server%s", s, suggest.DidYouMean(s, []string{"on", "off", "server"}))}
 }
 
 // nothingToChange reports a request that would send an empty patch.

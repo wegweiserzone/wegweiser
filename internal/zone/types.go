@@ -2,6 +2,7 @@ package zone
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -102,6 +103,21 @@ func ParseRRType(s string) (RRType, error) {
 		}
 	}
 	return TypeNone, fmt.Errorf("%w: %q", ErrInvalidRRType, s)
+}
+
+// TypeNames is every record type that has a mnemonic, sorted, for telling a
+// mistyped one from what it was meant to be.
+func TypeNames() []string {
+	var names []string
+	for name := range dns.StringToType {
+		if isMnemonic(name) {
+			names = append(names, name)
+		}
+	}
+	// Sorted, because two equally close names would otherwise come out in
+	// map order, differently from one run to the next.
+	slices.Sort(names)
+	return names
 }
 
 // IsQueryOnly reports whether t may appear only in a question and never in a

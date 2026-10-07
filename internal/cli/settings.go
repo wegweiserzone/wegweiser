@@ -12,6 +12,7 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/cli/output"
+	"github.com/wegweiserzone/wegweiser/internal/suggest"
 )
 
 // reversePolicies are the values the reverse conflict policy accepts, in the
@@ -146,8 +147,8 @@ func runSettingsSet(
 		// Refused here as well as by the server, so that a typo costs a message
 		// rather than a round trip and a schema error naming a JSON field.
 		if !validPolicy(*policy) {
-			return fmt.Errorf("unknown reverse conflict policy %q: it is one of %s",
-				*policy, strings.Join(reversePolicies, ", "))
+			return usageError{fmt.Errorf("unknown reverse conflict policy %q: it is one of %s%s",
+				*policy, strings.Join(reversePolicies, ", "), suggest.DidYouMean(*policy, reversePolicies))}
 		}
 		p := gen.ReverseConflictPolicy(*policy)
 		body.ReverseConflictPolicy = &p

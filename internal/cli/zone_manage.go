@@ -15,6 +15,7 @@ import (
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/cli/output"
+	"github.com/wegweiserzone/wegweiser/internal/suggest"
 )
 
 // pageSize is how many zones or records are asked for at a time.
@@ -47,7 +48,8 @@ func newZoneListCommand(opts *options, f *clientFlags) *cobra.Command {
 				k := gen.ZoneKind(strings.ToLower(kind))
 				if !k.Valid() {
 					return usageError{fmt.Errorf(
-						"%q is not a kind of zone; it is forward or reverse", kind)}
+						"%q is not a kind of zone; it is forward or reverse%s", kind,
+						suggest.DidYouMean(kind, []string{"forward", "reverse"}))}
 				}
 				params.Kind = &k
 			}

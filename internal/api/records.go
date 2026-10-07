@@ -8,6 +8,7 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/journal"
 	"github.com/wegweiserzone/wegweiser/internal/store"
+	"github.com/wegweiserzone/wegweiser/internal/suggest"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
@@ -35,7 +36,7 @@ func (s *Server) ListRecords(
 	if req.Params.Type != nil {
 		typ, err := zone.ParseRRType(*req.Params.Type)
 		if err != nil {
-			return nil, badRequest("%q is not a record type", *req.Params.Type)
+			return nil, notAType(*req.Params.Type)
 		}
 		f.Types = []zone.RRType{typ}
 	}
@@ -314,7 +315,7 @@ func recordFrom(z *zone.Zone, in gen.CreateRecord) (zone.Record, error) {
 
 	typ, err := zone.ParseRRType(in.Type)
 	if err != nil {
-		return zone.Record{}, badRequest("%q is not a record type", in.Type)
+		return zone.Record{}, notAType(in.Type)
 	}
 
 	class := zone.ClassIN
@@ -358,7 +359,7 @@ func patchRecord(z *zone.Zone, before *zone.Record, in gen.UpdateRecord) (zone.R
 	if in.Type != nil {
 		t, err := zone.ParseRRType(*in.Type)
 		if err != nil {
-			return zone.Record{}, badRequest("%q is not a record type", *in.Type)
+			return zone.Record{}, notAType(*in.Type)
 		}
 		typ = t
 	}
@@ -447,7 +448,7 @@ func rrsetOp(z *zone.Zone, in gen.RRset) (apply.RecordOp, error) {
 
 	typ, err := zone.ParseRRType(in.Type)
 	if err != nil {
-		return apply.RecordOp{}, badRequest("%q is not a record type", in.Type)
+		return apply.RecordOp{}, notAType(in.Type)
 	}
 
 	class := zone.ClassIN
@@ -535,4 +536,10 @@ func (s *Server) generatedByAll(ctx context.Context, recs []*zone.Record) *[]gen
 		return nil
 	}
 	return &out
+}
+
+// notAType refuses a type that does not parse, ending with the one it was
+// probably meant to be.
+func notAType(s string) *apiError {
+	return badRequest("%q is not a record type%s", s, suggest.DidYouMean(s, zone.TypeNames()))
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/suggest"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
@@ -230,7 +231,15 @@ func findZone(
 		return nil, apiError(resp.HTTPResponse.StatusCode, resp.Body)
 	}
 	if len(resp.JSON200.Items) == 0 {
-		return nil, fmt.Errorf("no zone named %q on this server", qualified)
+		// One more request, for the name a typed one most likely meant.
+		var names []string
+		if held, herr := allZones(ctx, client, gen.ListZonesParams{}, 0); herr == nil {
+			for i := range held {
+				names = append(names, held[i].Name)
+			}
+		}
+		return nil, fmt.Errorf("no zone named %q on this server%s", qualified,
+			suggest.DidYouMean(qualified, names))
 	}
 	return &resp.JSON200.Items[0], nil
 }
@@ -288,13 +297,13 @@ func zoneArgument(name string) (string, error) {
 	// since all-numeric labels are legal, so without this it would be looked up
 	// as a forward zone and reported missing, which says nothing useful.
 	if addr, err := netip.ParseAddr(name); err == nil {
-		suggest := netip.PrefixFrom(addr, 24)
+		network := netip.PrefixFrom(addr, 24)
 		if addr.Is6() {
-			suggest = netip.PrefixFrom(addr, 64)
+			network = netip.PrefixFrom(addr, 64)
 		}
 		return "", fmt.Errorf(
 			"%q is an address, not a zone: say %s for the reverse zone that answers for it",
-			name, suggest.Masked())
+			name, network.Masked())
 	}
 
 	// A trailing dot is optional here for the same reason it is optional

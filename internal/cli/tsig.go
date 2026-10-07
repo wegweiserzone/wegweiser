@@ -12,6 +12,7 @@ import (
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/cli/output"
+	"github.com/wegweiserzone/wegweiser/internal/suggest"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 )
 
@@ -374,6 +375,13 @@ func pickTSIGKey(
 	}
 	if withdrawn != nil {
 		return withdrawn, nil
+	}
+	names := make([]string, len(keys))
+	for i := range keys {
+		names[i] = keys[i].Name
+	}
+	if meant := suggest.DidYouMean(wanted.String(), names); meant != "" {
+		return nil, fmt.Errorf("no key named %s%s", wanted, meant)
 	}
 	return nil, fmt.Errorf("no key named %s; `weg tsig list` shows the ones there are", wanted)
 }

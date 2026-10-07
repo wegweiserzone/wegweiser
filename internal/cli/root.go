@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/wegweiserzone/wegweiser/internal/cli/output"
+	"github.com/wegweiserzone/wegweiser/internal/suggest"
 )
 
 // Exit codes returned by [Execute]. They follow the convention that 1 is a
@@ -89,7 +90,7 @@ func unknownCommand(c *cobra.Command, typed string) error {
 	}
 	// The closest one, or else what the word begins: "rec" is three letters
 	// from record and plainly meant it.
-	meant := nearest(typed, names)
+	meant := suggest.Nearest(typed, names)
 	for _, name := range names {
 		if meant == "" && strings.HasPrefix(name, strings.ToLower(typed)) {
 			meant = name
@@ -112,7 +113,7 @@ func unknownFlag(c *cobra.Command, err error) error {
 	var names []string
 	c.Flags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
 	c.InheritedFlags().VisitAll(func(f *pflag.Flag) { names = append(names, f.Name) })
-	if meant := nearest(missing.GetSpecifiedName(), names); meant != "" {
+	if meant := suggest.Nearest(missing.GetSpecifiedName(), names); meant != "" {
 		return fmt.Errorf("%w; did you mean --%s?", err, meant)
 	}
 	return err
@@ -185,7 +186,7 @@ func newRootCommand(opts *options) *cobra.Command {
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			f, err := output.ParseFormat(format)
 			if err != nil {
-				return usageError{err}
+				return usageError{fmt.Errorf("%w%s", err, suggest.DidYouMean(format, output.Formats()))}
 			}
 			opts.format = f
 			opts.printer = nil // rebuild with the resolved format

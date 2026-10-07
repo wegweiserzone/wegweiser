@@ -1,11 +1,16 @@
-package cli
+// Package suggest finds the word a mistyped one was probably meant to be, so
+// that a refusal can end with it.
+package suggest
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
-// nearest is the candidate a typed word most likely meant: the closest one,
-// provided it is at most two edits away, or nothing. Two catches a slipped or
+// Nearest is the candidate typed was most likely meant to be: the closest one,
+// provided it is at most two steps away, or nothing. Two catches a slipped or
 // swapped letter; further than that it is another word rather than a typo.
-func nearest(typed string, candidates []string) string {
+func Nearest(typed string, candidates []string) string {
 	best, closest := "", 3
 	for _, c := range candidates {
 		if d := distance(strings.ToLower(typed), strings.ToLower(c)); d < closest {
@@ -13,6 +18,15 @@ func nearest(typed string, candidates []string) string {
 		}
 	}
 	return best
+}
+
+// DidYouMean is the end of a sentence refusing typed: the candidate it was
+// probably meant to be, as a question, or nothing where none is close.
+func DidYouMean(typed string, candidates []string) string {
+	if meant := Nearest(typed, candidates); meant != "" && !strings.EqualFold(meant, typed) {
+		return fmt.Sprintf("; did you mean %s?", meant)
+	}
+	return ""
 }
 
 // distance is how many letters have to be added, removed, changed or swapped

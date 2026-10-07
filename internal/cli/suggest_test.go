@@ -1,26 +1,40 @@
 package cli
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestNearest(t *testing.T) {
+// A value with a slip in it is refused with the one it was probably meant to
+// be, whether the list of values is fixed or is what the server holds.
+func TestRefusalsSuggest(t *testing.T) {
 	t.Parallel()
+	srv := newServer(t)
+	mustRun(t, srv, "zone", "create", "example.com")
+	mustRun(t, srv, "token", "create", "deploy", "--scope", "write")
+	mustRun(t, srv, "tsig", "create", "ns2.example.com.")
 
-	candidates := []string{"example.com.", "example.org.", "internal.lan."}
 	tests := []struct {
-		typed, want string
+		args []string
+		code int
+		want string
 	}{
-		{"example.com.", "example.com."},
-		{"exmaple.com.", "example.com."}, // two letters swapped
-		{"exmaple.cmo.", "example.com."}, // two swaps, two steps
-		{"exmalpe.cmo.", ""},             // three is another name
-		{"EXAMPLE.COM.", "example.com."},
-		{"internl.lan.", "internal.lan."},
-		{"elsewhere.test.", ""}, // a different name, not a typo
-		{"", ""},
+		{[]string{"zone", "list", "--kind", "froward"}, ExitUsage, "did you mean forward?"},
+		{[]string{"zone", "list", "--output", "jsno"}, ExitUsage, "did you mean json?"},
+		{[]string{"zone", "update", "example.com", "--auto-reverse", "of"}, ExitUsage, "did you mean on?"},
+		{[]string{"settings", "set", "--reverse-conflict-policy", "lastwins"}, ExitUsage, "did you mean last-wins?"},
+		{[]string{"token", "create", "x", "--scope", "wirte"}, ExitUsage, "did you mean write?"},
+		{[]string{"zone", "show", "exmaple.com"}, ExitError, "did you mean example.com.?"},
+		{[]string{"token", "revoke", "deplyo", "--yes"}, ExitError, "did you mean deploy?"},
+		{[]string{"tsig", "show", "ns2.exmaple.com."}, ExitError, "did you mean ns2.example.com.?"},
+		{[]string{"record", "add", "example.com", "x", "AAA", "192.0.2.1"}, ExitError, `"AAA" is not a record type; did you mean`},
+		{[]string{"zone", "show", "elsewhere.test"}, ExitError, `no zone named "elsewhere.test." on this server`},
 	}
 	for _, tt := range tests {
-		if got := nearest(tt.typed, candidates); got != tt.want {
-			t.Errorf("nearest(%q) = %q, want %q", tt.typed, got, tt.want)
+		code, _, errOut := run(t, srv, tt.args...)
+		if code != tt.code || !strings.Contains(errOut, tt.want) {
+			t.Errorf("weg %s: exit %d, stderr %q; want %d and %q",
+				strings.Join(tt.args, " "), code, errOut, tt.code, tt.want)
 		}
 	}
 }

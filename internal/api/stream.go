@@ -71,7 +71,7 @@ func streamFilter(p gen.StreamQueriesParams) (stream.Filter, error) {
 		for _, t := range *p.Type {
 			typ, err := zone.ParseRRType(t)
 			if err != nil {
-				return f, badRequest("type %q: %v", t, err)
+				return f, notAType(t)
 			}
 			f.Types = append(f.Types, typ)
 		}

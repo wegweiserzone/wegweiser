@@ -12,6 +12,7 @@ import (
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/cli/output"
+	"github.com/wegweiserzone/wegweiser/internal/suggest"
 )
 
 // newTokenCommand groups the credentials that may use this API.
@@ -196,7 +197,8 @@ func newTokenCreateCommand(opts *options, f *clientFlags) *cobra.Command {
 				scope := gen.Scope(strings.ToLower(s))
 				if !scope.Valid() {
 					return usageError{fmt.Errorf(
-						"%q is not a scope; they are read, write and admin", s)}
+						"%q is not a scope; they are read, write and admin%s", s,
+						suggest.DidYouMean(s, []string{"read", "write", "admin"}))}
 				}
 				in.Scopes = append(in.Scopes, scope)
 			}
@@ -347,6 +349,13 @@ func pickToken(tokens []gen.Token, name string) (*gen.Token, error) {
 
 	switch len(matches) {
 	case 0:
+		names := make([]string, len(tokens))
+		for i := range tokens {
+			names[i] = tokens[i].Name
+		}
+		if meant := suggest.DidYouMean(name, names); meant != "" {
+			return nil, fmt.Errorf("no token called %q%s", name, meant)
+		}
 		return nil, fmt.Errorf("no token called %q; `weg token list` shows them", name)
 	case 1:
 		return matches[0], nil
