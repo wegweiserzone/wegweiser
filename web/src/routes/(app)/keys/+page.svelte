@@ -82,8 +82,10 @@
     }
   }
 
+  // Listing needs the admin scope too, so a session without it asks for nothing
+  // and is told once why, above, rather than again as a failure.
   $effect(() => {
-    load();
+    if (allowed) load();
   });
 
   async function create(event: SubmitEvent) {
@@ -172,7 +174,8 @@
   {#if !allowed}
     <div class="px-5 pt-4">
       <Notice tone="warn" title="This session may not manage keys">
-        A key that may transfer may take every zone, so managing one needs the admin scope.
+        A key that may transfer may take every zone, so seeing or managing one needs the admin
+        scope.
       </Notice>
     </div>
   {/if}
@@ -217,62 +220,62 @@
     </div>
   {/if}
 
-  <Table {columns} items={keys} key={(k) => k.id}>
-    {#snippet row(key: TSIGKey)}
-      <td class="py-1.5 pr-3 pl-5 {key.revokedAt ? 'text-ink-faint' : ''}">{key.name}</td>
-      <td class="num px-3 py-1.5 text-ink-mute">{short(key.algorithm)}</td>
-      <td
-        class="num px-3 py-1.5 text-right text-[12px] text-ink-faint"
-        title={exact(key.createdAt)}
-      >
-        {ago(key.createdAt)}
-      </td>
-      <td class="px-3 py-1.5">
-        {#if key.revokedAt}
-          <Chip tone="neutral">Withdrawn</Chip>
-        {:else}
-          <Chip tone="ok" dot>Signs</Chip>
-        {/if}
-      </td>
-      <td class="py-1.5 pr-5 pl-3 text-right">
-        {#if allowed && !key.revokedAt}
-          <span class="flex items-center justify-end gap-1">
-            <Button weight="quiet" onclick={() => reveal(key)}>Show secret</Button>
-            <button
-              type="button"
-              onclick={() => ((revoking = key), (refused = null))}
-              aria-label="Withdraw {key.name}"
-              class="grid size-6 cursor-pointer place-items-center rounded-xs text-ink-faint
-                     opacity-0 transition-opacity group-hover:opacity-100 hover:bg-crit-lo
-                     hover:text-crit focus-visible:opacity-100"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-3.5">
-                <circle cx="12" cy="12" r="9" />
-                <path d="m6 6 12 12" stroke-linecap="round" />
-              </svg>
-            </button>
-          </span>
-        {/if}
-      </td>
-    {/snippet}
+  {#if allowed}
+    <Table {columns} items={keys} key={(k) => k.id}>
+      {#snippet row(key: TSIGKey)}
+        <td class="py-1.5 pr-3 pl-5 {key.revokedAt ? 'text-ink-faint' : ''}">{key.name}</td>
+        <td class="num px-3 py-1.5 text-ink-mute">{short(key.algorithm)}</td>
+        <td
+          class="num px-3 py-1.5 text-right text-[12px] text-ink-faint"
+          title={exact(key.createdAt)}
+        >
+          {ago(key.createdAt)}
+        </td>
+        <td class="px-3 py-1.5">
+          {#if key.revokedAt}
+            <Chip tone="neutral">Withdrawn</Chip>
+          {:else}
+            <Chip tone="ok" dot>Signs</Chip>
+          {/if}
+        </td>
+        <td class="py-1.5 pr-5 pl-3 text-right">
+          {#if !key.revokedAt}
+            <span class="flex items-center justify-end gap-1">
+              <Button weight="quiet" onclick={() => reveal(key)}>Show secret</Button>
+              <button
+                type="button"
+                onclick={() => ((revoking = key), (refused = null))}
+                aria-label="Withdraw {key.name}"
+                class="grid size-6 cursor-pointer place-items-center rounded-xs text-ink-faint
+                       opacity-0 transition-opacity group-hover:opacity-100 hover:bg-crit-lo
+                       hover:text-crit focus-visible:opacity-100"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-3.5">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="m6 6 12 12" stroke-linecap="round" />
+                </svg>
+              </button>
+            </span>
+          {/if}
+        </td>
+      {/snippet}
 
-    {#snippet empty()}
-      {#if loading}
-        <p class="text-center text-[13px] text-ink-faint">Reading the keys…</p>
-      {:else}
-        <Empty title="No keys yet">
-          A key lets a secondary pull a zone from any address, which an address list cannot do:
-          it cannot tell two hosts behind one NAT apart, or authenticate a server somebody else
-          runs.
-          {#snippet actions()}
-            {#if allowed}
+      {#snippet empty()}
+        {#if loading}
+          <p class="text-center text-[13px] text-ink-faint">Reading the keys…</p>
+        {:else}
+          <Empty title="No keys yet">
+            A key lets a secondary pull a zone from any address, which an address list cannot do:
+            it cannot tell two hosts behind one NAT apart, or authenticate a server somebody else
+            runs.
+            {#snippet actions()}
               <Button weight="primary" onclick={() => (creating = true)}>Create one</Button>
-            {/if}
-          {/snippet}
-        </Empty>
-      {/if}
-    {/snippet}
-  </Table>
+            {/snippet}
+          </Empty>
+        {/if}
+      {/snippet}
+    </Table>
+  {/if}
 </div>
 
 <Dialog bind:open={creating} title="New key">

@@ -2,7 +2,7 @@
  * That the interface is there, and reaches the server.
  */
 
-import { expect, signIn, test } from "./fixtures";
+import { expect, seed, signIn, test } from "./fixtures";
 
 test("the session screen says which server this is", async ({ page, server }) => {
   await page.goto(server.url);
@@ -105,6 +105,26 @@ test("signing out ends the session", async ({ page, server }) => {
   // And it is really gone, not merely hidden: a reload does not walk back in.
   await page.reload();
   await expect(page.getByLabel("API token")).toBeVisible();
+});
+
+// Credentials need the admin scope even to be listed. A session without it is
+// told so once, not again as a failure and a third time as an empty list.
+test("a session that may only read is told once why it sees no credentials", async ({
+  page,
+  server,
+}) => {
+  const reader = await seed(server, "POST", "/tokens", { name: "reader", scopes: ["read"] });
+  await signIn(page, server, reader.secret as string);
+
+  await page.goto(`${server.url}/tokens`);
+  await expect(page.getByText("This session may not manage tokens")).toBeVisible();
+  await expect(page.getByText("could not be listed")).toHaveCount(0);
+  await expect(page.getByText("No tokens yet")).toHaveCount(0);
+
+  await page.goto(`${server.url}/keys`);
+  await expect(page.getByText("This session may not manage keys")).toBeVisible();
+  await expect(page.getByText("could not be listed")).toHaveCount(0);
+  await expect(page.getByText("No keys yet")).toHaveCount(0);
 });
 
 test("a page that does not exist is designed, not SvelteKit's", async ({ page, server }) => {

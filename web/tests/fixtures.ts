@@ -30,9 +30,9 @@ export const test = base.extend<Fixtures>({
 });
 
 /** signIn opens a session the way a person does, through the form. */
-export async function signIn(page: Page, server: Server) {
+export async function signIn(page: Page, server: Server, token = server.token) {
   await page.goto(server.url);
-  await page.getByLabel("API token").fill(server.token);
+  await page.getByLabel("API token").fill(token);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 }

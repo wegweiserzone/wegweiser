@@ -73,8 +73,10 @@
     }
   }
 
+  // Listing needs the admin scope too, so a session without it asks for nothing
+  // and is told once why, above, rather than again as a failure.
   $effect(() => {
-    load();
+    if (allowed) load();
   });
 
   async function create(event: SubmitEvent) {
@@ -152,7 +154,7 @@
   {#if !allowed}
     <div class="px-5 pt-4">
       <Notice tone="warn" title="This session may not manage tokens">
-        Managing credentials needs the admin scope, and this session carries
+        Seeing and managing credentials needs the admin scope, and this session carries
         <span class="num text-ink">{session.who?.scopes?.at(-1) ?? "none"}</span>.
       </Notice>
     </div>
@@ -193,71 +195,71 @@
     </div>
   {/if}
 
-  <Table {columns} items={tokens} key={(t) => t.id}>
-    {#snippet row(token: Token)}
-      {@const shown = condition(token)}
-      <td class="py-1.5 pr-3 pl-5 {token.revokedAt ? 'text-ink-faint' : ''}">
-        {token.name}
-        {#if session.who?.name === token.name}
-          <span class="sign ml-1.5 text-[10px] text-signal">this session</span>
-        {/if}
-      </td>
-      <td class="num px-3 py-1.5 text-ink-mute">{token.prefix}…</td>
-      <td class="px-3 py-1.5">
-        <Chip tone={token.scopes.includes("admin") ? "signal" : "neutral"}>
-          {token.scopes.at(-1)}
-        </Chip>
-      </td>
-      <td
-        class="num px-3 py-1.5 text-right text-[12px] text-ink-faint"
-        title={exact(token.createdAt)}
-      >
-        {ago(token.createdAt)}
-      </td>
-      <td
-        class="num px-3 py-1.5 text-right text-[12px] text-ink-faint"
-        title={exact(token.lastUsedAt)}
-      >
-        {token.lastUsedAt ? ago(token.lastUsedAt) : "never"}
-      </td>
-      <td class="px-3 py-1.5">
-        <Chip tone={shown.tone} dot={shown.tone === "ok"}>{shown.label}</Chip>
-      </td>
-      <td class="py-1.5 pr-5 pl-3 text-right">
-        {#if allowed && !token.revokedAt}
-          <button
-            type="button"
-            onclick={() => ((revoking = token), (refused = null))}
-            aria-label="Revoke {token.name}"
-            class="grid size-6 cursor-pointer place-items-center rounded-xs text-ink-faint
-                   opacity-0 transition-opacity group-hover:opacity-100 hover:bg-crit-lo
-                   hover:text-crit focus-visible:opacity-100"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-3.5">
-              <circle cx="12" cy="12" r="9" />
-              <path d="m6 6 12 12" stroke-linecap="round" />
-            </svg>
-          </button>
-        {/if}
-      </td>
-    {/snippet}
+  {#if allowed}
+    <Table {columns} items={tokens} key={(t) => t.id}>
+      {#snippet row(token: Token)}
+        {@const shown = condition(token)}
+        <td class="py-1.5 pr-3 pl-5 {token.revokedAt ? 'text-ink-faint' : ''}">
+          {token.name}
+          {#if session.who?.name === token.name}
+            <span class="sign ml-1.5 text-[10px] text-signal">this session</span>
+          {/if}
+        </td>
+        <td class="num px-3 py-1.5 text-ink-mute">{token.prefix}…</td>
+        <td class="px-3 py-1.5">
+          <Chip tone={token.scopes.includes("admin") ? "signal" : "neutral"}>
+            {token.scopes.at(-1)}
+          </Chip>
+        </td>
+        <td
+          class="num px-3 py-1.5 text-right text-[12px] text-ink-faint"
+          title={exact(token.createdAt)}
+        >
+          {ago(token.createdAt)}
+        </td>
+        <td
+          class="num px-3 py-1.5 text-right text-[12px] text-ink-faint"
+          title={exact(token.lastUsedAt)}
+        >
+          {token.lastUsedAt ? ago(token.lastUsedAt) : "never"}
+        </td>
+        <td class="px-3 py-1.5">
+          <Chip tone={shown.tone} dot={shown.tone === "ok"}>{shown.label}</Chip>
+        </td>
+        <td class="py-1.5 pr-5 pl-3 text-right">
+          {#if !token.revokedAt}
+            <button
+              type="button"
+              onclick={() => ((revoking = token), (refused = null))}
+              aria-label="Revoke {token.name}"
+              class="grid size-6 cursor-pointer place-items-center rounded-xs text-ink-faint
+                     opacity-0 transition-opacity group-hover:opacity-100 hover:bg-crit-lo
+                     hover:text-crit focus-visible:opacity-100"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-3.5">
+                <circle cx="12" cy="12" r="9" />
+                <path d="m6 6 12 12" stroke-linecap="round" />
+              </svg>
+            </button>
+          {/if}
+        </td>
+      {/snippet}
 
-    {#snippet empty()}
-      {#if loading}
-        <p class="text-center text-[13px] text-ink-faint">Reading the tokens…</p>
-      {:else}
-        <Empty title="No tokens yet">
-          A token is how the command line and anything else authenticates. The secret is shown
-          once, when it is created, and never again.
-          {#snippet actions()}
-            {#if allowed}
+      {#snippet empty()}
+        {#if loading}
+          <p class="text-center text-[13px] text-ink-faint">Reading the tokens…</p>
+        {:else}
+          <Empty title="No tokens yet">
+            A token is how the command line and anything else authenticates. The secret is shown
+            once, when it is created, and never again.
+            {#snippet actions()}
               <Button weight="primary" onclick={() => (creating = true)}>Create one</Button>
-            {/if}
-          {/snippet}
-        </Empty>
-      {/if}
-    {/snippet}
-  </Table>
+            {/snippet}
+          </Empty>
+        {/if}
+      {/snippet}
+    </Table>
+  {/if}
 </div>
 
 <Dialog bind:open={creating} title="New token">

@@ -33,6 +33,11 @@ public API is unstable and may change without a deprecation period.
   fill in. It now offers it only when entries are missing. After *Make this the
   answer* the notice no longer says that missing entries were written.
 
+- A session without the admin scope opened Tokens or Keys to three messages
+  at once: that it may not manage them, that the list could not be read, and
+  that there were none yet. It now gets the first, which says the list needs
+  the admin scope too, and nothing else.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary
