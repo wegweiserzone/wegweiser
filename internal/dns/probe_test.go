@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -465,5 +466,33 @@ func TestProbeStandingSaysWhenNothingHasBeenAskedYet(t *testing.T) {
 	waitFor(t, "the pair is known", func() bool { return len(p.Standing()) == 1 })
 	if got := p.Standing()[0]; got.Outcome != "" || got.Known {
 		t.Errorf("an unasked pair reports outcome %q (known %v), want neither", got.Outcome, got.Known)
+	}
+}
+
+// swapped is a snapshot that can be replaced, which is how a zone goes away.
+type swapped struct{ snap atomic.Pointer[Snapshot] }
+
+func (s *swapped) Snapshot() *Snapshot { return s.snap.Load() }
+
+// A deleted zone leaves the standing as soon as it leaves the snapshot, not
+// when the sender next wakes, which can be an hour later.
+func TestProbeStandingLeavesOutAZoneThatIsGone(t *testing.T) {
+	t.Parallel()
+
+	_, snap := ixfrZone(t, 12)
+	sec := newAnswerer(t, 12, false)
+	src := new(swapped)
+	src.snap.Store(snap)
+
+	p := startProber(t, ProbeConfig{
+		Targets:   []NotifyTarget{{Addr: sec.addr}},
+		Snapshots: src,
+		Floor:     time.Hour,
+	})
+	waitFor(t, "the pair is known", func() bool { return len(p.Standing()) == 1 })
+
+	src.snap.Store(&Snapshot{})
+	if got := p.Standing(); len(got) != 0 {
+		t.Errorf("a zone that is gone still stands: %+v", got)
 	}
 }

@@ -33,6 +33,12 @@ public API is unstable and may change without a deprecation period.
   fill in. It now offers it only when entries are missing. After *Make this the
   answer* the notice no longer says that missing entries were written.
 
+#### Observation
+
+- A deleted zone stayed in the secondaries' standing, in `weg secondary
+  status` and on the Secondaries page, until the next scheduled question,
+  which can be an hour later. It now leaves the list when it leaves the server.
+
 ## [0.5.0] - 2026-10-06
 
 ### Added

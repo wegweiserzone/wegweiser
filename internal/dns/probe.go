@@ -217,10 +217,18 @@ type ProbeStanding struct {
 
 // Standing reports what is known about every pair, ordered by zone and then by
 // secondary so that asking twice reads the same way twice.
+//
+// A zone deleted since the last round is still pending until the sender next
+// wakes, which can be the floor away. It is nobody's standing any more, so it
+// is left out here rather than waited for.
 func (p *Prober) Standing() []ProbeStanding {
+	snap := p.snapshot()
 	p.mu.Lock()
 	out := make([]ProbeStanding, 0, len(p.pending))
 	for key, st := range p.pending {
+		if _, held := snap.zones[key.zone]; !held {
+			continue
+		}
 		out = append(out, ProbeStanding{
 			Zone: key.zone, Target: key.addr,
 			Outcome: st.last.outcome,
