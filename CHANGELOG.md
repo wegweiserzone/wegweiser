@@ -42,6 +42,11 @@ public API is unstable and may change without a deprecation period.
   queries under 1 ms and drew seven empty latency rows. It now says nothing
   has been answered.
 
+- Opening a zone this server does not hold ended the sentence on two dots and
+  offered *Try again*, which could only ask for the same name. It now names
+  the zone it most likely meant when one is a letter or two away, and leads
+  to the list of zones.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary

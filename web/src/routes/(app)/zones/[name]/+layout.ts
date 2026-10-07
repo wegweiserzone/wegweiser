@@ -1,6 +1,7 @@
 import { error } from "@sveltejs/kit";
 
 import { api, ApiError, NetworkError } from "$lib/api";
+import { nearest } from "$lib/nearest";
 
 import type { LayoutLoad } from "./$types";
 
@@ -14,7 +15,14 @@ export const load: LayoutLoad = async ({ params }) => {
     const answer = await api.get("/zones", { query: { name: apex, limit: 1 } });
     const zone = answer.items[0];
     if (!zone) {
-      error(404, `This server is not authoritative for ${apex}.`);
+      // A typed or stale address is the usual way here, so the zone it most
+      // likely meant is worth one more request.
+      const held = await api.get("/zones", { query: { limit: 1000 } });
+      error(404, {
+        message: `There is no zone ${apex} on this server.`,
+        zone: apex,
+        nearest: nearest(apex.endsWith(".") ? apex : `${apex}.`, held.items.map((z) => z.name)),
+      });
     }
     return { zone };
   } catch (err) {

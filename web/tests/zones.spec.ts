@@ -2,7 +2,7 @@
  * The zone list and the zone.
  */
 
-import { expect, reset, signIn, test } from "./fixtures";
+import { expect, reset, seed, signIn, test } from "./fixtures";
 
 test.describe.configure({ mode: "serial" });
 
@@ -112,10 +112,20 @@ test("a zone that is not here says so, without losing the shell", async ({ page,
   await page.goto(`${server.url}/zones/nowhere.example.`);
 
   await expect(page.getByRole("heading", { name: "Not here" })).toBeVisible();
-  await expect(page.getByText("not authoritative for nowhere.example.")).toBeVisible();
+  await expect(page.getByText("There is no zone nowhere.example. on this server.")).toBeVisible();
+  await expect(page.getByText("Did you mean")).toHaveCount(0);
   // Still inside the interface: losing your way around is not part of the
   // answer to "that zone is gone".
   await expect(page.getByRole("link", { name: "Zones" })).toBeVisible();
+});
+
+test("a zone name with a slip in it offers the one it meant", async ({ page, server }) => {
+  await seed(server, "POST", "/zones", { name: "typo.example" });
+  await signIn(page, server);
+  await page.goto(`${server.url}/zones/tpyo.example.`);
+
+  await page.getByRole("link", { name: "typo.example." }).click();
+  await expect(page).toHaveURL(/\/zones\/typo\.example\.$/);
 });
 
 // Working out that 192.168.0.0/16 is 168.192.in-addr.arpa. by hand is the
