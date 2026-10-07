@@ -159,7 +159,7 @@ func (a *Applier) createZoneIn(
 		return nil, err
 	}
 
-	b, err := a.plan(cs, z, journal.KindZoneCreate, nil, meta)
+	b, err := a.plan(cs, z, journal.KindZoneCreate, nil, meta, true)
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +403,7 @@ func (a *Applier) deleteZoneIn(
 		cs.in(other).remove(rec)
 	}
 
-	b, err := a.plan(cs, z, journal.KindEdit, nil, meta)
+	b, err := a.plan(cs, z, journal.KindEdit, nil, meta, true)
 	if err != nil {
 		return nil, err
 	}

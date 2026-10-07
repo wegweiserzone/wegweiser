@@ -693,6 +693,10 @@ func TestReverseOnZoneDelete(t *testing.T) {
 	if res.Commits[0].Kind != journal.KindZoneDelete {
 		t.Errorf("the first commit is a %q, want the deletion", res.Commits[0].Kind)
 	}
+	// The entries leave because their zone did, which is the server's doing.
+	if res.Commits[1].Source != journal.SourceSystem {
+		t.Errorf("the reverse commit came from %q, want %q", res.Commits[1].Source, journal.SourceSystem)
+	}
 	// Both removals in one commit, so the reverse zone advances by one step for
 	// one cause.
 	if got := len(res.Commits[1].Events); got != 2 {
@@ -942,6 +946,27 @@ func TestReconcile(t *testing.T) {
 		}
 	})
 
+	// Filling in is somebody asking for it, and nothing in the forward zone
+	// changes, so the entries written are that person's commit.
+	t.Run("filling in from a forward zone is the person's change", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		rev := f.reverseZone("2.0.192.in-addr.arpa.")
+		f.storeA("www.example.com.", "192.0.2.10")
+
+		meta := testMeta()
+		meta.Comment = "fill in"
+		res, err := f.a.Reconcile(t.Context(), f.z.ID, meta)
+		if err != nil {
+			t.Fatalf("Reconcile: %v", err)
+		}
+		c := res.Commit()
+		if c == nil || c.ZoneID != rev.ID || c.Source != meta.Source || c.Comment != meta.Comment {
+			t.Fatalf("the reconciliation wrote %+v, want one commit in %s from %q saying %q",
+				c, rev.Name, meta.Source, meta.Comment)
+		}
+	})
+
 	t.Run("a zone with the automation off is not filled from the other side", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t)
@@ -1096,10 +1121,19 @@ func TestMakeCanonicalTakesTheEntry(t *testing.T) {
 		t.Fatalf("first-wins did not hold: %v", got)
 	}
 
-	f.mustApply(f.command(apply.RecordOp{
+	cmd := f.command(apply.RecordOp{
 		Action:   apply.ActionMakeCanonical,
 		RecordID: f.recordID("mail.example.com.", zone.TypeA),
-	}))
+	})
+	cmd.Comment = "mail answers for it"
+	c := f.mustApply(cmd)
+
+	// The forward zone does not change, so the reverse commit is the only one,
+	// and it is what the person did rather than something that followed.
+	if c.ZoneID != rev.ID || c.Source != journal.SourceAPI || c.Comment != cmd.Comment {
+		t.Errorf("the commit is in %s from %q saying %q, want %s from %q saying %q",
+			c.ZoneName, c.Source, c.Comment, rev.Name, journal.SourceAPI, cmd.Comment)
+	}
 
 	want := []string{"10.2.0.192.in-addr.arpa. -> mail.example.com."}
 	if got := f.ptrs(rev); !slices.Equal(got, want) {

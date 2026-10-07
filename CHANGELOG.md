@@ -39,6 +39,15 @@ public API is unstable and may change without a deprecation period.
   status` and on the Secondaries page, until the next scheduled question,
   which can be an hour later. It now leaves the list when it leaves the server.
 
+#### History
+
+- Handing an address's reverse entry to another name (*Make this the answer*,
+  `weg record canonical`) and filling in a forward zone's missing reverse
+  entries were recorded as the server's own doing, so *What people did* and
+  `--source api` left them out. They are now recorded as the change of whoever
+  asked for them, with their comment. Entries that follow a change to an
+  address record are still the server's.
+
 ## [0.5.0] - 2026-10-06
 
 ### Added

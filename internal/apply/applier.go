@@ -434,7 +434,11 @@ func (a *Applier) planIn(
 //
 // The zone the change was addressed to keeps the caller's kind and metadata.
 // Every other zone is one the automation reached on its own, so its commit says
-// so: the person did not edit that zone, the server did, on their behalf.
+// so: the person did not edit that zone, the server did, on their behalf. That
+// holds only where the addressed zone changes too. Handing an address's
+// reverse entry to another name, or filling in missing entries, changes no
+// record in the zone it was asked of, and what it writes elsewhere is then the
+// person's own change.
 func (a *Applier) commit(
 	ctx context.Context, tx store.Tx, cs *changeSet, primary *zone.Zone,
 	kind journal.Kind, meta Meta, res *Result,
@@ -450,7 +454,8 @@ func (a *Applier) commitAs(
 	ctx context.Context, tx store.Tx, cs *changeSet, primary *zone.Zone,
 	kind journal.Kind, revertsTo *zone.Serial, meta Meta, res *Result,
 ) (*Batch, error) {
-	b, err := a.plan(cs, primary, kind, revertsTo, meta)
+	addressed := cs.byZone[primary.ID]
+	b, err := a.plan(cs, primary, kind, revertsTo, meta, addressed != nil && !addressed.empty())
 	if err != nil {
 		return nil, err
 	}
@@ -471,9 +476,12 @@ func (a *Applier) commitAs(
 // identifier and every timestamp the change needs is minted here rather than
 // while it is being written, so that the result of applying the batch does not
 // depend on which node applies it (D24).
+//
+// followed says the changes outside the primary zone are consequences of one
+// in it, and so the server's doing; see [Applier.commit].
 func (a *Applier) plan(
 	cs *changeSet, primary *zone.Zone,
-	kind journal.Kind, revertsTo *zone.Serial, meta Meta,
+	kind journal.Kind, revertsTo *zone.Serial, meta Meta, followed bool,
 ) (*Batch, error) {
 	b := &Batch{set: cs}
 
@@ -493,7 +501,7 @@ func (a *Applier) plan(
 		// A generated entry lands in a zone the person never named, and the
 		// change to that zone is the server's own doing.
 		zoneKind, zoneMeta := kind, meta
-		if zid != primary.ID {
+		if zid != primary.ID && followed {
 			zoneKind = journal.KindEdit
 			zoneMeta.Source = journal.SourceSystem
 			zoneMeta.Comment = "reverse entries kept in step with " + primary.Name.String()
