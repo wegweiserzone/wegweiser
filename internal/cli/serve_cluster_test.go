@@ -265,7 +265,7 @@ func TestTwoServersBecomeACluster(t *testing.T) {
 			t.Errorf("weg health on the member that left says:\n%s", stdout)
 		}
 		if _, stderr, code := run("zone", "create", "three.example.", "--server", b.APIAddress); code == ExitOK ||
-			!strings.Contains(stderr, "left the cluster") {
+			!strings.Contains(stderr, "taken out of the cluster") {
 			t.Errorf("a write on the member that left: exit code %d, stderr %q; want it refused", code, stderr)
 		}
 

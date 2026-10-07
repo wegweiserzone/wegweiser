@@ -128,7 +128,7 @@ func parseRDataOnce(t RRType, c Class, s, origin string) (dns.RR, string, error)
 	rr, ok := zp.Next()
 	if !ok {
 		if err := zp.Err(); err != nil {
-			return nil, "", fmt.Errorf("%w: %s", ErrInvalidRData, cleanParserError(err))
+			return nil, "", fmt.Errorf("%w: %s", ErrInvalidRData, parserError(t, s, err))
 		}
 		return nil, "", fmt.Errorf("%w: empty", ErrInvalidRData)
 	}
@@ -138,7 +138,7 @@ func parseRDataOnce(t RRType, c Class, s, origin string) (dns.RR, string, error)
 		return nil, "", fmt.Errorf("%w: %q describes more than one record", ErrInvalidRData, s)
 	}
 	if err := zp.Err(); err != nil {
-		return nil, "", fmt.Errorf("%w: %s", ErrInvalidRData, cleanParserError(err))
+		return nil, "", fmt.Errorf("%w: %s", ErrInvalidRData, parserError(t, s, err))
 	}
 
 	text, err := extractRData(rr)
@@ -213,6 +213,19 @@ func domainNameFields(rr dns.RR) []reflect.Value {
 		}
 	}
 	return fields
+}
+
+// parserError says what was wrong with the data. An address record's data is
+// one address, and saying that it is not one beats the parser's "bad A A".
+func parserError(t RRType, s string, err error) string {
+	switch t {
+	case TypeA:
+		return fmt.Sprintf("%q is not an IPv4 address", s)
+	case TypeAAAA:
+		return fmt.Sprintf("%q is not an IPv6 address", s)
+	default:
+		return cleanParserError(err)
+	}
 }
 
 // cleanParserError strips the synthetic line and column the probe parse adds,

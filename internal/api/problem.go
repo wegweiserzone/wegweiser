@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/cluster"
@@ -95,10 +96,10 @@ func asProblem(err error) *apiError {
 			status: http.StatusNotFound,
 			kind:   typeNotFound,
 			title:  "Not found",
-			detail: err.Error(),
+			detail: detail(err, store.ErrNotFound),
 		}
 	case errors.Is(err, store.ErrConflict):
-		return conflict(err.Error())
+		return conflict(detail(err, store.ErrConflict))
 	case errors.Is(err, cluster.ErrNotLeader):
 		// What reaches here is a write on a member that lost the lead while
 		// it was being made. Every other member forwards rather than tries.
@@ -109,14 +110,14 @@ func asProblem(err error) *apiError {
 			status: http.StatusServiceUnavailable,
 			kind:   typeUnavailable,
 			title:  "This member is behind the cluster",
-			detail: err.Error(),
+			detail: strings.TrimPrefix(err.Error(), "cluster: "),
 		}
 	case errors.Is(err, cluster.ErrRemoved):
 		return &apiError{
 			status: http.StatusServiceUnavailable,
 			kind:   typeUnavailable,
 			title:  "This member has left the cluster",
-			detail: err.Error(),
+			detail: strings.TrimPrefix(err.Error(), "cluster: "),
 		}
 	case errors.Is(err, cluster.ErrNoMember):
 		return &apiError{
@@ -139,11 +140,22 @@ func asProblem(err error) *apiError {
 			status: http.StatusUnprocessableEntity,
 			kind:   typeInvalid,
 			title:  "The request was understood but cannot be carried out",
-			detail: err.Error(),
+			detail: detail(err, zone.ErrInvalidRData, zone.ErrInvalid),
 		}
 	default:
 		return internal(err)
 	}
+}
+
+// detail is what an error says about this request, without the name of its
+// kind in front: the problem's type and title carry that already, and a
+// reader wants the sentence about what they sent.
+func detail(err error, kinds ...error) string {
+	msg := err.Error()
+	for _, kind := range kinds {
+		msg = strings.TrimPrefix(msg, kind.Error()+": ")
+	}
+	return msg
 }
 
 // document renders the problem in the shape the spec describes.

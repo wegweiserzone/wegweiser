@@ -171,6 +171,22 @@ func TestParseRDataRejects(t *testing.T) {
 	}
 }
 
+// An address record's data is one address, and the refusal says that rather
+// than quoting the parser.
+func TestParseRDataSaysWhatAnAddressRecordTakes(t *testing.T) {
+	t.Parallel()
+
+	for typ, want := range map[zone.RRType]string{
+		zone.TypeA:    `"1.2.3" is not an IPv4 address`,
+		zone.TypeAAAA: `"1.2.3" is not an IPv6 address`,
+	} {
+		_, err := zone.ParseRData(typ, zone.ClassIN, "1.2.3")
+		if err == nil || !strings.HasSuffix(err.Error(), want) {
+			t.Errorf("ParseRData(%s, %q): %v, want it to end %q", typ, "1.2.3", err, want)
+		}
+	}
+}
+
 func TestParseRDataOtherClasses(t *testing.T) {
 	t.Parallel()
 

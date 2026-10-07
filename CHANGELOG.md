@@ -10,7 +10,18 @@ public API is unstable and may change without a deprecation period.
 
 ### Changed
 
+#### API
+
+- A problem's `detail` is the sentence about the request and nothing else. It
+  used to begin with the name of the kind of error, as in
+  `store: not found: no commit with the identifier …` or `invalid record data:
+  bad A A: "1.2.3"`, which now reads `"1.2.3" is not an IPv4 address`.
+
 #### CLI
+
+- An error from the server is that sentence alone. `weg` used to put the
+  problem's title in front of it, which mostly said the same thing twice, as
+  in `the cluster has no leader: no member is leading the cluster`.
 
 - A command line `weg` cannot use is answered in one line, with the command
   or flag that was probably meant (`weg zoen list` asks whether you meant

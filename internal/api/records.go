@@ -35,7 +35,7 @@ func (s *Server) ListRecords(
 	if req.Params.Type != nil {
 		typ, err := zone.ParseRRType(*req.Params.Type)
 		if err != nil {
-			return nil, badRequest("%q is not a record type: %v", *req.Params.Type, err)
+			return nil, badRequest("%q is not a record type", *req.Params.Type)
 		}
 		f.Types = []zone.RRType{typ}
 	}
@@ -314,7 +314,7 @@ func recordFrom(z *zone.Zone, in gen.CreateRecord) (zone.Record, error) {
 
 	typ, err := zone.ParseRRType(in.Type)
 	if err != nil {
-		return zone.Record{}, badRequest("%q is not a record type: %v", in.Type, err)
+		return zone.Record{}, badRequest("%q is not a record type", in.Type)
 	}
 
 	class := zone.ClassIN
@@ -358,7 +358,7 @@ func patchRecord(z *zone.Zone, before *zone.Record, in gen.UpdateRecord) (zone.R
 	if in.Type != nil {
 		t, err := zone.ParseRRType(*in.Type)
 		if err != nil {
-			return zone.Record{}, badRequest("%q is not a record type: %v", *in.Type, err)
+			return zone.Record{}, badRequest("%q is not a record type", *in.Type)
 		}
 		typ = t
 	}
@@ -447,7 +447,7 @@ func rrsetOp(z *zone.Zone, in gen.RRset) (apply.RecordOp, error) {
 
 	typ, err := zone.ParseRRType(in.Type)
 	if err != nil {
-		return apply.RecordOp{}, badRequest("%q is not a record type: %v", in.Type, err)
+		return apply.RecordOp{}, badRequest("%q is not a record type", in.Type)
 	}
 
 	class := zone.ClassIN

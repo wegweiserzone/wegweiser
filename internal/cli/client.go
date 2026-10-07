@@ -159,7 +159,10 @@ func firstNonEmpty(values ...string) string {
 func apiError(status int, body []byte) error {
 	var p gen.Problem
 	if err := json.Unmarshal(body, &p); err == nil && p.Detail != nil && *p.Detail != "" {
-		return fmt.Errorf("%s: %s", strings.ToLower(p.Title), *p.Detail)
+		// The detail alone. The title is the same for every request that
+		// failed this way, and in front of the detail it mostly said the same
+		// thing twice.
+		return errors.New(*p.Detail)
 	}
 	if len(body) > 0 {
 		return fmt.Errorf("the server answered %d: %s", status, strings.TrimSpace(string(body)))
