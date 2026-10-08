@@ -8,6 +8,7 @@
    * this is not a search over history; there is no history here, only what is
    * happening.
    */
+  import { page } from "$app/state";
   import { ApiError } from "$lib/api";
   import type { QueryEvent, StreamStatus } from "$lib/api";
   import { everyType } from "$lib/records";
@@ -42,6 +43,15 @@
   let client = $state("");
   let type = $state("");
   let rcode = $state("");
+
+  const filtered = $derived(Boolean(name || client || type || rcode));
+
+  function unfilter() {
+    name = "";
+    client = "";
+    type = "";
+    rcode = "";
+  }
 
   // The last sixty seconds, one bucket a second.
   let perSecond = $state<(number | null)[]>(new Array(60).fill(null));
@@ -320,7 +330,7 @@
   <table class="w-full border-collapse text-[13px]" data-hide="1 2 3 7">
     <thead>
       <tr>
-        {#each ["Time", "From", "Tr", "Name", "Type", "Rcode", "Size", "Latency"] as head, i (head)}
+        {#each ["Time", "From", "Proto", "Name", "Type", "Rcode", "Size", "Latency"] as head, i (head)}
           <th
             scope="col"
             class="sign sticky top-0 z-10 border-b border-line bg-ground px-3 py-2 text-[11px]
@@ -373,11 +383,22 @@
               <Empty title="Not watching">
                 The stream is not running. Whatever ended it is said above.
               </Empty>
+            {:else if filtered}
+              <!-- The filter is the likelier reason than a quiet server, and
+                   the only one this page can do something about. -->
+              <Empty title="Nothing matches yet">
+                Nothing asked since the filter was set has matched it. The stream shows what
+                arrives from now on, not what was asked before.
+                {#snippet actions()}
+                  <Button onclick={unfilter}>Clear the filter</Button>
+                {/snippet}
+              </Empty>
             {:else}
               <Empty title="Nothing is being asked">
-                This server is answering no queries that match. Send it one —
-                <code class="num text-ink">dig @localhost example.com</code>, and it appears
-                here as it is answered.
+                This server has answered nothing since the page opened. Ask it something, such
+                as <code class="num text-ink">dig @{page.url.hostname} example.com</code> with
+                <code class="num text-ink">-p</code> and the port if it does not answer on 53,
+                and it appears here as it is answered.
               </Empty>
             {/if}
           </td>

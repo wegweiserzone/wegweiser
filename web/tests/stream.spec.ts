@@ -92,8 +92,9 @@ test("the filter is the server's, so changing it reopens the stream", async ({ p
 
   await page.getByLabel("Watch a name and everything below it").fill("example.com");
   // The rows collected under the old filter are gone: this is a live view of
-  // one thing, not a search over what was collected under another.
-  await expect(page.getByRole("heading", { name: "Nothing is being asked" })).toBeVisible();
+  // one thing, not a search over what was collected under another. And the
+  // empty table blames the filter, not the server.
+  await expect(page.getByRole("heading", { name: "Nothing matches yet" })).toBeVisible();
 
   await ask("filtered.example.com");
   await expect(page.getByRole("cell", { name: "filtered.example.com." })).toBeVisible();
@@ -120,4 +121,21 @@ test("pausing holds the table and says what was missed", async ({ page, server }
 
   await page.getByRole("button", { name: "Resume" }).click();
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
+});
+
+test("a filter that matches nothing can be cleared from the empty table", async ({
+  page,
+  server,
+}) => {
+  await signIn(page, server);
+  await page.goto(`${server.url}/stream`);
+  await page.getByRole("button", { name: "SERVFAIL" }).click();
+
+  await expect(page.getByRole("heading", { name: "Nothing matches yet" })).toBeVisible();
+  await page.getByRole("button", { name: "Clear the filter" }).click();
+  await expect(page.getByRole("button", { name: "SERVFAIL" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  await expect(page.getByRole("heading", { name: "Nothing is being asked" })).toBeVisible();
 });

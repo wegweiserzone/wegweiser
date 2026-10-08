@@ -197,6 +197,11 @@ public API is unstable and may change without a deprecation period.
   time before the page was open as a flat line at zero, a quiet minute nobody
   had measured. They start where measuring did.
 
+- With a filter set, an empty query stream said nothing was being asked and
+  suggested a `dig` without a port. It now says nothing has matched the filter
+  yet and offers to clear it, and without one it names this server and says
+  when `-p` is needed. The column headed *Tr* is headed *Proto*.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary
