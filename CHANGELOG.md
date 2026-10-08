@@ -16,7 +16,25 @@ public API is unstable and may change without a deprecation period.
   counts the voters, how many make a majority, and how many of them answered
   the member that was asked.
 
+#### Cluster
+
+- `weg cluster status --watch` asks again every two seconds, so a member
+  going or coming back shows as it happens.
+
 ### Changed
+
+#### Cluster
+
+- `weg cluster status` opens with whether the cluster takes writes and how
+  many voters it can lose before it stops, as in `takes writes, and the next
+  voter lost stops them: 2 of 3 voters answered, 2 needed`. Which member leads
+  is said beside its name rather than in a column of its own.
+
+- `weg cluster remove` and `weg cluster leave` say, before they ask, what the
+  removal leaves of the majority, and say plainly when the cluster would take
+  no writes afterwards: taking out a voter that answers while another is off
+  is how that happens.
+
 
 #### API
 
@@ -58,6 +76,9 @@ public API is unstable and may change without a deprecation period.
   stopped over a change it could not apply. `/healthz` cannot tell the two
   apart, so it now says only that the member no longer takes part and refuses
   writes, and `weg cluster status` says why.
+
+- `weg cluster remove` on a witness said it went on answering queries with
+  what it held. A witness answers none, and now it says so.
 
 #### CLI
 

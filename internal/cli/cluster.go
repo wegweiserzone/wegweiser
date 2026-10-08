@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -88,42 +89,116 @@ func runClusterInit(ctx context.Context, opts *options, f *clientFlags) error {
 }
 
 func newClusterStatusCommand(opts *options, f *clientFlags) *cobra.Command {
-	return &cobra.Command{
+	var watch bool
+
+	cmd := &cobra.Command{
 		Use:     "status",
 		Aliases: []string{"show", "members"},
-		Short:   "Say who the members are, and how far each has got",
-		Long: "List the members as the server's copy of the cluster's configuration has\n" +
-			"them, with the role each holds, which one leads, and how far each has got\n" +
-			"through the log. The server asks every other member as it answers, and one\n" +
-			"that does not answer within a couple of seconds is listed as not reached\n" +
+		Short:   "Say whether the cluster takes writes, and how far each member has got",
+		Long: "Say first whether the cluster takes writes and how many more voters it can\n" +
+			"lose before it stops, then list the members as the server's copy of the\n" +
+			"cluster's configuration has them, with the role each holds, which one\n" +
+			"leads, and how far each has got through the log. The server asks every\n" +
+			"other member as it answers, and one that does not answer within a couple\n" +
+			"of seconds is listed as not reached, with why\n" +
 			"(docs/decisions/d47-status-asks-every-member.md).\n\n" +
 			"A member that has left the cluster over an entry it could not apply says\n" +
 			"where it stopped and why (docs/decisions/d29-a-node-that-cannot-apply.md).",
-		Args:    usageArgs(cobra.NoArgs),
-		Example: "  weg cluster status\n  weg cluster status --server http://10.0.0.6:8053 --output json",
+		Args: usageArgs(cobra.NoArgs),
+		Example: "  weg cluster status\n" +
+			"  weg cluster status --watch\n" +
+			"  weg cluster status --server http://10.0.0.6:8053 --output json",
 
 		RunE: func(c *cobra.Command, _ []string) error {
+			if watch {
+				return watchClusterStatus(c.Context(), opts, f)
+			}
 			return runClusterStatus(c.Context(), opts, f)
 		},
 	}
+	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "ask again every two seconds until interrupted")
+	return cmd
 }
 
 func runClusterStatus(ctx context.Context, opts *options, f *clientFlags) error {
-	client, err := f.client()
+	st, err := clusterStatus(ctx, f)
 	if err != nil {
 		return err
+	}
+	p := opts.Printer()
+	return p.Print(st, func(w io.Writer) error { return printClusterStatus(w, p, st) })
+}
+
+// clusterStatus asks the server for the cluster as it sees it.
+func clusterStatus(ctx context.Context, f *clientFlags) (*gen.ClusterStatus, error) {
+	client, err := f.client()
+	if err != nil {
+		return nil, err
 	}
 	resp, err := client.GetClusterWithResponse(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp.JSON200 == nil {
-		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
+		return nil, apiError(resp.HTTPResponse.StatusCode, resp.Body)
 	}
-	st := resp.JSON200
+	return resp.JSON200, nil
+}
 
-	p := opts.Printer()
-	return p.Print(st, func(w io.Writer) error { return printClusterStatus(w, p, st) })
+// watchInterval is how often --watch asks again: often enough to see a member
+// go, and no more often than a member waits for another one to answer.
+const watchInterval = 2 * time.Second
+
+// watchClusterStatus asks again and again until interrupted. A failure is
+// part of what is being watched, a server switched off among them, so it is
+// shown in place of the status rather than ending the watch.
+func watchClusterStatus(ctx context.Context, opts *options, f *clientFlags) error {
+	// On a terminal each answer replaces the last; into a pipe they follow
+	// one another.
+	redraw := output.IsTerminal(opts.stdout) && opts.Printer().Format() == output.FormatText
+	for {
+		if redraw {
+			fmt.Fprint(opts.stdout, "\033[H\033[2J")
+		}
+		// An interrupt in the middle of asking is caught below, with the rest.
+		if err := runClusterStatus(ctx, opts, f); err != nil && ctx.Err() == nil {
+			fmt.Fprintf(opts.stderr, "weg: %v\n", err)
+		}
+		select {
+		case <-ctx.Done():
+			// Interrupting is how a watch ends, not how it fails.
+			return nil
+		case <-time.After(watchInterval):
+		}
+	}
+}
+
+// verdict says whether the cluster takes writes, as the member asked sees it,
+// and how close it is to not taking them: the line somebody asking "is the
+// cluster all right" reads and stops at.
+func verdict(p *output.Printer, st *gen.ClusterStatus) string {
+	q := st.Quorum
+	if q == nil {
+		return ""
+	}
+	led := false
+	for _, m := range st.Members {
+		led = led || m.Leader
+	}
+	count := fmt.Sprintf("%d of %d voters answered, %d needed", q.Answered, q.Voters, q.Needed)
+	switch spare := q.Answered - q.Needed; {
+	case spare < 0:
+		return p.Paint(output.ColorRed, "takes no writes") + ": " + count
+	case !led:
+		return p.Paint(output.ColorYellow, "takes no writes until a leader is elected") + ": " + count
+	case spare == 0:
+		return p.Paint(output.ColorYellow, "takes writes, and the next voter lost stops them") + ": " + count
+	case spare == 1:
+		return p.Paint(output.ColorGreen, "takes writes, and can lose one voter") + ": " + count
+	default:
+		return p.Paint(output.ColorGreen, fmt.Sprintf("takes writes, and can lose %d voters", spare)) +
+			": " + count
+	}
 }
 
 func printClusterStatus(w io.Writer, p *output.Printer, st *gen.ClusterStatus) error {
@@ -153,7 +228,12 @@ func printClusterStatus(w io.Writer, p *output.Printer, st *gen.ClusterStatus) e
 	if st.Applied < st.Committed {
 		state = p.Paint(output.ColorYellow, fmt.Sprintf("%d entries behind", st.Committed-st.Applied))
 	}
-	if _, err := fmt.Fprintf(w, "%s at %s: applied %d of %d, %s\n\n",
+	if v := verdict(p, st); v != "" {
+		if _, err := fmt.Fprintf(w, "%s  %s\n", p.Paint(output.ColorDim, "cluster"), v); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(w, "%s    %s at %s, applied %d of %d, %s\n\n", p.Paint(output.ColorDim, "asked"),
 		st.Self.Id, st.Self.Address, st.Applied, st.Committed, state); err != nil {
 		return err
 	}
@@ -165,21 +245,24 @@ func printClusterStatus(w io.Writer, p *output.Printer, st *gen.ClusterStatus) e
 		}
 	}
 
-	t := newTable(w, "MEMBER", "ADDRESS", "ROLE", "LOG", "")
+	t := newTable(w, "MEMBER", "ADDRESS", "ROLE", "LOG")
 	var trouble []string
 	for _, m := range st.Members {
-		lead := ""
+		var marks []string
+		if m.Id == st.Self.Id {
+			marks = append(marks, "this one")
+		}
 		if m.Leader {
-			lead = p.Paint(output.ColorGreen, "leader")
+			marks = append(marks, "leader")
 		}
 		name := m.Id
-		if m.Id == st.Self.Id {
-			name += " (this one)"
+		if len(marks) > 0 {
+			name += " (" + strings.Join(marks, ", ") + ")"
 		}
 		if m.Trouble != nil {
 			trouble = append(trouble, fmt.Sprintf("%s: %s\n", m.Id, *m.Trouble))
 		}
-		t.row(name, m.Address, string(m.Role), progress(p, m.Progress, furthest), lead)
+		t.row(name, m.Address, string(m.Role), progress(p, m.Progress, furthest))
 	}
 	if err := t.flush(); err != nil {
 		return err
@@ -247,19 +330,17 @@ func runClusterLeave(ctx context.Context, opts *options, f *clientFlags, yes boo
 	if err != nil {
 		return err
 	}
-	resp, err := client.GetClusterWithResponse(ctx)
+	st, err := clusterStatus(ctx, f)
 	if err != nil {
 		return err
 	}
-	if resp.JSON200 == nil {
-		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
-	}
-	self := resp.JSON200.Self
-	if !resp.JSON200.Replicating {
+	self := st.Self
+	if !st.Replicating {
 		return fmt.Errorf("%s at %s is in no cluster, so there is nothing to leave", self.Id, self.Address)
 	}
 
 	if !yes {
+		warnAboutMajority(opts, st, self.Id)
 		if cerr := confirm(opts, fmt.Sprintf(
 			"take %s at %s out of its cluster", self.Id, self.Address)); cerr != nil {
 			return cerr
@@ -307,7 +388,14 @@ func runClusterRemove(ctx context.Context, opts *options, f *clientFlags, id str
 	if err != nil {
 		return err
 	}
+	// Asked first, for the member's role and what its going does to the
+	// majority. Without an answer the removal can still be tried: the server
+	// is what decides.
+	st, serr := clusterStatus(ctx, f)
 	if !yes {
+		if serr == nil {
+			warnAboutMajority(opts, st, id)
+		}
 		if cerr := confirm(opts, fmt.Sprintf("take the member %s out of the cluster", id)); cerr != nil {
 			return cerr
 		}
@@ -316,12 +404,61 @@ func runClusterRemove(ctx context.Context, opts *options, f *clientFlags, id str
 		return rerr
 	}
 
+	// D48: a witness is known by its identifier, and answers no queries, so
+	// there is nothing it goes on answering.
+	after := "if it is running, it answers queries with what it held and refuses writes"
+	if strings.HasPrefix(id, "witness-") {
+		after = "the witness no longer votes, and has nothing it answers"
+	}
 	got := clusterMemberRemoved{Member: id}
 	return opts.Printer().Print(got, func(w io.Writer) error {
-		_, werr := fmt.Fprintf(w, "took %s out of the cluster; if it is running, it answers queries "+
-			"with what it held and refuses writes\n", id)
+		_, werr := fmt.Fprintf(w, "took %s out of the cluster; %s\n", id, after)
 		return werr
 	})
+}
+
+// warnAboutMajority says, before a member is taken out, what that leaves of
+// the majority a write needs. Taking out a voter that answers while another
+// is off is how a cluster stops taking writes, and it is easier to say so
+// before than to explain after (docs/decisions/d46-a-member-that-has-left.md).
+func warnAboutMajority(opts *options, st *gen.ClusterStatus, id string) {
+	q := st.Quorum
+	if q == nil || q.Answered < q.Needed {
+		// Without a majority now, the removal is refused anyway.
+		return
+	}
+	var target *gen.ClusterMemberState
+	for i := range st.Members {
+		if st.Members[i].Id == id {
+			target = &st.Members[i]
+		}
+	}
+	if target == nil {
+		return
+	}
+	p := opts.Printer()
+	if target.Role == gen.ClusterMemberStateRoleNonvoter {
+		fmt.Fprintf(opts.stderr, "%s does not vote, so writes go on as they are.\n", id)
+		return
+	}
+
+	voters, answered := q.Voters-1, q.Answered
+	if target.Progress != nil && !target.Progress.Removed && target.Progress.Behind == nil {
+		answered--
+	}
+	needed := voters/2 + 1
+	afterwards := fmt.Sprintf("Afterwards %d voters remain, %d of them answered here, and %d are needed",
+		voters, answered, needed)
+	switch {
+	case answered < needed:
+		fmt.Fprintf(opts.stderr, "%s: %s.\n", afterwards,
+			p.Paint(output.ColorRed, "the cluster would take no writes"))
+	case answered == needed:
+		fmt.Fprintf(opts.stderr, "%s: %s.\n", afterwards,
+			p.Paint(output.ColorYellow, "writes go on, and the next voter lost stops them"))
+	default:
+		fmt.Fprintf(opts.stderr, "%s: writes go on.\n", afterwards)
+	}
 }
 
 func removeMember(ctx context.Context, client *gen.ClientWithResponses, id string) error {
