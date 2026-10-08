@@ -8,7 +8,7 @@
   import { asked } from "$lib/asked";
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { Zone, ZoneImported } from "$lib/api";
-  import { ago, exact } from "$lib/format";
+  import { ago, exact, relative } from "$lib/format";
   import { standing } from "$lib/standing.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -352,7 +352,7 @@
     <td class="px-3 py-1.5">
       {#if zone.kind === "reverse"}
         <span class="flex items-center gap-2">
-          <Chip tone="signal">Reverse</Chip>
+          <Chip>Reverse</Chip>
           <span class="num hidden text-[11px] text-ink-faint sm:inline">{zone.prefix ?? ""}</span>
         </span>
       {:else}
@@ -362,7 +362,11 @@
 
     <td class="num px-3 py-1.5 text-right">{zone.soa.serial}</td>
     <td class="num px-3 py-1.5 text-right text-ink-mute">{zone.defaultTtl}</td>
-    <td class="num px-3 py-1.5 text-ink-mute">{zone.soa.primaryNs}</td>
+    <!-- Relative, as a zonefile writes it: inside its own zone it is nearly
+         always ns1, and the zone name a second time says nothing new. -->
+    <td class="num px-3 py-1.5 text-ink-mute" title={zone.soa.primaryNs}>
+      {relative(zone.soa.primaryNs, zone.name)}
+    </td>
 
     <td class="px-3 py-1.5">
       {#if zone.disabled}

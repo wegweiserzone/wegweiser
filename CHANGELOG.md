@@ -98,6 +98,10 @@ public API is unstable and may change without a deprecation period.
   answer are no longer green on every row, so that a disabled zone, an
   expired token or an NXDOMAIN stands out from the rows around it.
 
+- The zone list writes a primary name server inside its own zone as a
+  zonefile does, `ns1` rather than the zone name a second time, and marks a
+  reverse zone without the accent colour.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

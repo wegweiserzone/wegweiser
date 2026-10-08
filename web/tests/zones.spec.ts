@@ -40,6 +40,8 @@ test("the list shows it, and the filter narrows without a request", async ({ pag
 
   await expect(page.getByRole("button", { name: "example.com.", exact: true })).toBeVisible();
   await expect(page.getByText("Forward", { exact: true })).toBeVisible();
+  // The name server inside its own zone is written as the zonefile would.
+  await expect(page.getByRole("cell", { name: "ns1", exact: true })).toBeVisible();
 
   const filter = page.getByLabel("Search zones");
   await filter.fill("nothing-like-this");
