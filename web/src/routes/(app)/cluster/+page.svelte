@@ -11,6 +11,7 @@
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { ClusterMember, ClusterStatus } from "$lib/api";
   import { ago, exact } from "$lib/format";
+  import { afterRemoving, answers, verdict, votes } from "$lib/quorum";
   import { session } from "$lib/session.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -49,6 +50,24 @@
   const administers = $derived(session.can("admin"));
   const joinLine = $derived(started ? `weg serve --join ${started.address}` : "");
 
+  /** adding is the dialog that says how another server joins. */
+  let adding = $state(false);
+  let copiedJoin = $state(false);
+  const joinThis = $derived(status ? `weg serve --join ${status.self.address}` : "");
+
+  const judged = $derived(status ? verdict(status) : null);
+  /**
+   * seats are the voters, the ones that answered first, so that whether they
+   * reach past the majority mark is read from left to right.
+   */
+  const seats = $derived(
+    (status?.members ?? []).filter(votes).sort((a, b) => Number(answers(b)) - Number(answers(a))),
+  );
+  const removal = $derived(status && removing ? afterRemoving(status, removing.id) : null);
+
+  const toneText = { ok: "text-ok", warn: "text-warn", crit: "text-crit" } as const;
+  const toneSeat = { ok: "border-ok bg-ok", warn: "border-warn bg-warn", crit: "border-crit bg-crit" } as const;
+
   const roles: Record<Member["role"], { label: string; what: string }> = {
     voter: {
       label: "Voter",
@@ -68,7 +87,7 @@
     { label: "Member" },
     { label: "Address", width: "14rem" },
     { label: "Role", width: "8rem" },
-    { label: "Log", width: "9rem" },
+    { label: "Log", width: "13rem" },
     { label: "", width: "9rem" },
   ];
 
@@ -83,7 +102,7 @@
   /** log says how far one member has got, against the furthest commit. */
   function log(m: Member): { label: string; tone: "ok" | "warn" | "crit"; title?: string } {
     const p = m.progress;
-    if (!p) return { label: "Not reached", tone: "warn", title: m.trouble };
+    if (!p) return { label: "Not reached", tone: "warn" };
     if (p.behind) {
       return {
         label: "Stopped",
@@ -96,8 +115,9 @@
     return { label: "Current", tone: "ok" };
   }
 
-  async function load() {
-    loading = true;
+  /** load asks again. Quietly, it leaves the page as it is until the answer is in. */
+  async function load(quietly = false) {
+    loading = !quietly;
     trouble = null;
     try {
       status = await api.get("/cluster");
@@ -167,8 +187,23 @@
   /** where names the place in the log a member stopped at. */
   const where = (entry: number) => (entry === 0 ? "a log snapshot" : `entry ${entry}`);
 
+  async function copyJoinThis() {
+    try {
+      await navigator.clipboard.writeText(joinThis);
+      copiedJoin = true;
+    } catch {
+      // The line is on the screen to be selected either way.
+    }
+  }
+
   $effect(() => {
     load();
+    // A member going is what this page is for, so it asks again every few
+    // seconds while it is in view, and not while a dialog is waiting on it.
+    const timer = setInterval(() => {
+      if (!document.hidden && !busy && !removing && !starting) load(true);
+    }, 5000);
+    return () => clearInterval(timer);
   });
 </script>
 
@@ -176,7 +211,10 @@
 
 <Bar title="Cluster">
   {#snippet actions()}
-    <Button onclick={load}>Refresh</Button>
+    <Button onclick={() => load()}>Refresh</Button>
+    {#if status?.replicating && !out}
+      <Button onclick={() => ((adding = true), (copiedJoin = false))}>Add a server</Button>
+    {/if}
   {/snippet}
 </Bar>
 
@@ -186,7 +224,7 @@
       <Notice tone="crit" title="The cluster could not be read">
         {trouble}
         {#snippet actions()}
-          <Button onclick={load}>Try again</Button>
+          <Button onclick={() => load()}>Try again</Button>
         {/snippet}
       </Notice>
     </div>
@@ -240,6 +278,44 @@
         {/if}
       {/snippet}
     </Empty>
+  {/if}
+
+  {#if status && status.replicating && judged && status.quorum}
+    <!--
+      The answer to "can I change anything right now", before anything else on
+      the page: the voters as seats, the ones that answered filled, and a mark
+      where the majority a write needs is reached.
+    -->
+    <section
+      class="mx-5 flex flex-wrap items-center gap-x-6 gap-y-3"
+      aria-label="Whether the cluster takes writes"
+    >
+      <div class="flex items-center gap-1.5" aria-hidden="true">
+        {#each seats as m, i (m.id)}
+          <span
+            title="{m.id}: {answers(m) ? 'answered' : 'not reached'}"
+            class="size-4 border-2 transition-colors
+                   {m.role === 'witness' ? 'rounded-full' : 'rounded-[3px]'}
+                   {answers(m) ? toneSeat[judged.tone] : 'border-line bg-transparent'}"
+          ></span>
+          {#if i === status.quorum.needed - 1 && i < seats.length - 1}
+            <span
+              class="mx-1 h-7 w-px bg-ink-faint"
+              title="A write needs {status.quorum.needed} of {status.quorum.voters}"
+            ></span>
+          {/if}
+        {/each}
+      </div>
+      <div class="min-w-0">
+        <p
+          class="font-cond text-[24px] leading-none font-bold tracking-[0.06em] uppercase
+                 {toneText[judged.tone]}"
+        >
+          {judged.headline}
+        </p>
+        <p class="mt-1.5 max-w-2xl text-[13px] text-ink-mute">{judged.detail}</p>
+      </div>
+    </section>
   {/if}
 
   {#if status && status.replicating}
@@ -299,6 +375,12 @@
         </td>
         <td class="px-3 py-1.5">
           <Chip tone={shown.tone} dot={shown.tone === "ok"} title={shown.title}>{shown.label}</Chip>
+          {#if m.trouble}
+            <!-- Why, where it is read, rather than behind a pointer a phone does not have. -->
+            <p class="num mt-0.5 text-[11px] text-ink-faint">
+              {m.trouble.replace(/^not reached: /, "")}
+            </p>
+          {/if}
         </td>
         <td class="py-1.5 pr-5 pl-3">
           <div class="flex items-center gap-2">
@@ -314,8 +396,7 @@
                 aria-label={m.id === status?.self.id ? "Leave the cluster" : `Remove ${m.id}`}
                 title={m.id === status?.self.id ? "Leave the cluster" : "Take it out of the cluster"}
                 class="ml-auto grid size-6 cursor-pointer place-items-center rounded-xs text-ink-faint
-                       opacity-0 transition-opacity group-hover:opacity-100 hover:bg-crit-lo
-                       hover:text-crit focus-visible:opacity-100"
+                       transition-colors hover:bg-crit-lo hover:text-crit"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-3.5">
                   <circle cx="12" cy="12" r="9" />
@@ -403,10 +484,19 @@
       a change it could not apply. If it is running, it goes on answering queries with what it
       held and refuses writes.
     </p>
-    {#if removing?.role === "voter"}
-      <Notice tone="warn" title="Take out a member that is off first">
-        Removing a running voter while another voter is off can leave the rest without a
-        majority, and then the cluster takes no writes at all.
+  {/if}
+  {#if removal}
+    {#if removal.tone === "ok"}
+      <p class="text-[13px] text-ink-mute">{removal.text}</p>
+    {:else}
+      <Notice
+        tone={removal.tone}
+        title={removal.tone === "crit" ? "The cluster would stop taking writes" : "Writes go on, without room to spare"}
+      >
+        {removal.text}
+        {#if removal.tone === "crit"}
+          Take out a member that is off before one that answers.
+        {/if}
       </Notice>
     {/if}
   {/if}
@@ -431,5 +521,52 @@
     >
       {busy ? "Taking it out…" : leaving ? "Leave" : "Remove it"}
     </Button>
+  {/snippet}
+</Dialog>
+
+<!--
+  How another server joins, which happens on that server and not here: so this
+  shows what to write there rather than offering a button that could not do it.
+-->
+<Dialog bind:open={adding} title="Add a server">
+  <p class="text-[13px] text-ink-mute">
+    A server joins from its first start, with an empty database, and takes this cluster's
+    zones rather than bringing its own.
+  </p>
+  <ol class="flex flex-col gap-4">
+    <li class="flex flex-col gap-2">
+      <p class="text-[13px] text-ink">
+        <span class="num mr-2 text-ink-faint">1</span>Give it a cluster section in its
+        configuration file, with the secret every member shares.
+      </p>
+      <pre
+        class="num overflow-auto rounded-sm border border-line bg-sunken px-4 py-2.5 text-[12px]
+               leading-relaxed text-ink">cluster:
+  id: "ns4"                    # not taken yet
+  listen: ":8054"
+  advertise: "192.0.2.4:8054"  # how others reach it
+  secret: "…"                  # this cluster's own</pre>
+    </li>
+    <li class="flex flex-col gap-2">
+      <p class="text-[13px] text-ink">
+        <span class="num mr-2 text-ink-faint">2</span>Start it pointed at this server, which
+        lets it in.
+      </p>
+      <div class="flex items-center gap-3">
+        <pre
+          class="num flex-1 overflow-auto rounded-sm border border-line bg-sunken px-4 py-2.5
+                 text-[12px] text-ink">{joinThis}</pre>
+        <Button onclick={copyJoinThis}>{copiedJoin ? "Copied" : "Copy"}</Button>
+      </div>
+    </li>
+  </ol>
+  <p class="text-[12px] text-ink-faint">
+    Two servers that want a third vote can add a witness instead of a third server:
+    <code class="num text-ink-mute">wegwitness serve --join {status?.self.address}</code>, with
+    the same cluster section. It votes and keeps the log, and answers no queries.
+  </p>
+
+  {#snippet actions()}
+    <Button weight="primary" onclick={() => (adding = false)}>Done</Button>
   {/snippet}
 </Dialog>

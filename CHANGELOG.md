@@ -35,6 +35,17 @@ public API is unstable and may change without a deprecation period.
   no writes afterwards: taking out a voter that answers while another is off
   is how that happens.
 
+- The Cluster page opens with the same answer, beside the voters drawn as a
+  row of seats with a mark where the majority is reached. Why a member was not
+  reached is written under it rather than kept in a tooltip, the page asks
+  again every five seconds while it is in view, and removing a member says
+  what it leaves of the majority instead of a general warning. The button
+  that takes a member out is there without hovering over its row, so it can be
+  reached on a touch screen.
+
+- *Add a server* on the Cluster page says what to write on the server that
+  joins: its cluster section and the command that starts it, and how a
+  witness joins instead.
 
 #### API
 

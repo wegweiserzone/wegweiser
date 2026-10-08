@@ -40,9 +40,9 @@ async function asMember(page: Page, opts: { removed?: boolean } = {}) {
     {
       id: "ns3",
       address: "192.0.2.3:8054",
-      role: "nonvoter",
+      role: "voter",
       leader: false,
-      trouble: "not reached in 2s",
+      trouble: "not reached: connection refused",
     },
   ].filter((m) => !(opts.removed && m.id === "ns1"));
   const removed: string[] = [];
@@ -56,6 +56,7 @@ async function asMember(page: Page, opts: { removed?: boolean } = {}) {
         applied: 12,
         committed: 12,
         members: members.filter((m) => !removed.includes(m.id)),
+        quorum: opts.removed ? undefined : { voters: 3, needed: 2, answered: 2 },
       },
     }),
   );
@@ -75,6 +76,9 @@ test("each member says how far it has got", async ({ page, server }) => {
   await expect(page.getByRole("row", { name: /ns1/ })).toContainText("Current");
   await expect(page.getByRole("row", { name: /ns2/ })).toContainText("3 behind");
   await expect(page.getByRole("row", { name: /ns3/ })).toContainText("Not reached");
+  // Why, under it rather than in a tooltip, and the answer above everything.
+  await expect(page.getByRole("row", { name: /ns3/ })).toContainText("connection refused");
+  await expect(page.getByText("One failure from stopping")).toBeVisible();
 });
 
 test("a member is taken out of the cluster from its row", async ({ page, server }) => {
@@ -82,10 +86,10 @@ test("a member is taken out of the cluster from its row", async ({ page, server 
   await signIn(page, server);
   await page.getByRole("link", { name: "Cluster" }).click();
 
-  await page.getByRole("row", { name: /ns2/ }).hover();
   await page.getByRole("button", { name: "Remove ns2" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("Take out a member that is off first")).toBeVisible();
+  // ns3 is off, so taking out ns2, which answers, leaves no majority.
+  await expect(dialog.getByText("The cluster would stop taking writes")).toBeVisible();
   await dialog.getByRole("button", { name: "Remove it" }).click();
 
   await expect(dialog).toBeHidden();
@@ -93,7 +97,6 @@ test("a member is taken out of the cluster from its row", async ({ page, server 
   await expect(page.getByRole("row", { name: /ns2/ })).toHaveCount(0);
 
   // On its own row the same act is leaving.
-  await page.getByRole("row", { name: /ns1/ }).hover();
   await page.getByRole("button", { name: "Leave the cluster" }).click();
   await expect(page.getByRole("dialog").getByRole("button", { name: "Leave" })).toBeVisible();
 });
@@ -107,4 +110,16 @@ test("a server taken out of its cluster says so", async ({ page, server }) => {
   await expect(page.getByText(/discard its Raft\s+directory only/)).toBeVisible();
   await expect(page.getByText("as this server last knew them", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Remove / })).toHaveCount(0);
+});
+
+// Joining happens on the other server, so the page says what to write there.
+test("adding a server says what to write on it", async ({ page, server }) => {
+  await asMember(page);
+  await signIn(page, server);
+  await page.getByRole("link", { name: "Cluster" }).click();
+
+  await page.getByRole("button", { name: "Add a server" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("weg serve --join 192.0.2.1:8054")).toBeVisible();
+  await expect(dialog.getByText("wegwitness serve --join 192.0.2.1:8054")).toBeVisible();
 });
