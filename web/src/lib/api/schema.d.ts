@@ -1669,6 +1669,28 @@ export interface components {
              *     an entry it could not apply, which no longer has a copy to read.
              */
             members: components["schemas"]["ClusterMemberState"][];
+            quorum?: components["schemas"]["ClusterQuorum"];
+        };
+        /**
+         * @description How close the cluster is to taking no writes, as this node sees it
+         *     when it asks the others. A write needs a majority of the voters, so
+         *     `answered` minus `needed` is how many more can fail before writes
+         *     stop, and below zero they have. Absent where the members were not
+         *     asked: on a status requested over the cluster port, and on a node in
+         *     no cluster or out of one.
+         */
+        ClusterQuorum: {
+            /** @description The members that vote, witnesses among them. */
+            voters: number;
+            /** @description A majority of the voters. */
+            needed: number;
+            /**
+             * @description The voters that answered this status and still take part. One
+             *     that did not answer may only be cut off from this node, so the
+             *     count is this node's view, and the same partition read from the
+             *     other side can differ.
+             */
+            answered: number;
         };
         /**
          * @description One member, and how far it has got. `progress` is present for a member

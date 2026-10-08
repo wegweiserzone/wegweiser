@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
@@ -49,8 +51,32 @@ func (s *Server) GetCluster(
 	}
 	if ctx.Value(viaClusterPort{}) == nil {
 		s.askMembers(ctx, out.Members, gen.ClusterStatus(out))
+		if out.Replicating && !out.Removed && out.Behind == nil {
+			out.Quorum = quorumOf(out.Members)
+		}
 	}
 	return out, nil
+}
+
+// quorumOf counts the voters, how many make a majority, and how many of them
+// answered and still take part. A witness votes like any voter (D39).
+func quorumOf(members []gen.ClusterMemberState) *gen.ClusterQuorum {
+	var q gen.ClusterQuorum
+	for i := range members {
+		m := &members[i]
+		if m.Role == gen.ClusterMemberStateRoleNonvoter {
+			continue
+		}
+		q.Voters++
+		if p := m.Progress; p != nil && !p.Removed && p.Behind == nil {
+			q.Answered++
+		}
+	}
+	if q.Voters == 0 {
+		return nil
+	}
+	q.Needed = q.Voters/2 + 1
+	return &q
 }
 
 // memberWait bounds how long a status waits for another member to answer.
@@ -95,7 +121,7 @@ func askMember(ctx context.Context, client *http.Client, addr, identity string) 
 	req.Header.Set(forwardedHeader, identity)
 	resp, err := client.Do(req)
 	if err != nil {
-		return gen.ClusterStatus{}, fmt.Errorf("not reached in %s: %w", memberWait, err)
+		return gen.ClusterStatus{}, notReached(err)
 	}
 	defer resp.Body.Close()
 
@@ -111,6 +137,23 @@ func askMember(ctx context.Context, client *http.Client, addr, identity string) 
 		return gen.ClusterStatus{}, fmt.Errorf("its answer could not be read: %w", err)
 	}
 	return st, nil
+}
+
+// notReached says in a few words why a member could not be asked. The whole
+// chain names the URL, the transport and the dial, and the reader wants only
+// the last of those.
+func notReached(err error) error {
+	var timeout net.Error
+	switch {
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return errors.New("not reached: connection refused")
+	case errors.As(err, &timeout) && timeout.Timeout():
+		return fmt.Errorf("not reached: no answer within %s", memberWait)
+	}
+	for inner := errors.Unwrap(err); inner != nil; inner = errors.Unwrap(err) {
+		err = inner
+	}
+	return fmt.Errorf("not reached: %w", err)
 }
 
 func progressOf(st gen.ClusterStatus) *gen.ClusterProgress {

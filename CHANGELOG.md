@@ -8,9 +8,21 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
+### Added
+
+#### API
+
+- `GET /cluster` says how close the cluster is to taking no writes: `quorum`
+  counts the voters, how many make a majority, and how many of them answered
+  the member that was asked.
+
 ### Changed
 
 #### API
+
+- Why a member was not reached is said in a few words, such as
+  `not reached: connection refused`, rather than as the whole error chain
+  with the URL and the dial in it.
 
 - A problem's `detail` is the sentence about the request and nothing else. It
   used to begin with the name of the kind of error, as in

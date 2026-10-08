@@ -247,8 +247,12 @@ func TestTheStatusAsksEveryMember(t *testing.T) {
 	if by["ns2"].Progress == nil {
 		t.Errorf("ns2 = %+v, want this member's own progress", by["ns2"])
 	}
-	if m := by["ns3"]; m.Progress != nil || m.Trouble == nil {
-		t.Errorf("ns3 = %+v, want it not reached, and why", m)
+	if m := by["ns3"]; m.Progress != nil || m.Trouble == nil || *m.Trouble != "not reached: connection refused" {
+		t.Errorf("ns3 = %+v, want it not reached, and why in a few words", m)
+	}
+	// ns3 does not vote, so both voters answered, and two are a majority of two.
+	if q := got.Quorum; q == nil || *q != (gen.ClusterQuorum{Voters: 2, Needed: 2, Answered: 2}) {
+		t.Errorf("quorum = %+v, want 2 voters, 2 needed, 2 answered", q)
 	}
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
@@ -273,6 +277,53 @@ func TestTheStatusAsksEveryMember(t *testing.T) {
 	for _, m := range own.Members {
 		if m.Progress != nil || m.Trouble != nil {
 			t.Errorf("asked over the cluster port, the leader went on to ask %s: %+v", m.Id, m)
+		}
+	}
+	if own.Quorum != nil {
+		t.Errorf("asked over the cluster port, the leader counted a quorum it never asked about: %+v", own.Quorum)
+	}
+}
+
+// A majority is counted among the voters, witnesses among them, and a voter
+// counts as answering only while it still takes part.
+func TestQuorumOf(t *testing.T) {
+	t.Parallel()
+
+	answered := &gen.ClusterProgress{}
+	left := &gen.ClusterProgress{Removed: true}
+	stopped := &gen.ClusterProgress{Behind: &gen.ClusterStall{}}
+	member := func(role gen.ClusterMemberStateRole, p *gen.ClusterProgress) gen.ClusterMemberState {
+		return gen.ClusterMemberState{Role: role, Progress: p}
+	}
+	voter, witness, nonvoter := gen.ClusterMemberStateRoleVoter, gen.ClusterMemberStateRoleWitness,
+		gen.ClusterMemberStateRoleNonvoter
+
+	tests := []struct {
+		name    string
+		members []gen.ClusterMemberState
+		want    *gen.ClusterQuorum
+	}{
+		{"three, all there", []gen.ClusterMemberState{
+			member(voter, answered), member(voter, answered), member(voter, answered),
+		}, &gen.ClusterQuorum{Voters: 3, Needed: 2, Answered: 3}},
+		{"one off", []gen.ClusterMemberState{
+			member(voter, answered), member(voter, answered), member(voter, nil),
+		}, &gen.ClusterQuorum{Voters: 3, Needed: 2, Answered: 2}},
+		{"two servers and a witness", []gen.ClusterMemberState{
+			member(voter, answered), member(voter, nil), member(witness, answered),
+		}, &gen.ClusterQuorum{Voters: 3, Needed: 2, Answered: 2}},
+		{"a non-voter is not counted", []gen.ClusterMemberState{
+			member(voter, answered), member(nonvoter, answered),
+		}, &gen.ClusterQuorum{Voters: 1, Needed: 1, Answered: 1}},
+		{"one that left or stopped does not answer", []gen.ClusterMemberState{
+			member(voter, answered), member(voter, left), member(voter, stopped),
+		}, &gen.ClusterQuorum{Voters: 3, Needed: 2, Answered: 1}},
+		{"nobody votes", []gen.ClusterMemberState{member(nonvoter, answered)}, nil},
+	}
+	for _, tt := range tests {
+		got := quorumOf(tt.members)
+		if (got == nil) != (tt.want == nil) || (got != nil && *got != *tt.want) {
+			t.Errorf("%s: quorum = %+v, want %+v", tt.name, got, tt.want)
 		}
 	}
 }
