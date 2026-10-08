@@ -122,7 +122,8 @@ test("a zone that is not here says so, without losing the shell", async ({ page,
 test("a zone name with a slip in it offers the one it meant", async ({ page, server }) => {
   await seed(server, "POST", "/zones", { name: "typo.example" });
   await signIn(page, server);
-  await page.goto(`${server.url}/zones/tpyo.example.`);
+  // Two swapped pairs: two slips, though four letters are out of place.
+  await page.goto(`${server.url}/zones/tpyo.exmaple.`);
 
   await page.getByRole("link", { name: "typo.example." }).click();
   await expect(page).toHaveURL(/\/zones\/typo\.example\.$/);

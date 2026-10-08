@@ -161,8 +161,8 @@ public API is unstable and may change without a deprecation period.
 
 - Opening a zone this server does not hold ended the sentence on two dots and
   offered *Try again*, which could only ask for the same name. It now names
-  the zone it most likely meant when one is a letter or two away, and leads
-  to the list of zones.
+  the zone it most likely meant when one is a slip or two away, a swapped
+  pair of letters counting as one slip, and leads to the list of zones.
 
 - A session that may only read lost the buttons it could not use, on the zone
   list, a zone's records, its check and the history, and a zone's settings
