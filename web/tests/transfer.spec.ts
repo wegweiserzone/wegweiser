@@ -27,7 +27,8 @@ test("a zonefile can be brought in, and says what it did", async ({ page, server
 
   await page.getByRole("button", { name: "Import zonefile" }).click();
   await page
-    .getByLabel("Zonefile")
+    // The field, not the dialog, whose name "Import a zonefile" also matches.
+    .getByLabel(/^Zonefile/)
     .setInputFiles({ name: "imported.example.zone", mimeType: "text/dns", buffer: Buffer.from(zonefile) });
   await page.getByRole("button", { name: "Import", exact: true }).click();
 
