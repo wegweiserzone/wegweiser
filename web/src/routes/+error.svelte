@@ -1,6 +1,8 @@
 <script lang="ts">
   /**
-   * The page that is not there.
+   * A failure outside the interface's own frame, such as on the design
+   * reference. An address with no page behind it is caught inside the frame,
+   * by (app)/[...missing].
    */
   import { page } from "$app/state";
   import Button from "$lib/components/Button.svelte";

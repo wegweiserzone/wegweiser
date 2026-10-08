@@ -178,6 +178,9 @@ public API is unstable and may change without a deprecation period.
   the browser's own format, where 10/8/2026 is one day to some readers and
   another to the rest. They are written year first, as 2026-10-08 05:23:25.
 
+- An address with no page behind it said so on a bare screen, with no way on
+  but back to the overview. The page now keeps the rail.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary

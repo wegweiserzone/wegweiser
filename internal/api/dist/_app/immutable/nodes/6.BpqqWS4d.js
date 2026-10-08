@@ -1,0 +1,1 @@
+import{t as e}from"../chunks/DK3Fl9T5.js";import{t}from"../chunks/DRByVC-c.js";var n=e({load:()=>r}),r=()=>{t(404,`No such page`)};export{n as universal};

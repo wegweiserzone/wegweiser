@@ -158,6 +158,7 @@ test("a session that may only read sees where it could not change anything", asy
 });
 
 test("a page that does not exist is designed, not SvelteKit's", async ({ page, server }) => {
+  await signIn(page, server);
   // Typed into the address bar, not navigated to from inside: the fallback
   // document is served (internal/api/ui.go) and the client-side router then
   // finds it has no such page.
@@ -170,6 +171,8 @@ test("a page that does not exist is designed, not SvelteKit's", async ({ page, s
   await expect(page.getByText("/somewhere/deep")).toBeVisible();
   // And it is not the framework's bare <h1>404</h1>.
   await expect(page.getByRole("heading", { name: "404", exact: true })).toHaveCount(0);
+  // The rail stays, so where they meant to go is one click away.
+  await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
 });
 
 test("the design system renders", async ({ page, server }) => {
