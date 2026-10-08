@@ -108,6 +108,11 @@ public API is unstable and may change without a deprecation period.
   its width to the zone and the comment, with the serials and the time at its
   edge, and the zone filter keeps its width whichever zone is chosen.
 
+- A zone's page opens with its facts on one line rather than a row of five
+  tiles, and says *Disabled, not answered* only when it is. Whether a record
+  was generated or is part of the zone itself is said beside its data, in
+  place of a column of dashes.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

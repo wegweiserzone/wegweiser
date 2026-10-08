@@ -63,7 +63,6 @@
     { label: "Type", width: "7rem" },
     { label: "TTL", align: "right", width: "6rem", narrow: false },
     { label: "Data" },
-    { label: "Origin", width: "9rem", narrow: false },
     { label: "", width: "6rem" },
   ];
 
@@ -483,18 +482,20 @@
         {record.ttl}
       </td>
 
-      <td class="num max-w-[44ch] truncate px-3 py-1.5" title={record.data}>
-        {record.data}
-      </td>
-
+      <!-- Where a record came from is said beside it, and only when it is not
+           the usual answer of somebody having written it: a column of dashes
+           took a fifth of the row to say nothing on nearly every line. -->
       <td class="px-3 py-1.5">
-        {#if managed(record)}
-          <Chip tone="signal" title="Written and maintained by this server">generated</Chip>
-        {:else if record.type === "SOA" || record.type === "NS"}
-          <Chip>zone</Chip>
-        {:else}
-          <span class="text-[12px] text-ink-faint">—</span>
-        {/if}
+        <span class="flex min-w-0 items-center gap-2">
+          <span class="num max-w-[22ch] truncate sm:max-w-[44ch]" title={record.data}>
+            {record.data}
+          </span>
+          {#if managed(record)}
+            <Chip title="Written and maintained by this server">generated</Chip>
+          {:else if record.name === zone.name && (record.type === "SOA" || record.type === "NS")}
+            <Chip title="Part of the zone itself">zone</Chip>
+          {/if}
+        </span>
       </td>
 
       <td class="py-1.5 pr-5 pl-3 text-right">
