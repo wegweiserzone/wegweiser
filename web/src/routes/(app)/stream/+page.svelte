@@ -316,7 +316,8 @@
     </div>
   {/if}
 
-  <table class="w-full border-collapse text-[13px]">
+  <!-- A phone keeps the name, the answer and how long it took (app.css). -->
+  <table class="w-full border-collapse text-[13px]" data-hide="1 2 3 7">
     <thead>
       <tr>
         {#each ["Time", "From", "Tr", "Name", "Type", "Rcode", "Size", "Latency"] as head, i (head)}
@@ -338,7 +339,7 @@
           <td class="num py-1.5 pr-3 pl-5 text-[12px] text-ink-faint">{clock(row.at)}</td>
           <td class="num px-3 py-1.5 text-ink-mute">{row.client}</td>
           <td class="px-3 py-1.5"><Chip>{row.transport}</Chip></td>
-          <td class="num max-w-[34ch] truncate px-3 py-1.5" title={row.name}>{row.name}</td>
+          <td class="num max-w-[18ch] truncate px-3 py-1.5 sm:max-w-[34ch]" title={row.name}>{row.name}</td>
           <td class="num px-3 py-1.5 text-[12px]">{row.type}</td>
           <td class="flex items-center gap-1.5 px-3 py-1.5">
             {#if row.dropped}

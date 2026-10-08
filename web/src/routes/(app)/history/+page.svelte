@@ -280,7 +280,10 @@
   {/snippet}
 </Bar>
 
-<div class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(22rem,2fr)_minmax(0,3fr)]">
+<div
+  class="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)]
+         lg:grid-cols-[minmax(22rem,2fr)_minmax(0,3fr)] lg:grid-rows-1"
+>
   <!-- The commits -->
   <div class="flex min-h-0 flex-col border-line lg:border-r">
     <div class="flex flex-1 flex-col overflow-auto">

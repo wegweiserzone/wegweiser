@@ -239,3 +239,23 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/*
+ * Columns a table leaves out on a narrow screen, by position: Table.svelte
+ * lists the ones marked `narrow: false` in data-hide. No table here has more
+ * than ten.
+ */
+@media (width < 48rem) {
+  table[data-hide~="1"] tr > :nth-child(1),
+  table[data-hide~="2"] tr > :nth-child(2),
+  table[data-hide~="3"] tr > :nth-child(3),
+  table[data-hide~="4"] tr > :nth-child(4),
+  table[data-hide~="5"] tr > :nth-child(5),
+  table[data-hide~="6"] tr > :nth-child(6),
+  table[data-hide~="7"] tr > :nth-child(7),
+  table[data-hide~="8"] tr > :nth-child(8),
+  table[data-hide~="9"] tr > :nth-child(9),
+  table[data-hide~="10"] tr > :nth-child(10) {
+    display: none;
+  }
+}

@@ -56,8 +56,8 @@
 
   const columns: Column[] = [
     { label: "Name" },
-    { label: "Algorithm", width: "11rem" },
-    { label: "Created", align: "right", width: "9rem" },
+    { label: "Algorithm", width: "11rem", narrow: false },
+    { label: "Created", align: "right", width: "9rem", narrow: false },
     { label: "State", width: "9rem" },
     { label: "", width: "10rem" },
   ];

@@ -147,9 +147,9 @@
     { label: "Secondary", width: "14rem" },
     { label: "Zone" },
     { label: "State", width: "9rem" },
-    { label: "Serial", align: "right", width: "8rem" },
-    { label: "Behind", align: "right", width: "7rem" },
-    { label: "Asked", align: "right", width: "8rem" },
+    { label: "Serial", align: "right", width: "8rem", narrow: false },
+    { label: "Behind", align: "right", width: "7rem", narrow: false },
+    { label: "Asked", align: "right", width: "8rem", narrow: false },
   ];
 
   /** How many zones are not known to be in step, which is what to look at. */

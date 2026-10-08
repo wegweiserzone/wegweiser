@@ -74,6 +74,11 @@ public API is unstable and may change without a deprecation period.
   stands, and a page's own bar wraps its buttons below its title instead of
   running off the side of the screen.
 
+- On a phone every table keeps the columns that answer its question and
+  leaves the rest out: a record's name, type and data, a query's name, type,
+  answer and how long it took, a member's state. The history gives the list
+  and the change it shows a share of the screen each, one above the other.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

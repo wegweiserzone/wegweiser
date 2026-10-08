@@ -60,9 +60,9 @@
   const columns: Column[] = [
     { label: "Name" },
     { label: "Type", width: "7rem" },
-    { label: "TTL", align: "right", width: "6rem" },
+    { label: "TTL", align: "right", width: "6rem", narrow: false },
     { label: "Data" },
-    { label: "Origin", width: "9rem" },
+    { label: "Origin", width: "9rem", narrow: false },
     { label: "", width: "6rem" },
   ];
 
@@ -323,9 +323,9 @@
   }
 </script>
 
-<div class="flex shrink-0 items-center gap-2 border-b border-line px-5 py-2.5">
+<div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2.5 sm:px-5">
   <label
-    class="flex h-8 min-w-[20rem] items-center gap-2 rounded-sm border border-line bg-surface
+    class="flex h-8 min-w-0 flex-1 items-center gap-2 sm:min-w-[20rem] sm:flex-none rounded-sm border border-line bg-surface
            px-2.5 transition-colors focus-within:border-signal"
   >
     <svg

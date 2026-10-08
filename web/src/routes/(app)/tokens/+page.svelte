@@ -45,10 +45,10 @@
 
   const columns: Column[] = [
     { label: "Name" },
-    { label: "Prefix", width: "12rem" },
+    { label: "Prefix", width: "12rem", narrow: false },
     { label: "Allowed", width: "8rem" },
-    { label: "Created", align: "right", width: "9rem" },
-    { label: "Last used", align: "right", width: "9rem" },
+    { label: "Created", align: "right", width: "9rem", narrow: false },
+    { label: "Last used", align: "right", width: "9rem", narrow: false },
     { label: "State", width: "9rem" },
     { label: "", width: "6rem" },
   ];

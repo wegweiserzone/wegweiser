@@ -85,8 +85,8 @@
 
   const columns: Column[] = [
     { label: "Member" },
-    { label: "Address", width: "14rem" },
-    { label: "Role", width: "8rem" },
+    { label: "Address", width: "14rem", narrow: false },
+    { label: "Role", width: "8rem", narrow: false },
     { label: "Log", width: "13rem" },
     { label: "", width: "9rem" },
   ];

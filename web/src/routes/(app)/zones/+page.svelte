@@ -124,12 +124,12 @@
 
   const columns: Column[] = [
     { label: "Name" },
-    { label: "Kind", width: "14rem" },
-    { label: "Serial", align: "right", width: "7rem" },
-    { label: "TTL", align: "right", width: "6rem" },
-    { label: "Primary name server" },
+    { label: "Kind", width: "clamp(6rem, 18vw, 14rem)" },
+    { label: "Serial", align: "right", width: "7rem", narrow: false },
+    { label: "TTL", align: "right", width: "6rem", narrow: false },
+    { label: "Primary name server", narrow: false },
     { label: "State", width: "8rem" },
-    { label: "Changed", align: "right", width: "8rem" },
+    { label: "Changed", align: "right", width: "8rem", narrow: false },
     { label: "", width: "5rem" },
   ];
 
@@ -356,7 +356,7 @@
       {#if zone.kind === "reverse"}
         <span class="flex items-center gap-2">
           <Chip tone="signal">Reverse</Chip>
-          <span class="num text-[11px] text-ink-faint">{zone.prefix ?? ""}</span>
+          <span class="num hidden text-[11px] text-ink-faint sm:inline">{zone.prefix ?? ""}</span>
         </span>
       {:else}
         <Chip>Forward</Chip>

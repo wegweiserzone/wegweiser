@@ -6,6 +6,11 @@
     align?: "right";
     /** A width the browser should not fight over, for columns that are stable. */
     width?: string;
+    /**
+     * False for a column a narrow screen can do without. The cells are left
+     * out by position (app.css), so the rows need not know.
+     */
+    narrow?: false;
   }
 </script>
 
@@ -28,9 +33,17 @@
     row: Snippet<[Row]>;
     empty?: Snippet;
   } = $props();
+
+  /** hidden is the positions of the columns a narrow screen leaves out, as app.css reads them. */
+  const hidden = $derived(
+    columns
+      .map((c, i) => (c.narrow === false ? String(i + 1) : ""))
+      .filter(Boolean)
+      .join(" "),
+  );
 </script>
 
-<table class="w-full border-collapse text-[13px]">
+<table class="w-full border-collapse text-[13px]" data-hide={hidden || undefined}>
     <thead>
       <tr>
         {#each columns as column (column.label)}
