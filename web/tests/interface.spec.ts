@@ -32,8 +32,11 @@ test("a token that is not one is refused with something to do about it", async (
 test("signing in shows the shell reading a live server", async ({ page, server }) => {
   await signIn(page, server);
 
-  // Numbers from /healthz, not from the interface's imagination.
-  await expect(page.getByText(/^Answering for \d+ zones?$/)).toBeVisible();
+  // Numbers from /healthz, not from the interface's imagination. Another file
+  // may have left the server empty, which the overview says in other words.
+  await expect(
+    page.getByText(/^(Answering for \d+ zones?|Serving, and holding no zones yet)$/),
+  ).toBeVisible();
   // The session is the one the token opened.
   await expect(page.getByText("bootstrap")).toHaveCount(2); // rail and overview
   await expect(page.getByText("admin").first()).toBeVisible();
@@ -77,7 +80,8 @@ test("every section in the rail leads somewhere", async ({ page, server }) => {
   ]) {
     await expect(page.getByLabel("Sections").getByRole("link", { name })).toBeVisible();
   }
-  await expect(page.getByText("soon")).toHaveCount(0);
+  // The badge, not the word: an empty server's overview says "as soon as".
+  await expect(page.getByText("soon", { exact: true })).toHaveCount(0);
 });
 
 test("the theme survives a reload", async ({ page, server }) => {
