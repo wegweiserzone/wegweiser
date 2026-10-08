@@ -33,9 +33,14 @@ test("every write is there, newest first", async ({ page, server }) => {
   // the serial by exactly one (D2). Newest first. Named by zone, because this
   // listing carries every zone the server has ever had: a commit outlives the
   // zone it describes, so that "who deleted example.com" survives the delete.
-  await expect(page.getByRole("button", { name: /^2→3 Edit example\.com\./ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^1→2 Edit example\.com\./ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^0→1 Created example\.com\./ })).toBeVisible();
+  // Each row says which record changed, not only that one did.
+  await expect(
+    page.getByRole("button", { name: /^Edit example\.com\..*add mail A 192\.0\.2\.25.*2→3/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^Edit example\.com\..*add www A 192\.0\.2\.10.*1→2/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Created example\.com\..*0→1/ })).toBeVisible();
 });
 
 test("choosing a commit shows what it changed", async ({ page, server }) => {
@@ -61,7 +66,7 @@ test("the zone's own tab arrives already narrowed", async ({ page, server }) => 
   // The filter arrived with the link, which needs the zone list to have been
   // resolved first: the URL carries a name and the API takes an identifier.
   await expect(page.getByLabel("Zone")).toHaveValue("example.com.");
-  await expect(page.getByRole("button", { name: /^0→1 Created/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Created.*0→1/ })).toBeVisible();
 });
 
 test("reverting writes forward rather than rewinding", async ({ page, server }) => {
@@ -71,10 +76,11 @@ test("reverting writes forward rather than rewinding", async ({ page, server }) 
   // Serial 2 is the state after www was added and before mail existed. Named
   // by zone: this listing carries every zone the server has ever had, because
   // a commit outlives the zone it describes.
-  await page.getByRole("button", { name: /^1→2 Edit example\.com\./ }).click();
+  await page.getByRole("button", { name: /^Edit example\.com\..*1→2/ }).click();
 
-  await page.getByRole("button", { name: "Revert to this state" }).click();
-  await page.getByRole("button", { name: "Revert the zone" }).click();
+  // Named by the serial it restores, which is the state right after the change.
+  await page.getByRole("button", { name: "Restore serial 2" }).click();
+  await page.getByRole("button", { name: "Restore it" }).click();
 
   await expect(page.getByText("The zone is back at that state")).toBeVisible();
   // Forward, not back: the new serial is higher than the one restored, because
@@ -91,10 +97,7 @@ test("reverting writes forward rather than rewinding", async ({ page, server }) 
 // One change to an address record writes the reverse entry too, in a zone the
 // person never named. Both are history and only one is something somebody did,
 // so the list opens on that one and the rest read as what followed.
-test("the history opens on what people did, and says what followed", async ({
-  page,
-  server,
-}) => {
+test("the history opens on what people did, and says what followed", async ({ page, server }) => {
   const reverse = (await seed(server, "POST", "/zones", { name: "192.0.2.0/24" })) as {
     id: string;
   };

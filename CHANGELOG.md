@@ -102,6 +102,12 @@ public API is unstable and may change without a deprecation period.
   zonefile does, `ns1` rather than the zone name a second time, and marks a
   reverse zone without the accent colour.
 
+- The history's button for putting a zone back read *Revert to this state*,
+  which could mean the state before the chosen change as easily as the one it
+  made. It reads *Restore serial 15*, the state right after it. A row gives
+  its width to the zone and the comment, with the serials and the time at its
+  edge, and the zone filter keeps its width whichever zone is chosen.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

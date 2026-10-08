@@ -232,8 +232,8 @@
           zoneFilter = e.currentTarget.value;
           applyFilters();
         }}
-        class="num h-8 max-w-[16rem] cursor-pointer rounded-sm border border-line bg-surface
-               px-2 text-[12px] text-ink outline-none focus:border-signal"
+        class="num h-8 w-[min(14rem,60vw)] cursor-pointer truncate rounded-sm border border-line
+               bg-surface px-2 text-[12px] text-ink outline-none focus:border-signal"
       >
         <option value="">every zone</option>
         {#each zones as zone (zone.id)}
@@ -311,22 +311,19 @@
             type="button"
             onclick={() => choose(commit)}
             aria-current={selected?.id === commit.id ? "true" : undefined}
-            class="group relative grid cursor-pointer grid-cols-[5.5rem_minmax(0,1fr)_auto]
-                   items-center gap-3 border-b border-line-soft py-2.5 pr-5 text-left
-                   transition-colors hover:bg-surface aria-[current]:bg-raised
-                   {commit.source === 'system' ? 'pl-9 opacity-65' : 'pl-5'}"
+            class="group relative grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center
+                   gap-3 border-b border-line-soft py-2.5 pr-5 text-left transition-colors
+                   hover:bg-surface aria-[current]:bg-raised
+                   {commit.source === 'system' ? 'pl-8 opacity-65' : 'pl-5'}"
           >
             <span
               class="absolute top-0 bottom-0 left-0 w-0.5 bg-signal opacity-0
                      group-aria-[current]:opacity-100"
             ></span>
 
-            <span class="num text-[12px] text-ink-faint">
-              {commit.serialFrom}<span class="px-1">→</span><span class="text-ink"
-                >{commit.serialTo}</span
-              >
-            </span>
-
+            <!-- What and where take the width; the serials and the time are
+                 read second, so they stack at the edge instead of taking a
+                 column each from the zone name. -->
             <span class="flex min-w-0 flex-col gap-0.5">
               <span class="flex items-center gap-2">
                 {#if commit.source === "system"}
@@ -347,8 +344,15 @@
               </span>
             </span>
 
-            <span class="num text-[11px] whitespace-nowrap text-ink-faint" title={exact(commit.createdAt)}>
-              {ago(commit.createdAt)}
+            <span class="flex flex-col items-end gap-0.5 whitespace-nowrap">
+              <span class="num text-[12px] text-ink-faint">
+                {commit.serialFrom}<span class="px-1">→</span><span class="text-ink"
+                  >{commit.serialTo}</span
+                >
+              </span>
+              <span class="num text-[11px] text-ink-faint" title={exact(commit.createdAt)}>
+                {ago(commit.createdAt)}
+              </span>
             </span>
           </button>
         {/each}
@@ -390,11 +394,14 @@
         {/if}
 
         {#if writable && selected.kind !== "zone_delete"}
+          <!-- Named by the serial, because "this state" could be read as the
+               one before the change as easily as the one it made. -->
           <Button
             class="ml-auto"
+            title="Put the zone back as it was right after this change"
             onclick={() => ((reverting = selected), (refused = null))}
           >
-            Revert to this state
+            Restore serial {selected.serialTo}
           </Button>
         {:else if !writable}
           <ReadOnly class="ml-auto" />
@@ -448,13 +455,14 @@
 <Dialog
   open={reverting !== null}
   onclose={() => (reverting = null)}
-  title="Revert to serial {reverting?.serialTo ?? ''}"
+  title="Restore serial {reverting?.serialTo ?? ''}"
 >
   <p class="text-[13px] text-ink-mute">
     <span class="num text-ink">{reverting?.zoneName}</span> is put back to the state it was in
-    after this commit. The difference is written as a <em>new</em> commit moving forward; it
-    is not a rewind, because a secondary that has already seen a higher serial would never
-    accept a jump back to a lower one.
+    right after this change, at serial
+    <span class="num text-ink">{reverting?.serialTo}</span>. The difference is written as a
+    <em>new</em> commit moving forward; it is not a rewind, because a secondary that has
+    already seen a higher serial would never accept a jump back to a lower one.
   </p>
   <p class="text-[13px] text-ink-mute">
     Records that did not change in between keep their identity, their comments and the history
@@ -475,7 +483,7 @@
   {#snippet actions()}
     <Button weight="quiet" onclick={() => (reverting = null)}>Cancel</Button>
     <Button weight="primary" onclick={revert} disabled={working}>
-      {working ? "Reverting…" : "Revert the zone"}
+      {working ? "Restoring…" : "Restore it"}
     </Button>
   {/snippet}
 </Dialog>
