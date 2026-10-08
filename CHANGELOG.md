@@ -79,6 +79,10 @@ public API is unstable and may change without a deprecation period.
   answer and how long it took, a member's state. The history gives the list
   and the change it shows a share of the screen each, one above the other.
 
+- Editing or deleting a record, and deleting a zone, revoking a token or
+  withdrawing a key, were buttons that appeared only under a mouse pointer. On
+  a touch screen, where nothing hovers, they are now always there.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

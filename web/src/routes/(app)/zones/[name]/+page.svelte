@@ -485,7 +485,11 @@
 
       <td class="py-1.5 pr-5 pl-3 text-right">
         {#if writable && record.type !== "SOA"}
-          <div class="flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <!-- Quiet until pointed at, and always there on a screen nothing hovers over. -->
+          <div
+            class="flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100
+                   group-focus-within:opacity-100 pointer-coarse:opacity-100"
+          >
             <button
               type="button"
               onclick={() => startEdit(record)}
