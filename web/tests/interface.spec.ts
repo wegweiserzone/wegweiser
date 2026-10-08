@@ -146,7 +146,7 @@ test("a session that may only read sees where it could not change anything", asy
   await expect(page.getByRole("button", { name: "+ New record" })).toHaveCount(0);
 
   await page.goto(`${server.url}/zones/readonly.example./settings`);
-  await expect(page.getByText("Changing a zone's settings needs a token")).toBeVisible();
+  await expect(page.getByText("Changing this needs a token with the write scope")).toBeVisible();
 });
 
 test("a page that does not exist is designed, not SvelteKit's", async ({ page, server }) => {

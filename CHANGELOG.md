@@ -47,6 +47,13 @@ public API is unstable and may change without a deprecation period.
   joins: its cluster section and the command that starts it, and how a
   witness joins instead.
 
+- A cluster that has lost its majority is no longer news only on the Cluster
+  page. Every page says so in a band across the top, with the counts, and
+  offers no change it could not make: where a button would be it says *No
+  writes*, as a session that may only read sees *Read only*. The rail says
+  *takes no writes*, or *no voter to spare* while one more failure would stop
+  them, where it already said that a server had left its cluster.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

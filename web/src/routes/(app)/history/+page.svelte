@@ -9,7 +9,7 @@
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { Commit, CommitKind, CommitSource, Conflict, MissingZone, Zone } from "$lib/api";
   import { ago, exact } from "$lib/format";
-  import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import Button from "$lib/components/Button.svelte";
   import ReadOnly from "$lib/components/ReadOnly.svelte";
@@ -84,7 +84,7 @@
     missingZones: MissingZone[];
   } | null>(null);
 
-  const writable = $derived(session.can("write"));
+  const writable = $derived(standing.writes.allowed);
   const chosenZone = $derived(zones.find((z) => z.name === zoneFilter));
 
   async function loadZones() {

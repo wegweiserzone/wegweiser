@@ -2,9 +2,9 @@
   /**
    * Everything the interface shows once there is somebody to show it to.
    */
-  import { api } from "$lib/api";
-  import type { Health } from "$lib/api";
+  import { page } from "$app/state";
   import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
   import Button from "$lib/components/Button.svelte";
   import Mark from "$lib/components/Mark.svelte";
   import Palette from "$lib/components/Palette.svelte";
@@ -13,20 +13,14 @@
 
   let { children } = $props();
 
-  let health = $state<Health | null>(null);
-
   session.check();
 
   $effect(() => {
-    if (session.status !== "authenticated") {
-      health = null;
-      return;
-    }
-    api
-      .get("/healthz")
-      .then((h) => (health = h))
-      .catch(() => (health = null));
+    if (session.status === "authenticated") return standing.watch();
   });
+
+  // The Cluster page says the same thing at its top, and better.
+  const stopped = $derived(standing.stopped && page.url.pathname !== "/cluster");
 </script>
 
 {#if session.status === "checking"}
@@ -59,8 +53,25 @@
     over the first row and swallows its clicks.
   -->
   <div class="grid h-screen grid-cols-[208px_minmax(0,1fr)] overflow-hidden">
-    <Rail {health} />
+    <Rail />
     <main class="flex min-w-0 flex-col overflow-hidden">
+      {#if stopped}
+        <div
+          role="status"
+          class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-line border-l-[3px]
+                 border-l-crit bg-crit-lo px-5 py-2.5 text-[13px]"
+        >
+          <span class="font-cond text-[13px] font-bold tracking-[0.08em] text-crit uppercase">
+            No writes
+          </span>
+          <span class="text-ink-mute">
+            {standing.writes.reason}
+          </span>
+          <a href="/cluster" class="ml-auto text-[12px] text-ink underline-offset-2 hover:underline">
+            Cluster
+          </a>
+        </div>
+      {/if}
       {@render children()}
     </main>
   </div>

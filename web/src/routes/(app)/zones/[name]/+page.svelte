@@ -13,7 +13,7 @@
   import type { Conflict, LameNameServer, MissingZone, Record_ } from "$lib/api";
   import { relative } from "$lib/format";
   import { everyType } from "$lib/records";
-  import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
   import Button from "$lib/components/Button.svelte";
   import ReadOnly from "$lib/components/ReadOnly.svelte";
   import Chip from "$lib/components/Chip.svelte";
@@ -30,7 +30,7 @@
 
   let { data } = $props();
   const zone = $derived(data.zone);
-  const writable = $derived(session.can("write"));
+  const writable = $derived(standing.writes.allowed);
 
   /**
    * The listing is the server's, not this page's.

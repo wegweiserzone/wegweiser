@@ -10,7 +10,7 @@
    */
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { Finding } from "$lib/api";
-  import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
   import Button from "$lib/components/Button.svelte";
   import ReadOnly from "$lib/components/ReadOnly.svelte";
   import Empty from "$lib/components/Empty.svelte";
@@ -19,7 +19,7 @@
   let { data } = $props();
 
   const zone = $derived(data.zone);
-  const writable = $derived(session.can("write"));
+  const writable = $derived(standing.writes.allowed);
 
   let findings = $state<Finding[]>([]);
   let records = $state(0);

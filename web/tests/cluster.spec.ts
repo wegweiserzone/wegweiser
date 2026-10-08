@@ -78,7 +78,7 @@ test("each member says how far it has got", async ({ page, server }) => {
   await expect(page.getByRole("row", { name: /ns3/ })).toContainText("Not reached");
   // Why, under it rather than in a tooltip, and the answer above everything.
   await expect(page.getByRole("row", { name: /ns3/ })).toContainText("connection refused");
-  await expect(page.getByText("One failure from stopping")).toBeVisible();
+  await expect(page.getByText("One failure from stopping", { exact: true })).toBeVisible();
 });
 
 test("a member is taken out of the cluster from its row", async ({ page, server }) => {
@@ -122,4 +122,33 @@ test("adding a server says what to write on it", async ({ page, server }) => {
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("weg serve --join 192.0.2.1:8054")).toBeVisible();
   await expect(dialog.getByText("wegwitness serve --join 192.0.2.1:8054")).toBeVisible();
+});
+
+// A cluster without a majority takes no writes, and every page says so rather
+// than offering a change and refusing it once it is filled in.
+test("without a majority, no page offers a change", async ({ page, server }) => {
+  await page.route("**/api/v1/cluster", (route) =>
+    route.fulfill({
+      json: {
+        self: { id: "ns1", address: "192.0.2.1:8054" },
+        replicating: true,
+        removed: false,
+        applied: 12,
+        committed: 12,
+        members: [
+          { id: "ns1", address: "192.0.2.1:8054", role: "voter", leader: false },
+          { id: "ns2", address: "192.0.2.2:8054", role: "voter", leader: false },
+          { id: "ns3", address: "192.0.2.3:8054", role: "voter", leader: false },
+        ],
+        quorum: { voters: 3, needed: 2, answered: 1 },
+      },
+    }),
+  );
+  await signIn(page, server);
+  await page.getByRole("link", { name: "Zones" }).click();
+
+  await expect(page.getByRole("status").getByText("No writes", { exact: true })).toBeVisible();
+  await expect(page.getByText(/The cluster takes no writes: 1 of 3 voters answered/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ New zone" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "takes no writes" })).toBeVisible();
 });

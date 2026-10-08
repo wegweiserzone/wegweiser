@@ -9,7 +9,7 @@
   import { api, ApiError } from "$lib/api";
   import type { Zone } from "$lib/api";
   import { exact } from "$lib/format";
-  import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
   import Button from "$lib/components/Button.svelte";
   import Field from "$lib/components/Field.svelte";
   import Notice from "$lib/components/Notice.svelte";
@@ -65,7 +65,7 @@
   });
 
   const dirty = $derived(JSON.stringify(draft) !== JSON.stringify(toDraft(zone)));
-  const writable = $derived(session.can("write"));
+  const writable = $derived(standing.writes.allowed);
 
   /** seconds turns a field back into what the API wants, refusing nonsense. */
   function seconds(raw: string, what: string): number {
@@ -284,9 +284,9 @@
         <span class="sign text-[11px] text-ok">Saved</span>
       {/if}
     </div>
-  {:else}
-    <Notice tone="signal" title="Read only">
-      Changing a zone's settings needs a token with the write scope.
+  {:else if !standing.stopped}
+    <Notice tone="signal" title={standing.withheld}>
+      {standing.writes.reason}
     </Notice>
   {/if}
 

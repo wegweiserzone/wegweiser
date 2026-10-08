@@ -4,11 +4,17 @@
    */
   import { page } from "$app/state";
   import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
   import { theme } from "$lib/theme.svelte";
-  import type { Health } from "$lib/api";
   import Mark from "./Mark.svelte";
 
-  let { health }: { health: Health | null } = $props();
+  const health = $derived(standing.health);
+  /** trouble is the cluster's answer when it is anything but "takes writes". */
+  const trouble = $derived(standing.verdict?.tone === "ok" ? null : standing.verdict);
+  /** short says it in the width the rail has. */
+  const short: Record<string, string> = {
+    "One failure from stopping": "no voter to spare",
+  };
 
   type Item = { href: string; label: string; icon: string };
 
@@ -92,6 +98,17 @@
       {#if health?.current === false}
         <a href="/cluster" class="num mt-0.5 block truncate text-[10px] text-crit">
           left its cluster
+        </a>
+      {:else if trouble}
+        <!-- The same place, for the same reason: every page, not only the one that explains it. -->
+        <a
+          href="/cluster"
+          title={trouble.detail}
+          class="num mt-0.5 block truncate text-[10px] {trouble.tone === 'crit'
+            ? 'text-crit'
+            : 'text-warn'}"
+        >
+          {short[trouble.headline] ?? trouble.headline.toLowerCase()}
         </a>
       {:else}
         <p class="num mt-0.5 truncate text-[10px] text-ink-faint">

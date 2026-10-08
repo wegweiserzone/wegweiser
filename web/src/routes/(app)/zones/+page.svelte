@@ -8,7 +8,7 @@
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { Zone, ZoneImported } from "$lib/api";
   import { ago, exact } from "$lib/format";
-  import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import Button from "$lib/components/Button.svelte";
   import ReadOnly from "$lib/components/ReadOnly.svelte";
@@ -302,7 +302,7 @@
       </select>
     </label>
 
-    {#if session.can("write")}
+    {#if standing.writes.allowed}
       <Button onclick={openImport}>Import zonefile</Button>
       <Button weight="primary" onclick={() => ((creating = true), (refused = null))}>
         + New zone
@@ -369,7 +369,7 @@
     </td>
 
     <td class="py-1.5 pr-5 pl-3 text-right">
-      {#if session.can("write")}
+      {#if standing.writes.allowed}
         <button
           type="button"
           onclick={() => ((removing = zone), (typed = ""), (refused = null))}
@@ -409,7 +409,7 @@
         A zone is a name this server is authoritative for. Create one and it starts answering
         immediately; there is no reload and no zonefile to write.
         {#snippet actions()}
-          {#if session.can("write")}
+          {#if standing.writes.allowed}
             <Button weight="primary" onclick={() => (creating = true)}>+ New zone</Button>
           {/if}
         {/snippet}

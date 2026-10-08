@@ -11,7 +11,7 @@
    */
   import { api, ApiError } from "$lib/api";
   import type { ReverseConflictPolicy, Settings } from "$lib/api";
-  import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import ListSetting from "$lib/components/ListSetting.svelte";
   import Notice from "$lib/components/Notice.svelte";
@@ -26,7 +26,7 @@
   let notify = $state("");
   let savingNotify = $state(false);
 
-  const writable = $derived(session.can("write"));
+  const writable = $derived(standing.writes.allowed);
 
   $effect(() => {
     void load();
@@ -151,9 +151,9 @@
       {#if refused}
         <Notice tone="crit" title="The change was not saved">{refused}</Notice>
       {/if}
-      {#if !writable}
-        <Notice tone="signal" title="Read only">
-          Changing a server-wide setting needs a token with the write scope.
+      {#if !writable && !standing.stopped}
+        <Notice tone="signal" title={standing.withheld}>
+          {standing.writes.reason}
         </Notice>
       {/if}
     </div>
