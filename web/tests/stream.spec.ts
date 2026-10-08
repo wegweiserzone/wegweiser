@@ -2,7 +2,7 @@
  * The live query tail.
  */
 
-import { spawnSync } from "node:child_process";
+import { createSocket } from "node:dgram";
 
 import { expect, reset, seed, signIn, test } from "./fixtures";
 import { started } from "./server";
@@ -14,14 +14,41 @@ test.beforeAll(async ({ server }) => {
   await seed(server, "POST", "/zones", { name: "example.com" });
 });
 
-/** ask sends one query to the server's own DNS port, if dig is here. */
-function ask(name: string, type = "A"): boolean {
+/**
+ * ask sends one query for an address to the server's own DNS port and waits
+ * for the answer. Written out here rather than handed to dig, so that the
+ * stream is tested wherever the suite runs, not only where dig is installed.
+ */
+async function ask(name: string): Promise<void> {
   const { dns } = started();
-  const [host, port] = [dns.slice(0, dns.lastIndexOf(":")), dns.slice(dns.lastIndexOf(":") + 1)];
-  const out = spawnSync("dig", ["+tries=1", "+time=1", `@${host}`, "-p", port, name, type], {
-    encoding: "utf8",
-  });
-  return out.status === 0;
+  const at = dns.lastIndexOf(":");
+  const [host, port] = [dns.slice(0, at), Number(dns.slice(at + 1))];
+
+  const labels = name
+    .split(".")
+    .filter(Boolean)
+    .map((label) => Buffer.concat([Buffer.from([label.length]), Buffer.from(label)]));
+  const query = Buffer.concat([
+    // An identifier, recursion desired, one question.
+    Buffer.from([0x57, 0x47, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0]),
+    ...labels,
+    // The root, then type A in class IN.
+    Buffer.from([0, 0, 1, 0, 1]),
+  ]);
+
+  const socket = createSocket("udp4");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`${dns} did not answer ${name}`)), 2000);
+      socket.once("message", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      socket.send(query, port, host);
+    });
+  } finally {
+    socket.close();
+  }
 }
 
 test("the stream says it is live before anything is asked", async ({ page, server }) => {
@@ -37,13 +64,11 @@ test("the stream says it is live before anything is asked", async ({ page, serve
 });
 
 test("a query appears as it is answered", async ({ page, server }) => {
-  test.skip(!ask("probe.example.com"), "dig is not installed");
-
   await signIn(page, server);
   await page.goto(`${server.url}/stream`);
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
 
-  ask("www.example.com");
+  await ask("www.example.com");
 
   await expect(page.getByRole("cell", { name: "www.example.com." })).toBeVisible();
   // NOERROR is the zone's own name; the server answers it authoritatively.
@@ -51,23 +76,16 @@ test("a query appears as it is answered", async ({ page, server }) => {
 });
 
 test("a name this server does not hold is shown as refused", async ({ page, server }) => {
-  test.skip(!ask("probe.example.com"), "dig is not installed");
-
   await signIn(page, server);
   await page.goto(`${server.url}/stream`);
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
 
-  ask("somewhere.else.invalid");
+  await ask("somewhere.else.invalid");
 
   await expect(page.getByText("REFUSED").first()).toBeVisible();
 });
 
-test("the filter is the server's, so changing it reopens the stream", async ({
-  page,
-  server,
-}) => {
-  test.skip(!ask("probe.example.com"), "dig is not installed");
-
+test("the filter is the server's, so changing it reopens the stream", async ({ page, server }) => {
   await signIn(page, server);
   await page.goto(`${server.url}/stream`);
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
@@ -77,27 +95,25 @@ test("the filter is the server's, so changing it reopens the stream", async ({
   // one thing, not a search over what was collected under another.
   await expect(page.getByRole("heading", { name: "Nothing is being asked" })).toBeVisible();
 
-  ask("filtered.example.com");
+  await ask("filtered.example.com");
   await expect(page.getByRole("cell", { name: "filtered.example.com." })).toBeVisible();
 
-  ask("outside.invalid");
+  await ask("outside.invalid");
   await expect(page.getByRole("cell", { name: "outside.invalid." })).toHaveCount(0);
 });
 
 test("pausing holds the table and says what was missed", async ({ page, server }) => {
-  test.skip(!ask("probe.example.com"), "dig is not installed");
-
   await signIn(page, server);
   await page.goto(`${server.url}/stream`);
   await expect(page.getByText("Live", { exact: true })).toBeVisible();
 
-  ask("before.example.com");
+  await ask("before.example.com");
   await expect(page.getByRole("cell", { name: "before.example.com." })).toBeVisible();
 
   await page.getByRole("button", { name: "Pause" }).click();
   await expect(page.getByText("Paused")).toBeVisible();
 
-  ask("during.example.com");
+  await ask("during.example.com");
   await expect(page.getByText("arrived while paused")).toBeVisible();
   // The table did not move.
   await expect(page.getByRole("cell", { name: "during.example.com." })).toHaveCount(0);
