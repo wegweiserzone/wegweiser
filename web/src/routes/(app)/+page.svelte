@@ -31,7 +31,7 @@
   let trouble = $state<string | null>(null);
   let refusedMetrics = $state<string | null>(null);
 
-  let rates = $state<number[]>(new Array(kept).fill(0));
+  let rates = $state<(number | null)[]>(new Array(kept).fill(null));
   let previous: { answered: number; at: number } | null = null;
 
   async function loadHealth() {
@@ -306,7 +306,7 @@
         the last two minutes, from the difference between counter readings
       </p>
       <span class="num ml-auto text-[12px] text-ink-mute">
-        peak {Math.max(...rates).toFixed(0)} /s
+        peak {Math.max(0, ...rates.map((r) => r ?? 0)).toFixed(0)} /s
       </span>
     </div>
     <Sparkline series={rates} label="Queries per second over the last two minutes" />

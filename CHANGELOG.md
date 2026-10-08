@@ -193,6 +193,10 @@ public API is unstable and may change without a deprecation period.
 - An address with no page behind it said so on a bare screen, with no way on
   but back to the overview. The page now keeps the rail.
 
+- The queries-per-second curves on the overview and the query stream drew the
+  time before the page was open as a flat line at zero, a quiet minute nobody
+  had measured. They start where measuring did.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary

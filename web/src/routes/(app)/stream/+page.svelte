@@ -44,7 +44,7 @@
   let rcode = $state("");
 
   // The last sixty seconds, one bucket a second.
-  let perSecond = $state<number[]>(new Array(60).fill(0));
+  let perSecond = $state<(number | null)[]>(new Array(60).fill(null));
   let thisSecond = 0;
   let currentSecond = Math.floor(Date.now() / 1000);
   let buckets = $state<number[]>(new Array(7).fill(0));
@@ -93,7 +93,7 @@
     // and a new filter is a different population: carrying a peak from the
     // unfiltered stream into a chart above a filtered one states something
     // that was never measured.
-    perSecond = new Array(60).fill(0);
+    perSecond = new Array(60).fill(null);
     buckets = new Array(7).fill(0);
     thisSecond = 0;
     currentSecond = Math.floor(Date.now() / 1000);
@@ -134,7 +134,7 @@
   });
 
   const rate = $derived(perSecond.at(-1) ?? 0);
-  const peak = $derived(Math.max(...perSecond));
+  const peak = $derived(Math.max(0, ...perSecond.map((r) => r ?? 0)));
   /**
    * The share answered inside a millisecond, which is what D12 sets as the
    * target. "Under 10 µs" was the first headline here and it is a worse one:

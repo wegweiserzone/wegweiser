@@ -2,7 +2,14 @@
   /**
    * Queries per second, over the last minute.
    */
-  let { series, label }: { series: number[]; label: string } = $props();
+  let {
+    series,
+    label,
+  }: {
+    /** One reading a step, oldest first; null for a step from before anything was measured. */
+    series: (number | null)[];
+    label: string;
+  } = $props();
 
   let canvas = $state<HTMLCanvasElement | null>(null);
 
@@ -24,7 +31,7 @@
     c.setTransform(ratio, 0, 0, ratio, 0, 0);
     c.clearRect(0, 0, box.width, box.height);
 
-    const peak = Math.max(10, ...series);
+    const peak = Math.max(10, ...series.map((v) => v ?? 0));
     const step = box.width / Math.max(1, series.length - 1);
     const y = (v: number) => box.height - 4 - (v / peak) * (box.height - 12);
 
@@ -38,12 +45,22 @@
       c.stroke();
     }
 
+    // The line starts where measuring did. Before the page was open nothing
+    // was counted, and drawing that time as zero would claim a quiet minute
+    // nobody saw.
+    const first = series.findIndex((v) => v !== null);
+    if (first === -1) return;
+
     const line = new Path2D();
-    series.forEach((v, i) => (i ? line.lineTo(i * step, y(v)) : line.moveTo(0, y(v))));
+    for (let i = first; i < series.length; i++) {
+      const at = [i * step, y(series[i] ?? 0)] as const;
+      if (i === first) line.moveTo(...at);
+      else line.lineTo(...at);
+    }
 
     const under = new Path2D(line);
     under.lineTo(box.width, box.height);
-    under.lineTo(0, box.height);
+    under.lineTo(first * step, box.height);
     under.closePath();
 
     const signal = token("--signal");
