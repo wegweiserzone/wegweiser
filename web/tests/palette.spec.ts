@@ -42,6 +42,33 @@ test("the arrow keys move and Enter runs what is under them", async ({ page, ser
   await expect(page).toHaveURL(/\/stream$/);
 });
 
+// What can be started is in the palette too, and it opens the same dialog the
+// page's own button does rather than a second copy of the form.
+test("the palette starts things, and the zone on the screen comes first", async ({
+  page,
+  server,
+}) => {
+  await signIn(page, server);
+  await page.goto(`${server.url}/zones/example.com.`);
+  await expect(page.getByRole("button", { name: "+ New record" })).toBeVisible();
+
+  await page.keyboard.press("Control+k");
+  const commands = page.getByRole("dialog", { name: "Commands" });
+  await expect(commands.getByRole("button").first()).toHaveText("New record");
+  await page.getByRole("textbox", { name: "Command" }).fill("new record");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("dialog", { name: "New record" })).toBeVisible();
+  // Taken out of the address again, so a reload does not open it a second time.
+  await expect(page).toHaveURL(/\/zones\/example\.com\.$/);
+
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Control+k");
+  await page.getByRole("textbox", { name: "Command" }).fill("new token");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "New token" })).toBeVisible();
+});
+
 test("slash focuses whatever this screen filters by", async ({ page, server }) => {
   await signIn(page, server);
   await page.goto(`${server.url}/zones`);
@@ -113,6 +140,10 @@ test("g then a letter goes where the palette says it does", async ({ page, serve
   await page.keyboard.press("g");
   await page.keyboard.press("h");
   await expect(page).toHaveURL(/\/history$/);
+
+  await page.keyboard.press("g");
+  await page.keyboard.press("2");
+  await expect(page).toHaveURL(/\/secondaries$/);
 });
 
 test("a stray g does not eat the next keystroke for ever", async ({ page, server }) => {

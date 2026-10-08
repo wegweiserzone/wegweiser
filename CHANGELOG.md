@@ -62,6 +62,8 @@ public API is unstable and may change without a deprecation period.
   *takes no writes*, or *no voter to spare* while one more failure would stop
   them, where it already said that a server had left its cluster.
 
+#### Web interface
+
 - The overview opens with how the server stands, a line each for whether it
   answers, whether its cluster takes writes, and whether the secondaries hold
   what it holds, each leading to the page that explains it. It takes the place
@@ -82,6 +84,11 @@ public API is unstable and may change without a deprecation period.
 - Editing or deleting a record, and deleting a zone, revoking a token or
   withdrawing a key, were buttons that appeared only under a mouse pointer. On
   a touch screen, where nothing hovers, they are now always there.
+
+- The command palette, Ctrl K, starts things as well as going places: a new
+  zone, record, token or key, an import, and the check or history of the zone
+  on the screen, which come first. It lists Secondaries, with `g 2`, and the
+  rail and the palette list the sections in the same order.
 
 #### API
 

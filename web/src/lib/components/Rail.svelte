@@ -22,7 +22,6 @@
       label: "Zones",
       icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18",
     },
-
     {
       href: "/stream",
       label: "Query stream",
@@ -34,11 +33,6 @@
       icon: "M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v4l3 2",
     },
     {
-      href: "/tokens",
-      label: "Tokens",
-      icon: "M8 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 12h9M18 12v4M15.5 12v3",
-    },
-    {
       href: "/secondaries",
       label: "Secondaries",
       icon: "M4 5h7v5H4zM13 14h7v5h-7M11 7.5h6a2 2 0 0 1 2 2v2M8 10v2a2 2 0 0 0 2 2h3",
@@ -47,6 +41,11 @@
       href: "/cluster",
       label: "Cluster",
       icon: "M12 3.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4M5 16.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4M19 16.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4M12 7.5v4M12 11.5l-5.5 5M12 11.5l5.5 5",
+    },
+    {
+      href: "/tokens",
+      label: "Tokens",
+      icon: "M8 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 12h9M18 12v4M15.5 12v3",
     },
     {
       href: "/keys",

@@ -9,6 +9,7 @@
   import { untrack } from "svelte";
 
   import { invalidateAll } from "$app/navigation";
+  import { asked } from "$lib/asked";
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { Conflict, LameNameServer, MissingZone, Record_ } from "$lib/api";
   import { relative } from "$lib/format";
@@ -182,6 +183,19 @@
   let newData = $state("");
   let refused = $state<string | null>(null);
   let working = $state(false);
+
+  /** openAdding starts a new record from empty. */
+  function openAdding() {
+    adding = true;
+    refused = null;
+    newName = "";
+    newData = "";
+  }
+
+  // The command palette opens the new record with ?new.
+  $effect(() => {
+    if (asked("new") && writable) openAdding();
+  });
 
   /** qualify completes a relative name against the apex, the way a zonefile does. */
   function qualify(name: string): string {
@@ -386,7 +400,7 @@
     <Button
       weight="primary"
       class="ml-auto"
-      onclick={() => ((adding = true), (refused = null), (newName = ""), (newData = ""))}
+      onclick={openAdding}
     >
       + New record
     </Button>
@@ -544,7 +558,7 @@
           written with it.
           {#snippet actions()}
             {#if writable}
-              <Button weight="primary" onclick={() => (adding = true)}>+ New record</Button>
+              <Button weight="primary" onclick={openAdding}>+ New record</Button>
             {/if}
           {/snippet}
         </Empty>

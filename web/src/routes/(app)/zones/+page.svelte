@@ -5,7 +5,7 @@
   import { untrack } from "svelte";
 
   import { goto } from "$app/navigation";
-  import { page } from "$app/state";
+  import { asked } from "$lib/asked";
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { Zone, ZoneImported } from "$lib/api";
   import { ago, exact } from "$lib/format";
@@ -90,14 +90,11 @@
     imported = null;
   }
 
-  // A way in from elsewhere, such as an empty server's overview: /zones?new
-  // opens the new zone, and /zones?import the import.
+  // A way in from elsewhere, such as an empty server's overview or the command
+  // palette: /zones?new opens the new zone, and /zones?import the import.
   $effect(() => {
-    const asked = page.url.searchParams;
-    untrack(() => {
-      if (asked.has("new") && standing.writes.allowed) creating = true;
-      if (asked.has("import") && standing.writes.allowed) openImport();
-    });
+    if (asked("new") && standing.writes.allowed) creating = true;
+    if (asked("import") && standing.writes.allowed) openImport();
   });
 
   async function runImport(event: SubmitEvent) {

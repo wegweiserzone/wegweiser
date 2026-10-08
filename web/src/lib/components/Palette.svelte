@@ -3,9 +3,11 @@
    * Ctrl+K: everything this interface can do, from the keyboard.
    */
   import { goto } from "$app/navigation";
+  import { page } from "$app/state";
   import { api } from "$lib/api";
   import type { Zone } from "$lib/api";
   import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
   import { theme } from "$lib/theme.svelte";
 
   interface Command {
@@ -29,16 +31,19 @@
    * Where `g` goes. The palette lists these with their key, so the list is
    * also how anybody finds out the keys exist, which means the two have to
    * come from one place, or the hint on the screen becomes a promise the
-   * keyboard does not keep.
+   * keyboard does not keep. They follow the rail, so that rail and palette
+   * read as one list.
    */
   const places = [
     { key: "o", label: "Overview", href: "/" },
     { key: "z", label: "Zones", href: "/zones" },
     { key: "s", label: "Query stream", href: "/stream" },
     { key: "h", label: "History", href: "/history" },
+    // A digit, because the letters in the word are taken: the second server.
+    { key: "2", label: "Secondaries", href: "/secondaries" },
+    { key: "c", label: "Cluster", href: "/cluster" },
     { key: "t", label: "Tokens", href: "/tokens" },
     { key: "k", label: "Keys", href: "/keys" },
-    { key: "c", label: "Cluster", href: "/cluster" },
     // The comma rather than a letter, because that is the key every other
     // application puts settings on and the letters that fit are taken.
     { key: ",", label: "Settings", href: "/settings" },
@@ -51,8 +56,47 @@
     run: () => goto(place.href),
   }));
 
+  /** The zone the screen behind the palette is about, if it is about one. */
+  const here = $derived(
+    page.route.id?.startsWith("/(app)/zones/[name]") ? page.params.name : undefined,
+  );
+
+  // What can be started from the palette. Each one opens the dialog on its own
+  // page, so the palette never holds a second copy of a form, and only what
+  // this session may do is offered at all.
+
+  /** What there is to do about the zone on the screen, first because it is nearest. */
+  const nearby = $derived.by(() => {
+    if (!here) return [];
+    const at = `/zones/${encodeURIComponent(here)}`;
+    const all: Command[] = [];
+    if (standing.writes.allowed) {
+      all.push({ group: "This zone", label: "New record", run: () => goto(`${at}?new`) });
+    }
+    all.push({ group: "This zone", label: "Check this zone", run: () => goto(`${at}/check`) });
+    all.push({
+      group: "This zone",
+      label: "History of this zone",
+      run: () => goto(`/history?zone=${encodeURIComponent(here)}`),
+    });
+    return all;
+  });
+
+  const starts = $derived.by(() => {
+    const all: Command[] = [];
+    if (standing.writes.allowed) {
+      all.push({ group: "Create", label: "New zone", run: () => goto("/zones?new") });
+      all.push({ group: "Create", label: "Import a zonefile", run: () => goto("/zones?import") });
+    }
+    if (session.can("admin")) {
+      all.push({ group: "Create", label: "New token", run: () => goto("/tokens?new") });
+      all.push({ group: "Create", label: "New key", run: () => goto("/keys?new") });
+    }
+    return all;
+  });
+
   const commands = $derived.by(() => {
-    const all: Command[] = [...sections];
+    const all: Command[] = [...nearby, ...sections, ...starts];
 
     for (const zone of zones) {
       all.push({
@@ -221,7 +265,7 @@
           autofocus
           autocomplete="off"
           spellcheck="false"
-          placeholder="Go somewhere, or type a zone name…"
+          placeholder="Go somewhere, start something, or type a zone name…"
           aria-label="Command"
           class="num min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-ink-faint"
         />

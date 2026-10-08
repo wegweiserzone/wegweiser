@@ -8,6 +8,7 @@
    * (docs/decisions/d28-tsig.md). Reading one is still a deliberate act, so that a
    * secret appears when somebody asked for it.
    */
+  import { asked } from "$lib/asked";
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { TSIGAlgorithm, TSIGKey } from "$lib/api";
   import { ago, exact } from "$lib/format";
@@ -86,6 +87,14 @@
   // and is told once why, above, rather than again as a failure.
   $effect(() => {
     if (allowed) load();
+  });
+
+  // The command palette opens the new key with /keys?new.
+  $effect(() => {
+    if (asked("new") && allowed) {
+      creating = true;
+      refused = null;
+    }
   });
 
   async function create(event: SubmitEvent) {
