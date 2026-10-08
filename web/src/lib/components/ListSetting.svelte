@@ -53,7 +53,7 @@
     <Chip tone="warn">{empty}</Chip>
   {:else}
     {#each stored as entry (entry)}
-      <Chip tone="ok">{entry}</Chip>
+      <Chip>{entry}</Chip>
     {/each}
   {/if}
 </p>

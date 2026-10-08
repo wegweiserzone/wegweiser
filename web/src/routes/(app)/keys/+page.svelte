@@ -244,7 +244,7 @@
           {#if key.revokedAt}
             <Chip tone="neutral">Withdrawn</Chip>
           {:else}
-            <Chip tone="ok" dot>Signs</Chip>
+            <Chip>Signs</Chip>
           {/if}
         </td>
         <td class="py-1.5 pr-5 pl-3 text-right">

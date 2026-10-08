@@ -149,8 +149,8 @@
   });
   const sampling = $derived((status?.ratio ?? 1) > 1);
 
-  const tone: Record<string, "ok" | "warn" | "crit" | "neutral"> = {
-    NOERROR: "ok",
+  const tone: Record<string, "warn" | "crit" | "neutral"> = {
+    NOERROR: "neutral",
     NXDOMAIN: "warn",
     SERVFAIL: "crit",
     REFUSED: "neutral",

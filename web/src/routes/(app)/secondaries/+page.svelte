@@ -23,7 +23,7 @@
   import type { Column } from "$lib/components/Table.svelte";
 
   type State = SecondaryStanding["state"];
-  type Tone = "neutral" | "ok" | "warn" | "info";
+  type Tone = "neutral" | "warn" | "info";
 
   /**
    * What each state is called and how loudly. Only being in step is quiet.
@@ -34,7 +34,7 @@
   const states: Record<State, { label: string; tone: Tone; what: string }> = {
     inStep: {
       label: "In step",
-      tone: "ok",
+      tone: "neutral",
       what: "It holds the serial this server publishes.",
     },
     behind: {
@@ -214,7 +214,7 @@
       <td class="num py-1.5 pr-3 pl-5 text-ink-mute">{s.target}</td>
       <td class="py-1.5 pr-3 pl-3">{s.zone}</td>
       <td class="px-3 py-1.5">
-        <Chip tone={states[s.state].tone} dot={s.state === "inStep"} title={states[s.state].what}>
+        <Chip tone={states[s.state].tone} title={states[s.state].what}>
           {states[s.state].label}
         </Chip>
       </td>

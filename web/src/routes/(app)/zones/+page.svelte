@@ -366,9 +366,9 @@
 
     <td class="px-3 py-1.5">
       {#if zone.disabled}
-        <Chip dot>Disabled</Chip>
+        <Chip tone="warn" dot>Disabled</Chip>
       {:else}
-        <Chip tone="ok" dot>Serving</Chip>
+        <Chip>Serving</Chip>
       {/if}
     </td>
 

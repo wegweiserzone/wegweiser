@@ -100,7 +100,7 @@
   );
 
   /** log says how far one member has got, against the furthest commit. */
-  function log(m: Member): { label: string; tone: "ok" | "warn" | "crit"; title?: string } {
+  function log(m: Member): { label: string; tone: "neutral" | "warn" | "crit"; title?: string } {
     const p = m.progress;
     if (!p) return { label: "Not reached", tone: "warn" };
     if (p.behind) {
@@ -112,7 +112,7 @@
     }
     if (p.removed) return { label: "Left", tone: "crit" };
     if (p.applied < furthest) return { label: `${furthest - p.applied} behind`, tone: "warn" };
-    return { label: "Current", tone: "ok" };
+    return { label: "Current", tone: "neutral" };
   }
 
   /** load asks again. Quietly, it leaves the page as it is until the answer is in. */
@@ -354,7 +354,7 @@
               {status.committed - status.applied} behind
             </Chip>
           {:else}
-            <Chip tone="ok" dot>Current</Chip>
+            <Chip>Current</Chip>
           {/if}
         </div>
       </dl>
@@ -374,7 +374,7 @@
           <Chip tone="neutral" title={roles[m.role].what}>{roles[m.role].label}</Chip>
         </td>
         <td class="px-3 py-1.5">
-          <Chip tone={shown.tone} dot={shown.tone === "ok"} title={shown.title}>{shown.label}</Chip>
+          <Chip tone={shown.tone} title={shown.title}>{shown.label}</Chip>
           {#if m.trouble}
             <!-- Why, where it is read, rather than behind a pointer a phone does not have. -->
             <p class="num mt-0.5 text-[11px] text-ink-faint">

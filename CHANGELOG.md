@@ -93,6 +93,11 @@ public API is unstable and may change without a deprecation period.
 - Zones, records and the history show the bar for paging through them only
   when there is more than one page.
 
+- Colour is kept for what is not as it should be. A zone serving, a token
+  usable, a key signing, a member current, a secondary in step and a NOERROR
+  answer are no longer green on every row, so that a disabled zone, an
+  expired token or an NXDOMAIN stands out from the rows around it.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

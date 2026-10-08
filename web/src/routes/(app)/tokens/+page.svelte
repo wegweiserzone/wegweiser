@@ -137,13 +137,13 @@
 
   function condition(token: Token): {
     label: string;
-    tone: "ok" | "warn" | "crit" | "neutral";
+    tone: "warn" | "crit" | "neutral";
   } {
     if (token.revokedAt) return { label: "Revoked", tone: "neutral" };
     if (token.expiresAt && new Date(token.expiresAt) <= new Date()) {
       return { label: "Expired", tone: "warn" };
     }
-    return { label: "Usable", tone: "ok" };
+    return { label: "Usable", tone: "neutral" };
   }
 </script>
 
@@ -233,7 +233,7 @@
           {token.lastUsedAt ? ago(token.lastUsedAt) : "never"}
         </td>
         <td class="px-3 py-1.5">
-          <Chip tone={shown.tone} dot={shown.tone === "ok"}>{shown.label}</Chip>
+          <Chip tone={shown.tone}>{shown.label}</Chip>
         </td>
         <td class="py-1.5 pr-5 pl-3 text-right">
           {#if !token.revokedAt}
