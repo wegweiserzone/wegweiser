@@ -5,6 +5,7 @@
   import { page } from "$app/state";
   import { session } from "$lib/session.svelte";
   import { standing } from "$lib/standing.svelte";
+  import Brand from "$lib/components/Brand.svelte";
   import Button from "$lib/components/Button.svelte";
   import Mark from "$lib/components/Mark.svelte";
   import Palette from "$lib/components/Palette.svelte";
@@ -21,7 +22,16 @@
 
   // The Cluster page says the same thing at its top, and better.
   const stopped = $derived(standing.stopped && page.url.pathname !== "/cluster");
+
+  /** menu is the rail opened over a narrow screen; going anywhere closes it. */
+  let menu = $state(false);
+  $effect(() => {
+    void page.url.pathname;
+    menu = false;
+  });
 </script>
+
+<svelte:window onkeydown={(e) => e.key === "Escape" && (menu = false)} />
 
 {#if session.status === "checking"}
   <div class="grid min-h-screen place-items-center">
@@ -52,8 +62,45 @@
     its nearest scroll container, so a page that scrolls instead puts the header
     over the first row and swallows its clicks.
   -->
-  <div class="grid h-screen grid-cols-[208px_minmax(0,1fr)] overflow-hidden">
-    <Rail />
+  <!--
+    On a narrow screen the rail would take half of it, so it waits behind a
+    button in a bar of its own, and the bar keeps the one line about how this
+    server stands that the rail would otherwise show.
+  -->
+  <div
+    class="grid h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden
+           md:grid-cols-[208px_minmax(0,1fr)] md:grid-rows-1"
+  >
+    <header
+      class="flex items-center gap-3 border-b border-line bg-surface px-4 py-2.5 md:hidden"
+    >
+      <Brand />
+      <button
+        type="button"
+        onclick={() => (menu = true)}
+        aria-label="Open the sections"
+        aria-expanded={menu}
+        class="ml-auto grid size-9 cursor-pointer place-items-center rounded-sm text-ink-mute
+               hover:bg-raised hover:text-ink"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-5">
+          <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+        </svg>
+      </button>
+    </header>
+
+    <div class={menu ? "fixed inset-0 z-40 flex md:static md:z-auto md:block" : "hidden md:block"}>
+      <Rail />
+      {#if menu}
+        <button
+          type="button"
+          onclick={() => (menu = false)}
+          aria-label="Close the sections"
+          class="flex-1 cursor-default bg-sunken/70 backdrop-blur-[2px] md:hidden"
+        ></button>
+      {/if}
+    </div>
+
     <main class="flex min-w-0 flex-col overflow-hidden">
       {#if stopped}
         <div

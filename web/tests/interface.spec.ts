@@ -172,3 +172,20 @@ test("the design system renders", async ({ page, server }) => {
   await expect(page.getByRole("heading", { name: "Colour" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Type" })).toBeVisible();
 });
+
+// On a phone the rail would take half the screen, so it waits behind a button,
+// and going somewhere puts it away again.
+test("on a narrow screen the sections open from a button", async ({ page, server }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, server);
+
+  const sections = page.getByRole("navigation", { name: "Sections" });
+  await expect(sections).toBeHidden();
+  await page.getByRole("button", { name: "Open the sections" }).click();
+  await sections.getByRole("link", { name: "History" }).click();
+
+  await expect(page).toHaveURL(/\/history$/);
+  await expect(sections).toBeHidden();
+  // Nothing on the page runs off its side.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});

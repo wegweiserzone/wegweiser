@@ -11,8 +11,10 @@
   }: { title: string; subject?: string; actions?: Snippet } = $props();
 </script>
 
+<!-- On a narrow screen the actions wrap below the title rather than run off its edge. -->
 <header
-  class="flex h-[54px] shrink-0 items-center gap-3 border-b border-line bg-ground px-5"
+  class="flex min-h-[54px] shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line
+         bg-ground px-4 py-2 sm:px-5"
 >
   <div class="flex min-w-0 items-baseline gap-2">
     <h1 class="font-cond text-[15px] font-bold tracking-[0.11em] uppercase">{title}</h1>
@@ -23,7 +25,7 @@
   </div>
 
   {#if actions}
-    <div class="ml-auto flex items-center gap-2">{@render actions()}</div>
+    <div class="ml-auto flex flex-wrap items-center justify-end gap-2">{@render actions()}</div>
   {/if}
 
   <!-- Discoverable without being told: a shortcut nobody knows about is a

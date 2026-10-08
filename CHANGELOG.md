@@ -69,6 +69,11 @@ public API is unstable and may change without a deprecation period.
   server with no zones yet offers to create one or import a zonefile there,
   above charts that would otherwise be empty.
 
+- The interface fits a phone. Below tablet width the rail waits behind a
+  button in a bar across the top, which keeps the line about how the server
+  stands, and a page's own bar wraps its buttons below its title instead of
+  running off the side of the screen.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

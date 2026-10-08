@@ -4,17 +4,8 @@
    */
   import { page } from "$app/state";
   import { session } from "$lib/session.svelte";
-  import { standing } from "$lib/standing.svelte";
   import { theme } from "$lib/theme.svelte";
-  import Mark from "./Mark.svelte";
-
-  const health = $derived(standing.health);
-  /** trouble is the cluster's answer when it is anything but "takes writes". */
-  const trouble = $derived(standing.verdict?.tone === "ok" ? null : standing.verdict);
-  /** short says it in the width the rail has. */
-  const short: Record<string, string> = {
-    "One failure from stopping": "no voter to spare",
-  };
+  import Brand from "./Brand.svelte";
 
   type Item = { href: string; label: string; icon: string };
 
@@ -82,40 +73,11 @@
   }
 </script>
 
-<aside class="sticky top-0 flex h-screen flex-col border-r border-line bg-surface">
-  <div class="flex items-center gap-2.5 px-4 pt-4.5 pb-4">
-    <Mark class="size-5.5 shrink-0 text-signal" />
-    <div class="min-w-0">
-      <p class="font-cond text-[19px] leading-none font-bold tracking-[0.13em] uppercase">
-        Wegweiser
-      </p>
-      <!--
-        A member that has left its cluster still serves, so the version line is
-        where it says so: everywhere, rather than only on the page that explains
-        it (docs/decisions/d29-a-node-that-cannot-apply.md,
-        docs/decisions/d46-a-member-that-has-left.md).
-      -->
-      {#if health?.current === false}
-        <a href="/cluster" class="num mt-0.5 block truncate text-[10px] text-crit">
-          left its cluster
-        </a>
-      {:else if trouble}
-        <!-- The same place, for the same reason: every page, not only the one that explains it. -->
-        <a
-          href="/cluster"
-          title={trouble.detail}
-          class="num mt-0.5 block truncate text-[10px] {trouble.tone === 'crit'
-            ? 'text-crit'
-            : 'text-warn'}"
-        >
-          {short[trouble.headline] ?? trouble.headline.toLowerCase()}
-        </a>
-      {:else}
-        <p class="num mt-0.5 truncate text-[10px] text-ink-faint">
-          {health?.version ?? "not serving"}
-        </p>
-      {/if}
-    </div>
+<aside
+  class="sticky top-0 flex h-dvh w-[min(16rem,85vw)] flex-col border-r border-line bg-surface md:w-auto"
+>
+  <div class="px-4 pt-4.5 pb-4">
+    <Brand />
   </div>
 
   <nav class="flex flex-col gap-px px-2" aria-label="Sections">

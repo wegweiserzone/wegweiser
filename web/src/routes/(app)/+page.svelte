@@ -302,7 +302,7 @@
   <section class="flex flex-col gap-2.5">
     <div class="flex items-baseline gap-3">
       <h2 class="sign text-[11px] text-ink-faint">Queries per second</h2>
-      <p class="num text-[11px] text-ink-faint">
+      <p class="num hidden text-[11px] text-ink-faint sm:block">
         the last two minutes, from the difference between counter readings
       </p>
       <span class="num ml-auto text-[12px] text-ink-mute">
