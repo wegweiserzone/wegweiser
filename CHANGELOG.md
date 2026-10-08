@@ -116,6 +116,12 @@ public API is unstable and may change without a deprecation period.
 - A record type that is not one is refused with the type it was probably
   meant to be: `"AAA" is not a record type; did you mean AAAA?`.
 
+- A commit that adds, changes, enables, disables, detaches or deletes a record
+  says which record and what happened to it, as in
+  `change www A 192.0.2.10 → 192.0.2.11`. It used to say `update record` or
+  `delete record`, or nothing at all for a record added, so a history listed
+  without its changes could not tell one edit from the next.
+
 #### CLI
 
 - An error from the server is that sentence alone. `weg` used to put the

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/apply"
@@ -100,7 +101,7 @@ func (s *Server) CreateRecord(
 		Kind:    journal.KindEdit,
 		Source:  meta.Source,
 		Actor:   meta.Actor,
-		Comment: deref(req.Body.Comment, ""),
+		Comment: added(z, rec),
 	})
 	if err != nil {
 		return nil, err
@@ -148,7 +149,7 @@ func (s *Server) UpdateRecord(
 		Kind:    journal.KindEdit,
 		Source:  meta.Source,
 		Actor:   meta.Actor,
-		Comment: "update record",
+		Comment: changed(z, *before, after),
 	})
 	if err != nil {
 		return nil, err
@@ -174,6 +175,10 @@ func (s *Server) DetachRecord(
 	if err != nil {
 		return nil, err
 	}
+	z, err := s.zoneByID(ctx, rec.ZoneID)
+	if err != nil {
+		return nil, err
+	}
 
 	meta := s.meta(ctx, "")
 	res, err := s.applier.Apply(ctx, apply.Command{
@@ -182,7 +187,7 @@ func (s *Server) DetachRecord(
 		Kind:    journal.KindEdit,
 		Source:  meta.Source,
 		Actor:   meta.Actor,
-		Comment: "detach record",
+		Comment: "detach " + told(z, *rec),
 	})
 	if err != nil {
 		return nil, err
@@ -207,6 +212,10 @@ func (s *Server) MakeRecordCanonical(
 	if err != nil {
 		return nil, err
 	}
+	z, err := s.zoneByID(ctx, rec.ZoneID)
+	if err != nil {
+		return nil, err
+	}
 
 	meta := s.meta(ctx, "")
 	res, err := s.applier.Apply(ctx, apply.Command{
@@ -215,7 +224,7 @@ func (s *Server) MakeRecordCanonical(
 		Kind:    journal.KindEdit,
 		Source:  meta.Source,
 		Actor:   meta.Actor,
-		Comment: "make this the name the address reverses to",
+		Comment: fmt.Sprintf("make %s the name %s reverses to", owner(z, rec.Name), rec.RData),
 	})
 	if err != nil {
 		return nil, err
@@ -237,6 +246,10 @@ func (s *Server) DeleteRecord(
 	if err != nil {
 		return nil, err
 	}
+	z, err := s.zoneByID(ctx, rec.ZoneID)
+	if err != nil {
+		return nil, err
+	}
 
 	meta := s.meta(ctx, "")
 	res, err := s.applier.Apply(ctx, apply.Command{
@@ -245,7 +258,7 @@ func (s *Server) DeleteRecord(
 		Kind:    journal.KindEdit,
 		Source:  meta.Source,
 		Actor:   meta.Actor,
-		Comment: "delete record",
+		Comment: "delete " + told(z, *rec),
 	})
 	if err != nil {
 		return nil, err
@@ -542,4 +555,66 @@ func (s *Server) generatedByAll(ctx context.Context, recs []*zone.Record) *[]gen
 // probably meant to be.
 func notAType(s string) *apiError {
 	return badRequest("%q is not a record type%s", s, suggest.DidYouMean(s, zone.TypeNames()))
+}
+
+// The comments below are what a commit says it did when a person did not say
+// it in their own words. A history lists commits without their changes, so
+// the comment is the one line that can tell "which record, and what about it"
+// without opening each one.
+
+// owner writes a name the way a zonefile for z would: relative to the apex,
+// and the apex itself as @.
+func owner(z *zone.Zone, n zone.Name) string {
+	full, apex := n.String(), z.Name.String()
+	if full == apex {
+		return "@"
+	}
+	if rest, ok := strings.CutSuffix(full, "."+apex); ok {
+		return rest
+	}
+	return full
+}
+
+// shortData is a record's data, cut where it would crowd out the rest of a
+// line: a long TXT is still recognisable by its first forty characters.
+func shortData(r zone.Record) string {
+	const most = 40
+	data := []rune(r.RData.String())
+	if len(data) <= most {
+		return string(data)
+	}
+	return string(data[:most-1]) + "…"
+}
+
+// told names one record: where it is, its type and its data.
+func told(z *zone.Zone, r zone.Record) string {
+	return owner(z, r.Name) + " " + r.Type.String() + " " + shortData(r)
+}
+
+// added is the comment for a record written, with the person's own comment on
+// the record after it when there is one.
+func added(z *zone.Zone, r zone.Record) string {
+	if r.Comment != "" {
+		return "add " + told(z, r) + ": " + r.Comment
+	}
+	return "add " + told(z, r)
+}
+
+// changed says what an update did to a record, as far as one line can.
+func changed(z *zone.Zone, before, after zone.Record) string {
+	sameName := before.Name.Equal(after.Name) && before.Type == after.Type
+	sameData := sameName && before.RData.String() == after.RData.String()
+	switch {
+	case sameData && before.Disabled != after.Disabled && after.Disabled:
+		return "disable " + told(z, after)
+	case sameData && before.Disabled != after.Disabled:
+		return "enable " + told(z, after)
+	case sameData && before.TTL != after.TTL:
+		return fmt.Sprintf("change %s TTL %s → %s", told(z, before), before.TTL, after.TTL)
+	case sameData:
+		return "change " + told(z, before)
+	case sameName:
+		return fmt.Sprintf("change %s → %s", told(z, before), shortData(after))
+	}
+	return fmt.Sprintf("change %s → %s", told(z, before), told(z, after))
 }

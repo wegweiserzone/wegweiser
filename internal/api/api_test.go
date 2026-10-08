@@ -2434,3 +2434,40 @@ func TestHistoryFiltersByWhatCausedTheChange(t *testing.T) {
 		}
 	}
 }
+
+// A history lists commits without their changes, so the comment is what says
+// which record a commit touched and what it did to it.
+func TestARecordCommitSaysWhatItDid(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	z := h.createZone("example.com.")
+
+	rec := h.createRecord(z.Id, gen.CreateRecord{
+		Name: "www.example.com.", Type: "A", Data: "192.0.2.10", Ttl: ptr(int64(300)),
+	}).Record
+	for _, change := range []gen.UpdateRecord{
+		{Data: ptr("192.0.2.11")},
+		{Ttl: ptr(int64(600))},
+		{Disabled: ptr(true)},
+	} {
+		h.decode(h.do(http.MethodPatch, "/records/"+rec.Id, change), http.StatusOK, &gen.RecordWritten{})
+	}
+	h.decode(h.do(http.MethodDelete, "/records/"+rec.Id, nil), http.StatusNoContent, nil)
+
+	want := []string{
+		"delete www A 192.0.2.11",
+		"disable www A 192.0.2.11",
+		"change www A 192.0.2.11 TTL 300 → 600",
+		"change www A 192.0.2.10 → 192.0.2.11",
+		"add www A 192.0.2.10",
+	}
+	got := h.commits(t, "?zoneId="+z.Id+"&kind=edit")
+	if len(got) != len(want) {
+		t.Fatalf("history holds %d edits, want %d", len(got), len(want))
+	}
+	for i, c := range got {
+		if deref(c.Comment, "") != want[i] {
+			t.Errorf("commit %d says %q, want %q", i, deref(c.Comment, ""), want[i])
+		}
+	}
+}
