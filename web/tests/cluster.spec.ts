@@ -119,7 +119,7 @@ test("adding a server says what to write on it", async ({ page, server }) => {
   await page.getByRole("link", { name: "Cluster", exact: true }).click();
 
   await page.getByRole("button", { name: "Add a server" }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("dialog", { name: "Add a server" });
   await expect(dialog.getByText("weg serve --join 192.0.2.1:8054")).toBeVisible();
   await expect(dialog.getByText("wegwitness serve --join 192.0.2.1:8054")).toBeVisible();
 });

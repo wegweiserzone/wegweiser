@@ -161,6 +161,9 @@ public API is unstable and may change without a deprecation period.
   list, a zone's records, its check and the history, and a zone's settings
   were greyed out without a word. Each of those places now says *Read only*.
 
+- A dialog had no name a screen reader could announce. Each is now named by
+  its title.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary

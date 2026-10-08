@@ -30,6 +30,9 @@
     wide: "w-[min(48rem,calc(100vw-2rem))]",
   };
 
+  // The title names the dialog, so a screen reader says what opened.
+  const id = $props.id();
+
   let element = $state<HTMLDialogElement | null>(null);
 
   $effect(() => {
@@ -41,6 +44,7 @@
 
 <dialog
   bind:this={element}
+  aria-labelledby="{id}-title"
   onclose={() => {
     open = false;
     onclose?.();
@@ -52,6 +56,7 @@
   {#if open}
     <div class="flex flex-col">
       <h2
+        id="{id}-title"
         class="font-cond border-b border-line px-5 py-3.5 text-[15px] font-bold
                tracking-[0.1em] uppercase"
       >
