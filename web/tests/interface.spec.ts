@@ -57,6 +57,10 @@ test("the overview reads what the server has answered", async ({ page, server })
   // metric itself: a page-wide match also finds the build's commit, which is
   // seven hex digits and often starts with a number followed by a letter.
   await expect(page.locator('dt:text-is("Uptime") + dd')).toHaveText(/^\d+[dhm]/);
+  // Year first, whatever the browser's language: 10/8 is two different days.
+  await expect(page.locator('dt:text-is("Ends") + dd')).toHaveText(
+    /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/,
+  );
 });
 
 // Every section in the rail leads somewhere. There is no "soon" any more:

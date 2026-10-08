@@ -26,11 +26,20 @@ export function ago(when: string | undefined): string {
   return new Date(then).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-/** exact is the full timestamp, for the title of something shown loosely. */
+/**
+ * exact is the full timestamp, for the title of something shown loosely. It is
+ * local time written year first, the same in every browser, because 10/8/2026
+ * is the eighth of October to some readers and the tenth of August to others.
+ */
 export function exact(when: string | undefined): string {
   if (!when) return "";
   const at = new Date(when);
-  return Number.isNaN(at.getTime()) ? "" : at.toLocaleString();
+  if (Number.isNaN(at.getTime())) return "";
+  const two = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ` +
+    `${two(at.getHours())}:${two(at.getMinutes())}:${two(at.getSeconds())}`
+  );
 }
 
 /** count writes a number with the separators a person expects. */

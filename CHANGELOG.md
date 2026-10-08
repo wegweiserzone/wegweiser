@@ -174,6 +174,10 @@ public API is unstable and may change without a deprecation period.
 - On Settings, the *Ctrl K* hint sat beside the title. It is at the right
   edge, where every other page has it.
 
+- When a session ends, and the exact time behind every "5 min ago", came in
+  the browser's own format, where 10/8/2026 is one day to some readers and
+  another to the rest. They are written year first, as 2026-10-08 05:23:25.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary
