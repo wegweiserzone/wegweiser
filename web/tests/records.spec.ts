@@ -264,6 +264,8 @@ test("an unknown type falls back to one box", async ({ page, server }) => {
   await page.getByRole("button", { name: "+ New record" }).click();
   await page.getByLabel("Name", { exact: true }).fill("odd");
   await page.getByRole("combobox", { name: "Type", exact: true }).fill("TYPE65534");
+  // Here, and only here, the form of RFC 3597 is worth a sentence.
+  await expect(page.getByText("Not one this list knows")).toBeVisible();
   await page.getByLabel("Data", { exact: true }).fill("\\# 3 010203");
 
   await page.getByRole("button", { name: "Add record" }).click();
@@ -300,4 +302,26 @@ test("the type list closes when a type is picked", async ({ page, server }) => {
   // hung on focus alone. The field looked dead until you clicked away and back.
   await type.click();
   await expect(list).toBeVisible();
+});
+
+// An address that is not one is said so as the field is left, in the words
+// the server would use, rather than after a round trip.
+test("an address that is not one is said so before it is sent", async ({ page, server }) => {
+  await signIn(page, server);
+  await page.goto(at(server.url, "example.com."));
+
+  await page.getByRole("button", { name: "+ New record" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("broken");
+  await page.getByRole("combobox", { name: "Type", exact: true }).fill("A");
+  // A type everybody knows needs no word about RFC 3597.
+  await expect(page.getByText("Not one this list knows")).toHaveCount(0);
+
+  await page.getByLabel("Address").fill("1.2.3");
+  await page.getByLabel("Name", { exact: true }).focus();
+  await expect(page.getByText('"1.2.3" is not an IPv4 address')).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add record" })).toBeDisabled();
+
+  await page.getByLabel("Address").fill("192.0.2.99");
+  await expect(page.getByText('"1.2.3" is not an IPv4 address')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add record" })).toBeEnabled();
 });

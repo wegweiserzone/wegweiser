@@ -180,6 +180,7 @@
   let newType = $state("A");
   let newTtl = $state("");
   let newData = $state("");
+  let newInvalid = $state(false);
   let refused = $state<string | null>(null);
   let working = $state(false);
 
@@ -238,6 +239,7 @@
   let editing = $state<Record_ | null>(null);
   let editTtl = $state("");
   let editData = $state("");
+  let editInvalid = $state(false);
   /** The record a generated one follows, written out rather than identified. */
   let source = $state<string | null>(null);
 
@@ -599,7 +601,7 @@
       />
       <TypeField bind:value={newType} />
     </div>
-    <RData type={newType} bind:value={newData} />
+    <RData type={newType} bind:value={newData} bind:invalid={newInvalid} />
     <Field
       label="TTL"
       bind:value={newTtl}
@@ -625,7 +627,7 @@
       weight="primary"
       type="submit"
       form="add-record"
-      disabled={working || !newData.trim() || !newType.trim()}
+      disabled={working || newInvalid || !newData.trim() || !newType.trim()}
     >
       {working ? "Adding…" : "Add record"}
     </Button>
@@ -657,6 +659,7 @@
     <RData
       type={editing?.type ?? ""}
       bind:value={editData}
+      bind:invalid={editInvalid}
       disabled={editing !== null && managed(editing)}
     />
     <Field
@@ -684,7 +687,7 @@
         {working ? "Taking over…" : "Take it over"}
       </Button>
     {:else}
-      <Button weight="primary" type="submit" form="edit-record" disabled={working}>
+      <Button weight="primary" type="submit" form="edit-record" disabled={working || editInvalid}>
         {working ? "Saving…" : "Save"}
       </Button>
     {/if}

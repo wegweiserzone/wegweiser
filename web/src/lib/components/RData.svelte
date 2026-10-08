@@ -9,7 +9,14 @@
     type,
     value = $bindable(""),
     disabled = false,
-  }: { type: string; value?: string; disabled?: boolean } = $props();
+    invalid = $bindable(false),
+  }: {
+    type: string;
+    value?: string;
+    disabled?: boolean;
+    /** Set while a part says what is wrong with it, so the form can wait. */
+    invalid?: boolean;
+  } = $props();
 
   const shape = $derived(shapeOf(type));
 
@@ -18,6 +25,13 @@
 
   /** The parts, kept separately so an empty one does not lose its place. */
   let parts = $state<string[]>([]);
+
+  /**
+   * The parts somebody has moved on from. A part is judged only then: an
+   * address is wrong at every keystroke until the last, and saying so while
+   * it is typed would be noise.
+   */
+  let left = $state<boolean[]>([]);
 
   // Re-read the parts whenever the type changes or the value arrives from
   // outside: opening the editor on an existing record is the case that
@@ -29,6 +43,7 @@
     lastType = type;
     lastValue = value;
     parts = shape ? disassemble(shape, value) : [];
+    left = [];
   });
 
   function edit(index: number, next: string) {
@@ -39,6 +54,19 @@
   }
 
   const preview = $derived(value.trim());
+
+  const problems = $derived(
+    shape && !raw
+      ? shape.parts.map((part, i) => {
+          const typed = (parts[i] ?? "").trim();
+          return left[i] && typed && part.check ? part.check(typed) : undefined;
+        })
+      : [],
+  );
+
+  $effect(() => {
+    invalid = problems.some(Boolean);
+  });
 </script>
 
 {#if shape && !raw}
@@ -79,7 +107,9 @@
             spellcheck={false}
             {disabled}
             value={parts[i] ?? ""}
+            problem={problems[i]}
             oninput={(e) => edit(i, e.currentTarget.value)}
+            onblur={() => (left[i] = true)}
           />
         {/if}
       {/each}

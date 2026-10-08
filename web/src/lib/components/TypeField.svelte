@@ -8,7 +8,7 @@
    * mnemonic and anything without one in the TYPE<number> form of RFC 3597,
    * and a control that refused those would be lying about what it can hold.
    */
-  import { suggestedTypes } from "$lib/records";
+  import { everyType, suggestedTypes } from "$lib/records";
 
   let {
     value = $bindable(""),
@@ -32,6 +32,12 @@
   });
 
   const flat = $derived(groups.flatMap((g) => g.types));
+
+  /**
+   * A type this list does not know. Only then is the RFC 3597 form worth a
+   * sentence: under A or MX it explains a door nobody is standing at.
+   */
+  const unlisted = $derived(value.trim() !== "" && !everyType.includes(value.trim()));
 
   /**
    * returning marks the focus that choose() hands back, so the list does not
@@ -169,8 +175,10 @@
     {/if}
   </div>
 
-  <p class="text-xs text-ink-mute">
-    Any type is accepted, including the <code class="num text-ink">TYPE65534</code> form of
-    RFC 3597 for one with no mnemonic.
-  </p>
+  {#if unlisted}
+    <p class="text-xs text-ink-mute">
+      Not one this list knows, which is fine: any type is accepted, including the
+      <code class="num text-ink">TYPE65534</code> form of RFC 3597 for one with no mnemonic.
+    </p>
+  {/if}
 </div>

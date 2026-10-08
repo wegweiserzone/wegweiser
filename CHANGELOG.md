@@ -113,6 +113,12 @@ public API is unstable and may change without a deprecation period.
   was generated or is part of the zone itself is said beside its data, in
   place of a column of dashes.
 
+- The record editor says an address is not one as the field is left, in the
+  words the server would use, and holds back *Add record* until it is. An
+  IPv6 address typed for an A record, or IPv4 for AAAA, is pointed at the
+  other type. The note on the `TYPE65534` form of RFC 3597 appears only for a
+  type the list does not know.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

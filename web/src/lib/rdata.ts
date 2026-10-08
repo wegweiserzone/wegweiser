@@ -17,6 +17,12 @@ export interface Part {
   quoted?: boolean;
   /** Suggestions, when the part has a small set of usual values. */
   options?: string[];
+  /**
+   * What is wrong with a value, in the words the server would refuse it with,
+   * or nothing. Only where the answer is certain in the browser: anything this
+   * leaves out, the server still checks.
+   */
+  check?: (value: string) => string | undefined;
 }
 
 /** Shape is how one record type's data is put together. */
@@ -24,6 +30,24 @@ export interface Shape {
   parts: Part[];
   /** What the assembled line looks like, shown under the form. */
   example: string;
+}
+
+/** isIPv4 is four decimal octets, without the leading zeros the server refuses. */
+export function isIPv4(v: string): boolean {
+  const octets = v.split(".");
+  return (
+    octets.length === 4 && octets.every((o) => /^(0|[1-9]\d{0,2})$/.test(o) && Number(o) < 256)
+  );
+}
+
+/**
+ * isIPv6 asks the browser's own address parser, through the one door it has:
+ * a URL host in brackets. A zone index has no place in a record, so a % is
+ * refused before it gets there.
+ */
+export function isIPv6(v: string): boolean {
+  if (!v.includes(":") || /[[\]/%\s]/.test(v)) return false;
+  return URL.canParse(`http://[${v}]/`);
 }
 
 const name = (label: string, hint: string): Part => ({
@@ -39,11 +63,35 @@ const name = (label: string, hint: string): Part => ({
  */
 export const shapes: Record<string, Shape> = {
   A: {
-    parts: [{ label: "Address", hint: "An IPv4 address.", placeholder: "192.0.2.10" }],
+    parts: [
+      {
+        label: "Address",
+        hint: "An IPv4 address.",
+        placeholder: "192.0.2.10",
+        check: (v) =>
+          isIPv4(v)
+            ? undefined
+            : isIPv6(v)
+              ? `"${v}" is an IPv6 address, which goes in an AAAA record`
+              : `"${v}" is not an IPv4 address`,
+      },
+    ],
     example: "192.0.2.10",
   },
   AAAA: {
-    parts: [{ label: "Address", hint: "An IPv6 address.", placeholder: "2001:db8::10" }],
+    parts: [
+      {
+        label: "Address",
+        hint: "An IPv6 address.",
+        placeholder: "2001:db8::10",
+        check: (v) =>
+          isIPv6(v)
+            ? undefined
+            : isIPv4(v)
+              ? `"${v}" is an IPv4 address, which goes in an A record`
+              : `"${v}" is not an IPv6 address`,
+      },
+    ],
     example: "2001:db8::10",
   },
   CNAME: {
