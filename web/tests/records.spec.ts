@@ -2,6 +2,8 @@
  * The record editor, and the reverse automation it is there to make visible.
  */
 
+import { request } from "@playwright/test";
+
 import { expect, reset, seed, signIn, test } from "./fixtures";
 
 test.describe.configure({ mode: "serial" });
@@ -138,17 +140,46 @@ test("the type filter is the server's too", async ({ page, server }) => {
   await expect(page.getByRole("cell", { name: "NS", exact: true })).toHaveCount(0);
 });
 
-// A page is a page: the size is a real limit and Next is real navigation.
-test("a listing pages", async ({ page, server }) => {
+// A listing that fits on one page has no way through it to offer.
+test("a short listing has no pager", async ({ page, server }) => {
   await signIn(page, server);
   await page.goto(at(server.url, "example.com."));
 
+  await expect(page.getByRole("columnheader", { name: "Data" })).toBeVisible();
+  await expect(page.getByLabel("per page")).toHaveCount(0);
+});
+
+// A page is a page: the size is a real limit and Next is real navigation.
+test("a long listing pages", async ({ page, server }) => {
+  // More than the 250 a page holds unless asked otherwise, in one request.
+  const zonefile = [
+    "$ORIGIN many.example.",
+    "$TTL 3600",
+    "@ IN SOA ns1.elsewhere.example. hostmaster.many.example. 1 3600 600 604800 300",
+    "@ IN NS ns1.elsewhere.example.",
+    ...Array.from({ length: 300 }, (_, i) => `host${i} IN TXT "${i}"`),
+  ].join("\n");
+  const context = await request.newContext({
+    baseURL: server.url,
+    extraHTTPHeaders: { Authorization: `Bearer ${server.token}` },
+  });
+  const imported = await context.post("/api/v1/zones/import", {
+    headers: { "Content-Type": "text/dns" },
+    data: zonefile,
+  });
+  expect(imported.ok()).toBe(true);
+  await context.dispose();
+
+  await signIn(page, server);
+  await page.goto(at(server.url, "many.example."));
+
   await page.getByLabel("per page").selectOption("100");
   await expect(page.getByText("page 1", { exact: true })).toBeVisible();
-  // This zone is small, so there is nothing after the first page and Next
-  // says so rather than pretending.
-  await expect(page.getByRole("button", { name: "Next" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Previous" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByText("page 2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous" })).toBeEnabled();
 });
 
 // A name server inside the zone it serves needs an address in that zone, or a

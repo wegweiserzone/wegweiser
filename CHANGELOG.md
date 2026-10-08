@@ -90,6 +90,9 @@ public API is unstable and may change without a deprecation period.
   on the screen, which come first. It lists Secondaries, with `g 2`, and the
   rail and the palette list the sections in the same order.
 
+- Zones, records and the history show the bar for paging through them only
+  when there is more than one page.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as
