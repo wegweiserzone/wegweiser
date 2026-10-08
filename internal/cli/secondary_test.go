@@ -197,6 +197,28 @@ func TestSecondaryStatus(t *testing.T) {
 		}
 	})
 
+	// weg status says where the secondaries stand before what was answered, and
+	// keeps every field a script already reads.
+	t.Run("weg status leads with it", func(t *testing.T) {
+		out := mustRun(t, srv, "status")
+		if !strings.Contains(out, "2 of 3 copies not known to be in step") ||
+			!strings.HasPrefix(strings.TrimSpace(out), "serving") {
+			t.Errorf("weg status says:\n%s", out)
+		}
+		var got struct {
+			Queries     *uint64 `json:"queries"`
+			Secondaries struct {
+				Copies, InStep int
+			} `json:"secondaries"`
+		}
+		if err := json.Unmarshal([]byte(mustRun(t, srv, "status", "--output", "json")), &got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if got.Queries == nil || got.Secondaries.Copies != 3 || got.Secondaries.InStep != 1 {
+			t.Errorf("weg status --output json = %+v, want the queries kept and 1 of 3 in step", got)
+		}
+	})
+
 	t.Run("a zone nothing came back for is not reported as up to date", func(t *testing.T) {
 		out := mustRun(t, srv, "secondary", "status", "--output", "json")
 

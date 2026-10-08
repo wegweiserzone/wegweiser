@@ -23,6 +23,14 @@ public API is unstable and may change without a deprecation period.
 
 ### Changed
 
+#### CLI
+
+- `weg status` opens with how the server stands, a line each for what it
+  serves, whether its cluster takes writes and how many voters it can lose, and
+  how many copies on secondaries are known to be in step. With `--output json`
+  these are two added fields, `cluster` and `secondaries`, and every field that
+  was there before is where it was.
+
 #### Cluster
 
 - `weg cluster status` opens with whether the cluster takes writes and how
