@@ -171,6 +171,9 @@ public API is unstable and may change without a deprecation period.
 - A dialog had no name a screen reader could announce. Each is now named by
   its title.
 
+- On Settings, the *Ctrl K* hint sat beside the title. It is at the right
+  edge, where every other page has it.
+
 #### Observation
 
 - A deleted zone stayed in the secondaries' standing, in `weg secondary

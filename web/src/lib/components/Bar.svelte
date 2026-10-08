@@ -31,8 +31,8 @@
   <!-- Discoverable without being told: a shortcut nobody knows about is a
        shortcut nobody uses. -->
   <kbd
-    class="num ml-2 hidden shrink-0 rounded-xs border border-line border-b-2 bg-raised px-1.5
-           py-0.5 text-[10px] text-ink-faint sm:block"
+    class="num hidden shrink-0 rounded-xs border border-line border-b-2 bg-raised px-1.5 py-0.5
+           text-[10px] text-ink-faint sm:block {actions ? 'ml-2' : 'ml-auto'}"
     title="Open the commands"
   >
     Ctrl K
