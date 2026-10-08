@@ -54,6 +54,13 @@ public API is unstable and may change without a deprecation period.
   *takes no writes*, or *no voter to spare* while one more failure would stop
   them, where it already said that a server had left its cluster.
 
+- The overview opens with how the server stands, a line each for whether it
+  answers, whether its cluster takes writes, and whether the secondaries hold
+  what it holds, each leading to the page that explains it. It takes the place
+  of the *Status* figure, which said `serving` whatever else was wrong. A
+  server with no zones yet offers to create one or import a zonefile there,
+  above charts that would otherwise be empty.
+
 #### API
 
 - Why a member was not reached is said in a few words, such as

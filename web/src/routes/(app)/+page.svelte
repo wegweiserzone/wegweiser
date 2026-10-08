@@ -2,12 +2,15 @@
   /**
    * What this server is and what it has been doing.
    */
+  import { goto } from "$app/navigation";
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { Commit, Health } from "$lib/api";
   import { ago, exact } from "$lib/format";
   import { read } from "$lib/metrics";
   import type { Readings } from "$lib/metrics";
   import { session } from "$lib/session.svelte";
+  import { standing } from "$lib/standing.svelte";
+  import ReadOnly from "$lib/components/ReadOnly.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import Bars from "$lib/components/Bars.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -41,6 +44,18 @@
         err instanceof NetworkError
           ? "The server did not answer."
           : "The server is up but not serving yet: no snapshot has been published, so there is nothing to answer queries from.";
+    }
+  }
+
+  /** copies is where the secondaries stand: how many zone copies, and how many in step. */
+  let copies = $state<{ all: number; inStep: number } | null>(null);
+
+  async function loadCopies() {
+    try {
+      const pairs = await api.get("/secondary-status");
+      copies = { all: pairs.length, inStep: pairs.filter((s) => s.state === "inStep").length };
+    } catch {
+      copies = null;
     }
   }
 
@@ -82,6 +97,7 @@
   $effect(() => {
     loadHealth();
     loadCommits();
+    loadCopies();
     loadMetrics();
 
     const ticking = setInterval(loadMetrics, every);
@@ -100,6 +116,46 @@
   });
 
   const rate = $derived(rates.at(-1) ?? 0);
+
+  type Fact = { tone: "ok" | "warn" | "crit"; text: string; href?: string; title?: string };
+
+  /**
+   * facts answer "is everything all right" before any number below does:
+   * whether this server answers, whether its cluster takes writes, and whether
+   * the secondaries have what it has. A fact with nothing to say is left out.
+   */
+  const facts = $derived.by(() => {
+    const out: Fact[] = [];
+    if (health) {
+      const zones = `${health.zones} zone${health.zones === 1 ? "" : "s"}`;
+      out.push(
+        standing.out
+          ? { tone: "crit", text: "Left its cluster, answering with what it held", href: "/cluster" }
+          : health.zones === 0
+            ? { tone: "warn", text: "Serving, and holding no zones yet" }
+            : { tone: "ok", text: `Answering for ${zones}` },
+      );
+    } else if (trouble) {
+      out.push({ tone: "crit", text: "Not answering queries" });
+    }
+    const v = standing.verdict;
+    if (v) out.push({ tone: v.tone, text: `Cluster: ${v.headline.toLowerCase()}`, href: "/cluster", title: v.detail });
+    if (copies && copies.all > 0) {
+      const off = copies.all - copies.inStep;
+      out.push(
+        off === 0
+          ? { tone: "ok", text: `Secondaries: all ${copies.all} copies in step`, href: "/secondaries" }
+          : {
+              tone: "warn",
+              text: `Secondaries: ${off} of ${copies.all} copies not known to be in step`,
+              href: "/secondaries",
+            },
+      );
+    }
+    return out;
+  });
+
+  const dot = { ok: "bg-ok", warn: "bg-warn", crit: "bg-crit" } as const;
 
   /**
    * The latency buckets worth drawing.
@@ -156,7 +212,9 @@
       onclick={() => {
         loadHealth();
         loadCommits();
+        loadCopies();
         loadMetrics();
+        standing.refresh();
       }}
     >
       Refresh
@@ -164,8 +222,39 @@
   {/snippet}
 </Bar>
 
+<!--
+  The answer first: one line per thing that can be wrong, each leading to the
+  page that explains it. Everything below is the detail.
+-->
+{#if facts.length > 0}
+  <ul
+    class="flex shrink-0 flex-wrap items-center gap-x-8 gap-y-2 border-b border-line px-5 py-3
+           text-[13px]"
+    aria-label="How this server stands"
+  >
+    {#each facts as fact (fact.text)}
+      <li class="flex items-center gap-2">
+        <span class="size-2 shrink-0 rounded-full {dot[fact.tone]}" aria-hidden="true"></span>
+        {#if fact.href}
+          <a
+            href={fact.href}
+            title={fact.title}
+            class="{fact.tone === 'ok' ? 'text-ink' : fact.tone === 'warn' ? 'text-warn' : 'text-crit'}
+                   underline-offset-2 hover:underline"
+          >
+            {fact.text}
+          </a>
+        {:else}
+          <span class={fact.tone === "ok" ? "text-ink" : fact.tone === "warn" ? "text-warn" : "text-crit"}>
+            {fact.text}
+          </span>
+        {/if}
+      </li>
+    {/each}
+  </ul>
+{/if}
+
 <dl class="flex shrink-0 items-stretch overflow-x-auto border-b border-line bg-surface">
-  <Metric label="Status" tone={health ? "ok" : "warn"}>{health?.status ?? "starting"}</Metric>
   <Metric label="Uptime">{uptime}</Metric>
   <Metric label="Zones">{health?.zones ?? "—"}</Metric>
   <Metric label="Records">{health?.records?.toLocaleString("en") ?? "—"}</Metric>
@@ -178,6 +267,22 @@
 </dl>
 
 <div class="flex flex-1 flex-col gap-6 overflow-auto px-5 py-5">
+  {#if health && health.zones === 0}
+    <!-- A server holding nothing has one next step, and it is not reading charts. -->
+    <Notice tone="signal" title="No zones yet">
+      A zone is a name this server answers for. Create one, or bring one over from another
+      server as a zonefile, and it is answered as soon as it is written.
+      {#snippet actions()}
+        {#if standing.writes.allowed}
+          <Button onclick={() => goto("/zones?import")}>Import a zonefile</Button>
+          <Button weight="primary" onclick={() => goto("/zones?new")}>Create a zone</Button>
+        {:else}
+          <ReadOnly />
+        {/if}
+      {/snippet}
+    </Notice>
+  {/if}
+
   {#if trouble}
     <Notice tone="warn" title="Not answering queries">
       {trouble}

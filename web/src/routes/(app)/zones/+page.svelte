@@ -5,6 +5,7 @@
   import { untrack } from "svelte";
 
   import { goto } from "$app/navigation";
+  import { page } from "$app/state";
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { Zone, ZoneImported } from "$lib/api";
   import { ago, exact } from "$lib/format";
@@ -88,6 +89,16 @@
     importRefused = null;
     imported = null;
   }
+
+  // A way in from elsewhere, such as an empty server's overview: /zones?new
+  // opens the new zone, and /zones?import the import.
+  $effect(() => {
+    const asked = page.url.searchParams;
+    untrack(() => {
+      if (asked.has("new") && standing.writes.allowed) creating = true;
+      if (asked.has("import") && standing.writes.allowed) openImport();
+    });
+  });
 
   async function runImport(event: SubmitEvent) {
     event.preventDefault();

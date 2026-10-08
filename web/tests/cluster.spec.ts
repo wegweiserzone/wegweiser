@@ -15,7 +15,7 @@ import { expect, signIn, test } from "./fixtures";
 
 test("a single server says what a cluster would take", async ({ page, server }) => {
   await signIn(page, server);
-  await page.getByRole("link", { name: "Cluster" }).click();
+  await page.getByRole("link", { name: "Cluster", exact: true }).click();
 
   await expect(page).toHaveURL(/\/cluster$/);
   await expect(page.getByRole("heading", { name: "A single server" })).toBeVisible();
@@ -71,7 +71,7 @@ async function asMember(page: Page, opts: { removed?: boolean } = {}) {
 test("each member says how far it has got", async ({ page, server }) => {
   await asMember(page);
   await signIn(page, server);
-  await page.getByRole("link", { name: "Cluster" }).click();
+  await page.getByRole("link", { name: "Cluster", exact: true }).click();
 
   await expect(page.getByRole("row", { name: /ns1/ })).toContainText("Current");
   await expect(page.getByRole("row", { name: /ns2/ })).toContainText("3 behind");
@@ -84,7 +84,7 @@ test("each member says how far it has got", async ({ page, server }) => {
 test("a member is taken out of the cluster from its row", async ({ page, server }) => {
   const removed = await asMember(page);
   await signIn(page, server);
-  await page.getByRole("link", { name: "Cluster" }).click();
+  await page.getByRole("link", { name: "Cluster", exact: true }).click();
 
   await page.getByRole("button", { name: "Remove ns2" }).click();
   const dialog = page.getByRole("dialog");
@@ -104,7 +104,7 @@ test("a member is taken out of the cluster from its row", async ({ page, server 
 test("a server taken out of its cluster says so", async ({ page, server }) => {
   await asMember(page, { removed: true });
   await signIn(page, server);
-  await page.getByRole("link", { name: "Cluster" }).click();
+  await page.getByRole("link", { name: "Cluster", exact: true }).click();
 
   await expect(page.getByText("This server has left its cluster")).toBeVisible();
   await expect(page.getByText(/discard its Raft\s+directory only/)).toBeVisible();
@@ -116,7 +116,7 @@ test("a server taken out of its cluster says so", async ({ page, server }) => {
 test("adding a server says what to write on it", async ({ page, server }) => {
   await asMember(page);
   await signIn(page, server);
-  await page.getByRole("link", { name: "Cluster" }).click();
+  await page.getByRole("link", { name: "Cluster", exact: true }).click();
 
   await page.getByRole("button", { name: "Add a server" }).click();
   const dialog = page.getByRole("dialog");

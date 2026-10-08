@@ -33,7 +33,7 @@ test("signing in shows the shell reading a live server", async ({ page, server }
   await signIn(page, server);
 
   // Numbers from /healthz, not from the interface's imagination.
-  await expect(page.getByText("serving")).toBeVisible();
+  await expect(page.getByText(/^Answering for \d+ zones?$/)).toBeVisible();
   // The session is the one the token opened.
   await expect(page.getByText("bootstrap")).toHaveCount(2); // rail and overview
   await expect(page.getByText("admin").first()).toBeVisible();
