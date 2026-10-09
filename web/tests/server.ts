@@ -72,7 +72,7 @@ export async function start(): Promise<void> {
       const text = chunk.toString();
       said.push(text);
       const all = said.join("");
-      url ??= /the API is on (http:\/\/\S+)/.exec(all)?.[1];
+      url ??= /the API(?: and the web interface)? (?:is|are) on (http:\/\/\S+)/.exec(all)?.[1];
       dns ??= /answering on (\S+?) —/.exec(all)?.[1];
       token ??= /\b(weg_[A-Za-z0-9_-]+)/.exec(all)?.[1];
       if (url && dns && token) {
