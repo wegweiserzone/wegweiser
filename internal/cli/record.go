@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -336,7 +335,8 @@ func newRecordDeleteCommand(opts *options, f *clientFlags) *cobra.Command {
 
 // recordDeleted is what a deletion reports.
 type recordDeleted struct {
-	Record recordListed `json:"record"`
+	Record  recordListed    `json:"record"`
+	Removed []recordRemoved `json:"removed,omitempty"`
 }
 
 func runRecordDelete(
@@ -368,14 +368,17 @@ func runRecordDelete(
 	if err != nil {
 		return err
 	}
-	if resp.HTTPResponse.StatusCode != http.StatusNoContent {
+	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
 	}
 
-	return opts.Printer().Print(recordDeleted{Record: listRecord(target)}, func(w io.Writer) error {
-		_, werr := fmt.Fprintf(w, "deleted %s %d IN %s %s\n",
-			target.Name, target.Ttl, target.Type, target.Data)
-		return werr
+	deleted := recordDeleted{Record: listRecord(target), Removed: listRemoved(resp.JSON200.Removed)}
+	return opts.Printer().Print(deleted, func(w io.Writer) error {
+		if _, werr := fmt.Fprintf(w, "deleted %s %d IN %s %s\n",
+			target.Name, target.Ttl, target.Type, target.Data); werr != nil {
+			return werr
+		}
+		return printRemoved(w, deleted.Removed)
 	})
 }
 

@@ -216,6 +216,24 @@ func TestRecordUpdateAndSwitch(t *testing.T) {
 	})
 }
 
+// The PTR that goes with an address is said to go, as its arrival is said.
+func TestRecordSaysWhatWentWithIt(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+	mustRun(t, srv, "zone", "create", "example.com", "--ttl", "300")
+	mustRun(t, srv, "zone", "create", "192.0.2.0/24")
+	mustRun(t, srv, "record", "add", "example.com", "www", "A", "192.0.2.10")
+
+	ptr := "removed 10.2.0.192.in-addr.arpa. 3600 IN PTR www.example.com."
+	if out := mustRun(t, srv, "record", "disable", "example.com", "www", "A"); !strings.Contains(out, ptr) {
+		t.Errorf("disabling says %q, want the PTR that went with it", out)
+	}
+	mustRun(t, srv, "record", "enable", "example.com", "www", "A")
+	if out := mustRun(t, srv, "record", "delete", "example.com", "www", "A", "--yes"); !strings.Contains(out, ptr) {
+		t.Errorf("deleting says %q, want the PTR that went with it", out)
+	}
+}
+
 // D4: a generated record follows the one it came from, and editing it means
 // taking it over first.
 func TestRecordDetach(t *testing.T) {

@@ -36,6 +36,10 @@ public API is unstable and may change without a deprecation period.
   as a PTR kept in step with an address. `--all` brings those back, with
   `--output json` too.
 
+- `weg record delete`, `weg record disable`, and an update that moves an
+  address, say which PTR went with the record, as `add` and `enable` say which
+  was generated.
+
 #### Cluster
 
 - `weg cluster status` opens with whether the cluster takes writes and how
@@ -143,6 +147,12 @@ public API is unstable and may change without a deprecation period.
   `change www A 192.0.2.10 → 192.0.2.11`. It used to say `update record` or
   `delete record`, or nothing at all for a record added, so a history listed
   without its changes could not tell one edit from the next.
+
+- A record's write answers with `removed` beside `generated`: what the
+  server took away by itself because of it, such as the PTR of an address
+  that was changed or disabled. Deleting a record answers `200` with the
+  record as it was and what went with it, where it answered `204` with
+  nothing.
 
 #### CLI
 

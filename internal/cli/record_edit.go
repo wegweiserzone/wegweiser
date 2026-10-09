@@ -17,6 +17,7 @@ type recordChanged struct {
 	Record       recordListed     `json:"record"`
 	Was          string           `json:"was,omitempty"`
 	Generated    []recordListed   `json:"generated,omitempty"`
+	Removed      []recordRemoved  `json:"removed,omitempty"`
 	Conflicts    []recordConflict `json:"conflicts,omitempty"`
 	MissingZones []missingZoneRef `json:"missingZones,omitempty"`
 }
@@ -207,6 +208,7 @@ func recordWritten(out *gen.RecordWritten) recordChanged {
 	for i := range generated {
 		changed.Generated = append(changed.Generated, listRecord(&generated[i]))
 	}
+	changed.Removed = listRemoved(out.Removed)
 	for _, c := range deref(out.Conflicts, nil) {
 		changed.Conflicts = append(changed.Conflicts, recordConflict{
 			Address: c.Address, ExistingName: c.ExistingName, RequestedName: c.RequestedName,
@@ -241,6 +243,9 @@ func printRecordChange(opts *options, changed recordChanged, past string) error 
 				g.Name, g.TTL, g.Type, g.Data); werr != nil {
 				return werr
 			}
+		}
+		if werr := printRemoved(w, changed.Removed); werr != nil {
+			return werr
 		}
 		for _, c := range changed.Conflicts {
 			if _, werr := fmt.Fprintf(w, "  %s\n", c); werr != nil {
@@ -307,4 +312,32 @@ func runRecordCanonical(
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
 	}
 	return printRecordChange(opts, recordWritten(resp.JSON200), "now the reverse answer")
+}
+
+// recordRemoved is a record the server took away by itself because of a
+// write, such as the PTR of an address that went.
+type recordRemoved struct {
+	Zone string `json:"zone"`
+	Name string `json:"name"`
+	TTL  int64  `json:"ttl"`
+	Type string `json:"type"`
+	Data string `json:"data"`
+}
+
+func listRemoved(in *[]gen.RemovedRecord) []recordRemoved {
+	var out []recordRemoved
+	for _, r := range deref(in, nil) {
+		out = append(out, recordRemoved{Zone: r.ZoneName, Name: r.Name, TTL: r.Ttl, Type: r.Type, Data: r.Data})
+	}
+	return out
+}
+
+// printRemoved says what went with a record, the way generated says what came.
+func printRemoved(w io.Writer, removed []recordRemoved) error {
+	for _, r := range removed {
+		if _, err := fmt.Fprintf(w, "  removed %s %d IN %s %s\n", r.Name, r.TTL, r.Type, r.Data); err != nil {
+			return err
+		}
+	}
+	return nil
 }

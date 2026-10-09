@@ -1273,8 +1273,25 @@ export interface components {
             record: components["schemas"]["Record"];
             /** @description Records written automatically, such as the PTR for an address. */
             generated?: components["schemas"]["Record"][];
+            /** @description Records the server took away by itself because of this write, such as the PTR of an address that was changed or disabled. */
+            removed?: components["schemas"]["RemovedRecord"][];
             conflicts?: components["schemas"]["Conflict"][];
             missingZones?: components["schemas"]["MissingZone"][];
+        };
+        /** @description The record as it was, together with what deleting it took away. */
+        RecordDeleted: {
+            record: components["schemas"]["Record"];
+            /** @description Records the server took away by itself because of this deletion, such as the PTR of the address. */
+            removed?: components["schemas"]["RemovedRecord"][];
+        };
+        /** @description A record that is gone, named the way a zonefile would write it. */
+        RemovedRecord: {
+            zoneName: string;
+            name: string;
+            type: string;
+            /** Format: int64 */
+            ttl: number;
+            data: string;
         };
         RecordPage: {
             items: components["schemas"]["Record"][];
@@ -2351,12 +2368,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The record is gone. */
-            204: {
+            /** @description The record is gone, and so is what the server generated from it. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RecordDeleted"];
+                };
             };
             default: components["responses"]["Problem"];
         };

@@ -344,7 +344,7 @@ func TestRecordLifecycle(t *testing.T) {
 
 	t.Run("deleting it removes it from the wire", func(t *testing.T) {
 		h.decode(h.do(http.MethodDelete, "/records/"+created.Record.Id, nil),
-			http.StatusNoContent, nil)
+			http.StatusOK, nil)
 
 		var a dns.Answer
 		h.snaps.Snapshot().Resolve(dns.Question{
@@ -1113,7 +1113,7 @@ func TestHistory(t *testing.T) {
 		// RFC 1995 §2 lists deleted records in full rather than by name, and
 		// a rollback that has to put one back needs the same thing.
 		h.decode(h.do(http.MethodDelete, "/records/"+created.Record.Id, nil),
-			http.StatusNoContent, nil)
+			http.StatusOK, nil)
 
 		var after gen.CommitPage
 		h.decode(h.do(http.MethodGet, "/commits?zoneId="+z.Id+"&limit=1", nil),
@@ -1540,7 +1540,7 @@ func TestRollbackZone(t *testing.T) {
 	added := h.createRecord(z.Id, gen.CreateRecord{
 		Name: "mail.example.com.", Type: "A", Data: "192.0.2.20",
 	})
-	h.decode(h.do(http.MethodDelete, "/records/"+kept.Record.Id, nil), http.StatusNoContent, nil)
+	h.decode(h.do(http.MethodDelete, "/records/"+kept.Record.Id, nil), http.StatusOK, nil)
 
 	var out gen.RollbackResult
 	h.decode(h.do(http.MethodPost, "/zones/"+z.Id+"/rollback", gen.RollbackZone{
@@ -2452,7 +2452,7 @@ func TestARecordCommitSaysWhatItDid(t *testing.T) {
 	} {
 		h.decode(h.do(http.MethodPatch, "/records/"+rec.Id, change), http.StatusOK, &gen.RecordWritten{})
 	}
-	h.decode(h.do(http.MethodDelete, "/records/"+rec.Id, nil), http.StatusNoContent, nil)
+	h.decode(h.do(http.MethodDelete, "/records/"+rec.Id, nil), http.StatusOK, nil)
 
 	want := []string{
 		"delete www A 192.0.2.11",
@@ -2503,5 +2503,56 @@ func TestACommitSaysWhatItCameThrough(t *testing.T) {
 		if got[0].Source != tc.want {
 			t.Errorf("%s: source %s, want %s", tc.query, got[0].Source, tc.want)
 		}
+	}
+}
+
+// What the automation takes away is said as plainly as what it writes: a PTR
+// that goes with its address is in the answer, not only in the history.
+func TestAWriteSaysWhatItTookAway(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	z := h.createZone("example.com.")
+	h.createZone("2.0.192.in-addr.arpa.")
+
+	rec := h.createRecord(z.Id, gen.CreateRecord{
+		Name: "www.example.com.", Type: "A", Data: "192.0.2.10",
+	}).Record
+	ptrOf := func(octet string) string { return octet + ".2.0.192.in-addr.arpa. PTR www.example.com." }
+	gone := func(removed *[]gen.RemovedRecord) []string {
+		var out []string
+		for _, r := range deref(removed, nil) {
+			out = append(out, r.Name+" "+r.Type+" "+r.Data)
+		}
+		return out
+	}
+
+	var moved gen.RecordWritten
+	h.decode(h.do(http.MethodPatch, "/records/"+rec.Id, gen.UpdateRecord{Data: ptr("192.0.2.11")}),
+		http.StatusOK, &moved)
+	if got := gone(moved.Removed); len(got) != 1 || got[0] != ptrOf("10") {
+		t.Errorf("moving the address took away %v, want the old PTR", got)
+	}
+
+	var disabled gen.RecordWritten
+	h.decode(h.do(http.MethodPatch, "/records/"+rec.Id, gen.UpdateRecord{Disabled: ptr(true)}),
+		http.StatusOK, &disabled)
+	if got := gone(disabled.Removed); len(got) != 1 || got[0] != ptrOf("11") {
+		t.Errorf("disabling took away %v, want the PTR", got)
+	}
+
+	var enabled gen.RecordWritten
+	h.decode(h.do(http.MethodPatch, "/records/"+rec.Id, gen.UpdateRecord{Disabled: ptr(false)}),
+		http.StatusOK, &enabled)
+	if enabled.Removed != nil {
+		t.Errorf("enabling took away %v, want nothing", gone(enabled.Removed))
+	}
+
+	var deleted gen.RecordDeleted
+	h.decode(h.do(http.MethodDelete, "/records/"+rec.Id, nil), http.StatusOK, &deleted)
+	if deleted.Record.Id != rec.Id {
+		t.Errorf("deleting answered with record %s, want %s as it was", deleted.Record.Id, rec.Id)
+	}
+	if got := gone(deleted.Removed); len(got) != 1 || got[0] != ptrOf("11") {
+		t.Errorf("deleting took away %v, want the PTR", got)
 	}
 }

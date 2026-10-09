@@ -605,8 +605,11 @@ paths:
       tags: [records]
       summary: Delete a record
       responses:
-        "204":
-          description: The record is gone.
+        "200":
+          description: The record is gone, and so is what the server generated from it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordDeleted" }
         default: { $ref: "#/components/responses/Problem" }
 
   /records/{recordId}/detach:
@@ -1669,12 +1672,42 @@ components:
           type: array
           description: Records written automatically, such as the PTR for an address.
           items: { $ref: "#/components/schemas/Record" }
+        removed:
+          type: array
+          description: >-
+            Records the server took away by itself because of this write, such
+            as the PTR of an address that was changed or disabled.
+          items: { $ref: "#/components/schemas/RemovedRecord" }
         conflicts:
           type: array
           items: { $ref: "#/components/schemas/Conflict" }
         missingZones:
           type: array
           items: { $ref: "#/components/schemas/MissingZone" }
+
+    RecordDeleted:
+      type: object
+      description: The record as it was, together with what deleting it took away.
+      required: [record]
+      properties:
+        record: { $ref: "#/components/schemas/Record" }
+        removed:
+          type: array
+          description: >-
+            Records the server took away by itself because of this deletion,
+            such as the PTR of the address.
+          items: { $ref: "#/components/schemas/RemovedRecord" }
+
+    RemovedRecord:
+      type: object
+      description: A record that is gone, named the way a zonefile would write it.
+      required: [zoneName, name, type, ttl, data]
+      properties:
+        zoneName: { type: string }
+        name: { type: string }
+        type: { type: string }
+        ttl: { type: integer, format: int64 }
+        data: { type: string }
 
     RecordPage:
       type: object

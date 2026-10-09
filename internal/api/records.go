@@ -265,7 +265,7 @@ func (s *Server) DeleteRecord(
 	}
 	s.tellSecondaries(res)
 
-	return gen.DeleteRecord204Response{}, nil
+	return gen.DeleteRecord200JSONResponse{Record: recordToAPI(rec), Removed: removedBy(res)}, nil
 }
 
 // recordByID reads one record.
@@ -293,7 +293,33 @@ func (s *Server) recordWritten(
 		Conflicts:    conflictsToAPI(res.Conflicts),
 		MissingZones: missingZonesToAPI(res.MissingZones),
 		Generated:    s.generatedBy(ctx, rid),
+		Removed:      removedBy(res),
 	}, nil
+}
+
+// removedBy lists what the automation took away in the other zones a write
+// reached, such as the PTR of an address that moved or went.
+func removedBy(res *apply.Result) *[]gen.RemovedRecord {
+	if res == nil || len(res.Commits) < 2 {
+		return nil
+	}
+	var out []gen.RemovedRecord
+	for _, c := range res.Commits[1:] {
+		for i := range c.Events {
+			e := &c.Events[i]
+			if e.Op != journal.OpDel {
+				continue
+			}
+			out = append(out, gen.RemovedRecord{
+				ZoneName: c.ZoneName.String(), Name: e.Name.String(), Type: e.Type.String(),
+				Ttl: int64(e.TTL), Data: e.RData.String(),
+			})
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return &out
 }
 
 // generatedBy returns what the automation wrote because of a record, so that
