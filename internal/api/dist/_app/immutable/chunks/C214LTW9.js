@@ -1,1 +1,0 @@
-import{r as e}from"./BwSB1FkJ.js";import{t}from"./CBixtwIb.js";import"./Bm923zJY.js";function n(n){if(!t.url.searchParams.has(n))return!1;let r=new URL(t.url);return r.searchParams.delete(n),e(r,t.state),!0}export{n as t};
