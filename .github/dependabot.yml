@@ -30,11 +30,20 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
+      # Routine bumps together, as for Go; a major one gets its own pull
+      # request rather than riding along with three patches.
       web-dev:
         dependency-type: development
+        update-types: [minor, patch]
     ignore:
       # openapi-typescript declares a peer dependency of typescript ^5.x, and
       # the generated client is what the interface is built against. Major
       # bumps stay out until that peer range moves.
       - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # SvelteKit 3, and the adapter made for it, want typescript ^6, which is
+      # the bump held back above. They wait for the same peer range.
+      - dependency-name: "@sveltejs/kit"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@sveltejs/adapter-static"
         update-types: [version-update:semver-major]
