@@ -52,6 +52,7 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 	var (
 		kinds   []string
 		sources []string
+		all     bool
 		actor   string
 		since   string
 		until   string
@@ -63,13 +64,17 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List the commits, newest first",
 		Long: "List what was changed. With a ZONE, only that zone's history.\n\n" +
+			"It lists what people did, as the web interface does. The entries the\n" +
+			"server writes by itself, such as the reverse entries it keeps in step\n" +
+			"with an address, follow from one of those; --all brings them back.\n\n" +
 			"A commit's identifier is what `weg history show` takes, and the serial\n" +
 			"it produced is what `weg zone rollback` takes.",
 		Args: usageArgs(cobra.MaximumNArgs(1)),
 		Example: "  weg history list\n" +
 			"  weg history list example.com\n" +
 			"  weg history list example.com --kind rollback\n" +
-			"  weg history list --source api --source cli   # what people did\n" +
+			"  weg history list --all                     # and what followed from it\n" +
+			"  weg history list --source system           # only what followed\n" +
 			"  weg history list --since 2026-08-01 --actor alice",
 
 		RunE: func(c *cobra.Command, args []string) error {
@@ -96,6 +101,11 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 					params.Source = &[]gen.CommitSource{}
 				}
 				*params.Source = append(*params.Source, src)
+			}
+			if params.Source == nil && !all {
+				params.Source = &[]gen.CommitSource{
+					gen.CommitSourceApi, gen.CommitSourceCli, gen.CommitSourceImport,
+				}
 			}
 			if actor != "" {
 				params.Actor = &actor
@@ -130,6 +140,9 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 	cmd.Flags().StringArrayVar(&sources, "source", nil,
 		"only changes with these causes: api, cli, import, system; system is the "+
 			"server's own doing, such as the reverse entries it keeps in step (repeatable)")
+	cmd.Flags().BoolVar(&all, "all", false,
+		"also what the server wrote by itself because of what somebody did")
+	cmd.MarkFlagsMutuallyExclusive("all", "source")
 	cmd.Flags().StringVar(&actor, "actor", "", "only what this actor did")
 	cmd.Flags().StringVar(&since, "since", "", "only at or after this time (a date, or a date and time)")
 	cmd.Flags().StringVar(&until, "until", "", "only before this time")

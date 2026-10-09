@@ -186,14 +186,29 @@ func TestHistoryListFiltersByCause(t *testing.T) {
 	// The PTR written into the reverse zone is the server's own doing, so
 	// asking for what people did leaves it out. Creating that zone was
 	// somebody's doing, and stays.
+	followed := func(out string) bool {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "2.0.192.in-addr.arpa.") && strings.Contains(line, " edit ") {
+				return true
+			}
+		}
+		return false
+	}
 	people := mustRun(t, srv, "history", "list", "--source", "cli")
 	if !strings.Contains(people, "add www A 192.0.2.10") {
 		t.Errorf("what weg did is not recorded as weg's doing:\n%s", people)
 	}
-	for _, line := range strings.Split(people, "\n") {
-		if strings.Contains(line, "2.0.192.in-addr.arpa.") && strings.Contains(line, " edit ") {
-			t.Errorf("a change the server made on its own is listed as something a person did:\n%s", people)
-		}
+	if followed(people) {
+		t.Errorf("a change the server made on its own is listed as something a person did:\n%s", people)
+	}
+
+	// Asked for nothing in particular, the listing is what people did, as the
+	// web interface opens on it; --all brings back what followed.
+	if plain := mustRun(t, srv, "history", "list"); followed(plain) {
+		t.Errorf("the plain listing holds what the server did on its own:\n%s", plain)
+	}
+	if all := mustRun(t, srv, "history", "list", "--all"); !followed(all) {
+		t.Errorf("--all leaves out what the server did on its own:\n%s", all)
 	}
 
 	system := mustRun(t, srv, "history", "list", "--source", "system")

@@ -31,6 +31,11 @@ public API is unstable and may change without a deprecation period.
   these are two added fields, `cluster` and `secondaries`, and every field that
   was there before is where it was.
 
+- `weg history list` lists what people did, as the web interface opens on it,
+  and leaves out the entries the server wrote by itself because of them, such
+  as a PTR kept in step with an address. `--all` brings those back, with
+  `--output json` too.
+
 #### Cluster
 
 - `weg cluster status` opens with whether the cluster takes writes and how
