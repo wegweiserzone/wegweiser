@@ -1393,7 +1393,7 @@ export interface components {
          */
         CommitKind: "zone_create" | "zone_update" | "zone_delete" | "edit" | "import" | "rollback";
         /**
-         * @description The interface a change arrived through.
+         * @description The interface a change arrived through. `cli` is a request whose User-Agent begins `weg/`, `import` a zonefile brought in whichever client sent it, `system` what the server wrote by itself, and `api` everything else over HTTP, the web interface included.
          * @enum {string}
          */
         CommitSource: "api" | "cli" | "import" | "system";

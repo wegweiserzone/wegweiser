@@ -240,6 +240,11 @@ public API is unstable and may change without a deprecation period.
   asked for them, with their comment. Entries that follow a change to an
   address record are still the server's.
 
+- A change made with `weg` was recorded as made over the API, and so was a
+  zonefile import, which left `weg history list --source cli` and `--source
+  import` with nothing to find. `weg` now names itself in its User-Agent, and
+  an import is recorded as one whichever client sent the file.
+
 ## [0.5.0] - 2026-10-06
 
 ### Added

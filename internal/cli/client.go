@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/buildinfo"
 	"github.com/wegweiserzone/wegweiser/internal/config"
 )
 
@@ -182,6 +183,9 @@ type advising struct {
 // Do sends the request. An interrupt stays what it is, so that Execute still
 // recognises it.
 func (a advising) Do(r *http.Request) (*http.Response, error) {
+	// Says it is weg, so that what it changes is recorded as the command's
+	// doing rather than the API's.
+	r.Header.Set("User-Agent", "weg/"+buildinfo.Get().Version)
 	resp, err := a.client.Do(r) //nolint:gosec // G704: the server the operator named is where weg is meant to go
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return nil, fmt.Errorf("no Wegweiser server answered at %s (%s): %s",

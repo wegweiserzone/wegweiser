@@ -125,12 +125,20 @@ type facts struct {
 	// secure reports whether the request arrived over TLS, which decides
 	// whether a cookie may be marked Secure.
 	secure bool
+	// weg reports whether the request says it comes from the weg command, which
+	// is what a commit's source records. It is the caller's word, like any
+	// User-Agent, and decides nothing but that label.
+	weg bool
 }
 
 // withFacts records what the handlers below cannot work out for themselves.
 func withFacts(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f := facts{from: sourceAddress(r), secure: r.TLS != nil}
+		f := facts{
+			from:   sourceAddress(r),
+			secure: r.TLS != nil,
+			weg:    strings.HasPrefix(r.UserAgent(), "weg/"),
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), factsKey{}, f)))
 	})
 }
@@ -142,6 +150,12 @@ func sourceOf(ctx context.Context) string {
 		return ""
 	}
 	return f.from
+}
+
+// fromWeg reports whether the request came from the weg command.
+func fromWeg(ctx context.Context) bool {
+	f, ok := ctx.Value(factsKey{}).(facts)
+	return ok && f.weg
 }
 
 // secureOf reports whether the request arrived over TLS.

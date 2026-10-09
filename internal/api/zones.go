@@ -327,6 +327,9 @@ func defaultSOAFor(name zone.Name) zone.SOA {
 // meta names who caused a change and why, for the journal.
 func (s *Server) meta(ctx context.Context, comment string) apply.Meta {
 	m := apply.Meta{Source: journal.SourceAPI, Comment: comment}
+	if fromWeg(ctx) {
+		m.Source = journal.SourceCLI
+	}
 	if sub := subjectOf(ctx); sub != nil {
 		m.Actor = sub.name
 	}

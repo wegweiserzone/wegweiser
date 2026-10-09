@@ -7,6 +7,7 @@ import (
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/apply"
+	"github.com/wegweiserzone/wegweiser/internal/journal"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/zone"
 	"github.com/wegweiserzone/wegweiser/internal/zonefile"
@@ -30,11 +31,15 @@ func (s *Server) ImportZone(
 		return nil, err
 	}
 
+	// An import is its own source whichever client sent the file: what it
+	// wrote came from a zonefile, not from somebody's hand.
+	meta := s.meta(ctx, "import "+content.Origin.String())
+	meta.Source = journal.SourceImport
 	res, err := s.applier.Import(ctx, apply.Import{
 		Name:    content.Origin,
 		SOA:     content.SOA,
 		Records: content.Records,
-	}, s.meta(ctx, "import "+content.Origin.String()))
+	}, meta)
 	if err != nil {
 		return nil, err
 	}

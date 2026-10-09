@@ -183,11 +183,17 @@ func TestHistoryListFiltersByCause(t *testing.T) {
 	mustRun(t, srv, "zone", "create", "192.0.2.0/24")
 	mustRun(t, srv, "record", "add", "example.com", "www", "A", "192.0.2.10")
 
-	// The reverse zone's commit is the server's own doing, so asking for what
-	// people did leaves it out.
+	// The PTR written into the reverse zone is the server's own doing, so
+	// asking for what people did leaves it out. Creating that zone was
+	// somebody's doing, and stays.
 	people := mustRun(t, srv, "history", "list", "--source", "cli")
-	if strings.Contains(people, "2.0.192.in-addr.arpa.") {
-		t.Errorf("a change the server made on its own is listed as something a person did:\n%s", people)
+	if !strings.Contains(people, "add www A 192.0.2.10") {
+		t.Errorf("what weg did is not recorded as weg's doing:\n%s", people)
+	}
+	for _, line := range strings.Split(people, "\n") {
+		if strings.Contains(line, "2.0.192.in-addr.arpa.") && strings.Contains(line, " edit ") {
+			t.Errorf("a change the server made on its own is listed as something a person did:\n%s", people)
+		}
 	}
 
 	system := mustRun(t, srv, "history", "list", "--source", "system")

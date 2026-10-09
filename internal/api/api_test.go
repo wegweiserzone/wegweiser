@@ -2471,3 +2471,37 @@ func TestARecordCommitSaysWhatItDid(t *testing.T) {
 		}
 	}
 }
+
+// A commit records what the change came through: the weg command says so in
+// its User-Agent, anything else over HTTP is the API, and a zonefile is an
+// import whichever client sent it.
+func TestACommitSaysWhatItCameThrough(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	asWeg := func(r *http.Request) { r.Header.Set("User-Agent", "weg/test") }
+
+	var byWeg, byAPI gen.Zone
+	h.decode(h.do(http.MethodPost, "/zones", gen.CreateZone{Name: "weg.example."}, asWeg),
+		http.StatusCreated, &byWeg)
+	h.decode(h.do(http.MethodPost, "/zones", gen.CreateZone{Name: "api.example."}),
+		http.StatusCreated, &byAPI)
+	h.decode(h.doText(http.MethodPost, "/zones/import", importable), http.StatusCreated, nil)
+
+	for _, tc := range []struct {
+		query string
+		want  gen.CommitSource
+	}{
+		{"?zoneId=" + byWeg.Id, gen.CommitSourceCli},
+		{"?zoneId=" + byAPI.Id, gen.CommitSourceApi},
+		{"?source=import", gen.CommitSourceImport},
+	} {
+		got := h.commits(t, tc.query)
+		if len(got) == 0 {
+			t.Errorf("%s: no commit", tc.query)
+			continue
+		}
+		if got[0].Source != tc.want {
+			t.Errorf("%s: source %s, want %s", tc.query, got[0].Source, tc.want)
+		}
+	}
+}
