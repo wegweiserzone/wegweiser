@@ -210,6 +210,10 @@ public API is unstable and may change without a deprecation period.
 - `weg cluster remove` on a witness said it went on answering queries with
   what it held. A witness answers none, and now it says so.
 
+- A server joining a cluster could count itself in before it held the writes
+  made just before it asked, when the log reached it in more than one piece.
+  It now waits until it holds what the leader held when it let it in.
+
 #### CLI
 
 - When no server answered, the message left out the address it had tried

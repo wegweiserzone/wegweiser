@@ -65,6 +65,11 @@ type joinReply struct {
 	Staged bool   `json:"staged,omitempty"`
 	Leader string `json:"leader,omitempty"`
 	Error  string `json:"error,omitempty"`
+	// Held is how far the leader's store had got when it answered. The node
+	// waits to get as far before Join returns: its own commit index can trail
+	// the leader's, and a snapshot older than the last write satisfies it.
+	// Zero from a leader that does not send it, and then nothing is waited for.
+	Held uint64 `json:"held,omitempty"`
 }
 
 // joinHops bounds how often a node follows "ask the leader". Leadership can
@@ -109,7 +114,7 @@ func (n *Node) Join(ctx context.Context, addr string, role Role) error {
 		case reply.Leader != "":
 			target = reply.Leader
 		case reply.Staged || reply.Done:
-			if werr := n.awaitLog(ctx); werr != nil {
+			if werr := n.awaitLog(ctx, reply.Held); werr != nil {
 				return werr
 			}
 			if reply.Done {
@@ -125,12 +130,13 @@ func (n *Node) Join(ctx context.Context, addr string, role Role) error {
 }
 
 // awaitLog returns once this member has applied everything it knows to be
-// committed, and has been sent something to apply at all.
+// committed, has been sent something to apply at all, and its store holds
+// at least what the leader's held when it answered.
 //
 // The store's own index is asked as well as Raft's, because Raft counts an
 // entry as applied once it is handed over rather than once it is written, and
 // a restored log snapshot is what moves the store's.
-func (n *Node) awaitLog(ctx context.Context) error {
+func (n *Node) awaitLog(ctx context.Context, want uint64) error {
 	ctx, cancel := context.WithTimeout(ctx, logWait)
 	defer cancel()
 	tick := time.NewTicker(20 * time.Millisecond)
@@ -144,7 +150,7 @@ func (n *Node) awaitLog(ctx context.Context) error {
 			return err
 		}
 		committed := n.raft.CommitIndex()
-		if held > 0 && committed > 0 && n.raft.AppliedIndex() >= committed {
+		if held > 0 && held >= want && committed > 0 && n.raft.AppliedIndex() >= committed {
 			return nil
 		}
 		select {
@@ -268,6 +274,11 @@ func (n *Node) admit(req JoinRequest) joinReply {
 		return joinReply{Error: ErrNoLeader.Error()}
 	case err != nil:
 		return joinReply{Error: err.Error()}
+	}
+	// Asked after the change was committed, so it covers every write the
+	// node was meant to find when it got in.
+	if held, herr := n.machine.store.AppliedIndex(n.ctx); herr == nil {
+		reply.Held = held
 	}
 	return reply
 }
