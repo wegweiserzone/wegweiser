@@ -18,10 +18,11 @@ concurrency:
 env:
   GOTOOLCHAIN: local
 
-# Every job asks for "1.26", which resolves to the newest 1.26.x. The go
-# directive in go.mod is the minimum this module supports, so building against
-# it meant CI ran the oldest permitted patch release and govulncheck reported
-# its standard library.
+# Every job asks for the newest 1.26.x: "1.26" with check-latest. Without
+# check-latest, setup-go takes whichever 1.26 the runner image already holds,
+# which trails a security release by days, and govulncheck reports the
+# standard library of the older one. The go directive in go.mod is the minimum
+# this module supports, not the version it is built and checked with.
 jobs:
   lint:
     name: Lint
@@ -31,6 +32,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
 
       - name: go vet
@@ -82,6 +84,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
 
       - name: Install
@@ -136,6 +139,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
 
       # -shuffle=on catches tests that depend on execution order; the race
@@ -169,6 +173,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
 
       # CGO_ENABLED=0 is not incidental: the whole point of the cgo-free
@@ -210,6 +215,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
 
       # A short run on every push catches regressions against the seed corpus.
@@ -225,6 +231,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
+          check-latest: true
           cache: true
 
       # The default scan fails the build only when our code actually reaches a
