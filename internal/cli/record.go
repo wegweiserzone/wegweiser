@@ -20,7 +20,11 @@ func newRecordCommand(opts *options) *cobra.Command {
 		Use:     "record",
 		Aliases: []string{"r", "rr"},
 		Short:   "Work with the records inside a zone",
-		Args:    usageArgs(cobra.NoArgs),
+		Long: "Work with the records inside a zone, named the way a zonefile writes\n" +
+			"them: the zone, the name, the type and the data.\n\n" +
+			"Adding an address record writes its PTR too, where this server holds\n" +
+			"the reverse zone, and every command says what its change caused.",
+		Args: usageArgs(cobra.NoArgs),
 		Example: "  weg record list example.com\n" +
 			"  weg record add example.com www A 192.0.2.10\n" +
 			"  weg record update example.com www A --data 192.0.2.99\n" +

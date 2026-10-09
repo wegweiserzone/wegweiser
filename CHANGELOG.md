@@ -59,7 +59,7 @@ public API is unstable and may change without a deprecation period.
   address and signs in with the same token.
 
 - `weg --help` lists the commands in groups by what they are for, and every
-  command group has examples. Help that pointed at `docs/decisions/`, which
+  command group has examples and a description beyond its one line. Help that pointed at `docs/decisions/`, which
   nobody holding only the binary has, points at the page on wegweiser.zone.
   `--yes` has `-y` beside it, `weg settings` takes `--server` and `--token`
   itself, `weg health` no longer offers a `--token` it has no use for (it

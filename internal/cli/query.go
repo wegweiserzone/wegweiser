@@ -23,7 +23,9 @@ func newQueryCommand(opts *options) *cobra.Command {
 		Use:     "query",
 		Aliases: []string{"q"},
 		Short:   "Watch the queries the server is answering",
-		Args:    usageArgs(cobra.NoArgs),
+		Long: "Watch the queries the server is answering, as it answers them. The\n" +
+			"stream comes over the API, so it works from any machine that reaches it.",
+		Args: usageArgs(cobra.NoArgs),
 		Example: "  weg query tail\n" +
 			"  weg query tail --name example.com.",
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },

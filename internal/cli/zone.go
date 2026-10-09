@@ -25,7 +25,11 @@ func newZoneCommand(opts *options) *cobra.Command {
 		Use:     "zone",
 		Aliases: []string{"z"},
 		Short:   "Work with whole zones",
-		Args:    usageArgs(cobra.NoArgs),
+		Long: "Work with whole zones: create, import and export them, check them, and\n" +
+			"restore one to an earlier serial.\n\n" +
+			"A zone given as a network, such as 192.168.0.0/16, is the reverse zone\n" +
+			"that answers for it.",
+		Args: usageArgs(cobra.NoArgs),
 		Example: "  weg zone list\n" +
 			"  weg zone create example.com\n" +
 			"  weg zone import db.example.com\n" +

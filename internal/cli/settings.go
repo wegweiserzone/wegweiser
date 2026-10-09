@@ -51,8 +51,11 @@ func newSettingsCommand(opts *options) *cobra.Command {
 
 func newSettingsShowCommand(opts *options, f *clientFlags) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "show",
-		Short:   "Print the settings in force",
+		Use:   "show",
+		Short: "Print the settings in force",
+		Long: "Print the server-wide settings in force: what happens when an address\n" +
+			"already answers with another name, who may transfer a zone, and who is\n" +
+			"told when one changes.",
 		Args:    usageArgs(cobra.NoArgs),
 		Example: "  weg settings show\n  weg settings show --output json",
 
