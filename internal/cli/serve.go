@@ -436,10 +436,14 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 			Replicating: replicating, RaftDir: cfg.Cluster.Dir,
 		}
 	}
+	apiURL := "http://" + status.APIAddress
+	where := "the API is on " + apiURL
+	if cfg.APIUI.Value {
+		where = "the API and the web interface are on " + apiURL
+	}
 	if err := p.Print(status, func(w io.Writer) error {
-		if _, werr := fmt.Fprintf(w,
-			"weg is answering on %s — %d zones, %d records from %s\nthe API is on http://%s\n",
-			status.Address, status.Zones, status.Records, status.Database, status.APIAddress); werr != nil {
+		if _, werr := fmt.Fprintf(w, "weg is answering on %s — %d zones, %d records from %s\n%s\n",
+			status.Address, status.Zones, status.Records, status.Database, where); werr != nil {
 			return werr
 		}
 		return printMemberStatus(w, status.Cluster)
@@ -447,9 +451,20 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 		return err
 	}
 	if secret != "" {
+		// Shown as the line that puts it to use, because the next thing
+		// anybody types is a weg command in another shell. Still once: the
+		// secret is in this output a single time, whatever else it says.
+		use := tokenEnv + "=" + secret
+		if apiURL != defaultServer {
+			use = serverEnv + "=" + apiURL + " " + use
+		}
 		fmt.Fprintf(p.ErrOut(),
-			"weg: this is the first start. The administrator token is shown once:\n\n    %s\n\n"+
-				"Store it now; only its hash is kept.\n", secret)
+			"weg: this is the first start. The administrator token is shown once, as the\n"+
+				"line that hands it to weg in another shell:\n\n    export %s\n\n"+
+				"Store it now; only its hash is kept.\n", use)
+		if cfg.APIUI.Value {
+			fmt.Fprintf(p.ErrOut(), "The web interface at %s signs in with it too.\n", apiURL)
+		}
 	}
 
 	<-ctx.Done()

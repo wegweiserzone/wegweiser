@@ -166,7 +166,7 @@ CONFIG
   echo $! >"$here/pid"
 
   for _ in $(seq 300); do
-    tail -c +$((seen + 1)) "$here/log" | grep -q 'the API is on' && return 0
+    tail -c +$((seen + 1)) "$here/log" | grep -qE 'the API( and the web interface)? (is|are) on' && return 0
     kill -0 "$(cat "$here/pid")" 2>/dev/null || break
     sleep 0.1
   done

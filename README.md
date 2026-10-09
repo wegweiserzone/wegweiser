@@ -85,18 +85,20 @@ Run it somewhere writable, on ports that need no capability at all:
 ```console
 $ ./weg serve --listen 127.0.0.1:5300 --api-listen 127.0.0.1:8053 --db ./weg.db
 weg is answering on 127.0.0.1:5300 — 0 zones, 0 records from ./weg.db
-the API is on http://127.0.0.1:8053
-weg: this is the first start. The administrator token is shown once:
+the API and the web interface are on http://127.0.0.1:8053
+weg: this is the first start. The administrator token is shown once, as the
+line that hands it to weg in another shell:
 
-    weg_...
+    export WEG_TOKEN=weg_...
 
 Store it now; only its hash is kept.
+The web interface at http://127.0.0.1:8053 signs in with it too.
 ```
 
-Open the API address in a browser and paste the token there, or hand it to the CLI:
+Open that address in a browser and paste the token there, or hand it to the CLI:
 
 ```console
-$ export WEG_SERVER=http://127.0.0.1:8053 WEG_TOKEN=weg_...
+$ export WEG_TOKEN=weg_...
 $ weg zone create example.com
 $ weg zone create 192.168.0.0/24        # becomes 0.168.192.in-addr.arpa
 $ weg record add example.com www A 192.168.0.10

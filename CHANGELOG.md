@@ -53,6 +53,11 @@ public API is unstable and may change without a deprecation period.
   `2 of 6 copies not known to be in step: 1 behind, 1 silent`, so the rows are
   read for the ones it names rather than scanned for them.
 
+- On its first start `weg serve` shows the administrator token as the
+  `export` line that hands it to `weg`, with `WEG_SERVER` in it when the API is
+  not on its default address, and says that the web interface is at that
+  address and signs in with the same token.
+
 #### Cluster
 
 - `weg cluster status` opens with whether the cluster takes writes and how
