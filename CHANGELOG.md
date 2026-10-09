@@ -40,6 +40,11 @@ public API is unstable and may change without a deprecation period.
   address, say which PTR went with the record, as `add` and `enable` say which
   was generated.
 
+- Colour is kept for what is not as it should be. A zone enabled, a token or
+  key active, a cluster member current, a secondary in step, a NOERROR in
+  `weg query tail` and a setting that is set are no longer green, so that
+  what is yellow or red stands out from the rows around it.
+
 #### Cluster
 
 - `weg cluster status` opens with whether the cluster takes writes and how

@@ -97,7 +97,7 @@ func runTokenList(ctx context.Context, opts *options, f *clientFlags) error {
 		t := newTable(w, "NAME", "PREFIX", "SCOPES", "LAST USED", "STATUS")
 		for i := range listed {
 			tok := &listed[i]
-			colour := output.ColorGreen
+			colour := output.ColorNone
 			switch tok.Status {
 			case "revoked", "expired":
 				colour = output.ColorYellow

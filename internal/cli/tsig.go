@@ -97,7 +97,7 @@ func runTSIGList(ctx context.Context, opts *options, f *clientFlags) error {
 		t := newTable(w, "NAME", "ALGORITHM", "CREATED", "STATUS")
 		for i := range listed {
 			k := &listed[i]
-			colour := output.ColorGreen
+			colour := output.ColorNone
 			if k.Status != "active" {
 				colour = output.ColorYellow
 			}

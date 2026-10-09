@@ -114,7 +114,7 @@ func runZoneList(
 
 		t := newTable(w, "NAME", "KIND", "SERIAL", "TTL", "STATUS")
 		for _, z := range listed {
-			status, colour := "enabled", output.ColorGreen
+			status, colour := "enabled", output.ColorNone
 			if z.Disabled {
 				status, colour = "disabled", output.ColorYellow
 			}

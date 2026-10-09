@@ -224,7 +224,7 @@ func printClusterStatus(w io.Writer, p *output.Printer, st *gen.ClusterStatus) e
 		return err
 	}
 
-	state := p.Paint(output.ColorGreen, "current")
+	state := "current"
 	if st.Applied < st.Committed {
 		state = p.Paint(output.ColorYellow, fmt.Sprintf("%d entries behind", st.Committed-st.Applied))
 	}
@@ -287,7 +287,7 @@ func progress(p *output.Printer, g *gen.ClusterProgress, furthest int64) string 
 	case g.Applied < furthest:
 		return p.Paint(output.ColorYellow, fmt.Sprintf("%d behind", furthest-g.Applied))
 	}
-	return p.Paint(output.ColorGreen, "current")
+	return "current"
 }
 
 // afterLeaving is what becomes of a member taken out of its cluster, and the

@@ -214,19 +214,19 @@ func printSettings(opts *options, s gen.Settings) error {
 	p := opts.Printer()
 	return p.Print(got, func(w io.Writer) error {
 		if _, werr := fmt.Fprintf(w, "reverse conflict policy  %s\n",
-			p.Paint(output.ColorGreen, got.ReverseConflictPolicy)); werr != nil {
+			got.ReverseConflictPolicy); werr != nil {
 			return werr
 		}
 		who := p.Paint(output.ColorYellow, "nobody")
 		if len(got.TransferAllow) > 0 {
-			who = p.Paint(output.ColorGreen, strings.Join(got.TransferAllow, ", "))
+			who = strings.Join(got.TransferAllow, ", ")
 		}
 		if _, werr := fmt.Fprintf(w, "zone transfer to         %s\n", who); werr != nil {
 			return werr
 		}
 		told := p.Paint(output.ColorYellow, "nobody")
 		if len(got.NotifyTargets) > 0 {
-			told = p.Paint(output.ColorGreen, strings.Join(got.NotifyTargets, ", "))
+			told = strings.Join(got.NotifyTargets, ", ")
 		}
 		_, werr := fmt.Fprintf(w, "a change is announced to %s\n", told)
 		return werr

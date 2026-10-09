@@ -326,13 +326,13 @@ func standingWord(state string) string {
 	}
 }
 
-// standingColour is green for a secondary holding what this server publishes,
-// and yellow for everything else. Nothing here is red: a zone that is behind,
+// standingColour leaves a secondary holding what this server publishes as it
+// is, and makes everything else yellow, so that the rows to look at stand out. Nothing here is red: a zone that is behind,
 // or a secondary that has gone quiet, is a thing to look at rather than a
 // failure of this server.
 func standingColour(state string) output.Color {
 	if state == "inStep" {
-		return output.ColorGreen
+		return output.ColorNone
 	}
 	return output.ColorYellow
 }

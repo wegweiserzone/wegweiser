@@ -226,7 +226,7 @@ func (t *tail) event(ev gen.QueryEvent) error {
 	}
 
 	return t.p.Print(ev, func(w io.Writer) error {
-		rcode, colour := ev.Rcode, output.ColorGreen
+		rcode, colour := ev.Rcode, output.ColorNone
 		switch {
 		case ev.Dropped:
 			rcode, colour = "DROPPED", output.ColorRed
