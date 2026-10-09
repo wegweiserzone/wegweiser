@@ -142,11 +142,7 @@ func writeStanding(w io.Writer, p *output.Printer, st *serverStanding) error {
 		}
 	}
 	if c := st.Secondaries; c != nil {
-		line := p.Paint(output.ColorGreen, fmt.Sprintf("all %d copies in step", c.Copies))
-		if off := c.Copies - c.InStep; off > 0 {
-			line = p.Paint(output.ColorYellow, fmt.Sprintf("%d of %d copies not known to be in step", off, c.Copies))
-		}
-		if _, err := fmt.Fprintf(w, "%s  %s\n", label("secondaries"), line); err != nil {
+		if _, err := fmt.Fprintf(w, "%s  %s\n", label("secondaries"), copiesLine(p, c.Copies, c.InStep)); err != nil {
 			return err
 		}
 	}

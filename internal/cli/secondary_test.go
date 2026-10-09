@@ -187,6 +187,10 @@ func TestSecondaryStatus(t *testing.T) {
 
 	t.Run("the table says how far behind each one is", func(t *testing.T) {
 		out := mustRun(t, srv, "secondary", "status")
+		// The answer first, so the table is read for the rows it names.
+		if !strings.HasPrefix(out, "2 of 3 copies not known to be in step: ") {
+			t.Errorf("the table is not led by what it adds up to:\n%s", out)
+		}
 		for _, want := range []string{
 			"SECONDARY", "ZONE", "STATE", "SERIAL", "BEHIND", "ASKED",
 			"198.51.100.53:53", "example.com.", "in step", "unasked", "1m ago",

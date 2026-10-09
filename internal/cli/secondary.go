@@ -302,6 +302,9 @@ func runSecondaryStatus(ctx context.Context, opts *options, f *clientFlags) erro
 			return werr
 		}
 
+		if _, werr := fmt.Fprintf(w, "%s\n\n", copiesSummary(p, listed)); werr != nil {
+			return werr
+		}
 		t := newTable(w, "SECONDARY", "ZONE", "STATE", "SERIAL", "BEHIND", "ASKED")
 		for i := range listed {
 			st := &listed[i]
@@ -327,9 +330,9 @@ func standingWord(state string) string {
 }
 
 // standingColour leaves a secondary holding what this server publishes as it
-// is, and makes everything else yellow, so that the rows to look at stand out. Nothing here is red: a zone that is behind,
-// or a secondary that has gone quiet, is a thing to look at rather than a
-// failure of this server.
+// is, and makes everything else yellow, so that the rows to look at stand out.
+// Nothing here is red: a zone that is behind, or a secondary that has gone
+// quiet, is a thing to look at rather than a failure of this server.
 func standingColour(state string) output.Color {
 	if state == "inStep" {
 		return output.ColorNone
@@ -352,4 +355,37 @@ func optionalNumber(n *int64) string {
 		return "-"
 	}
 	return fmt.Sprintf("%d", *n)
+}
+
+// copiesLine answers "do the secondaries hold what this server publishes" in
+// one line, for `weg status` and above the table here.
+func copiesLine(p *output.Printer, copies, inStep int) string {
+	if off := copies - inStep; off > 0 {
+		return p.Paint(output.ColorYellow, fmt.Sprintf("%d of %d copies not known to be in step", off, copies))
+	}
+	return p.Paint(output.ColorGreen, fmt.Sprintf("all %d copies in step", copies))
+}
+
+// copiesSummary is copiesLine with what the others are, so that the table
+// below is read for the rows it names rather than scanned for them.
+func copiesSummary(p *output.Printer, listed []secondaryStanding) string {
+	inStep, others := 0, map[string]int{}
+	for i := range listed {
+		if listed[i].State == "inStep" {
+			inStep++
+		} else {
+			others[listed[i].State]++
+		}
+	}
+	line := copiesLine(p, len(listed), inStep)
+	var parts []string
+	for _, state := range []string{"behind", "ahead", "unordered", "noSerial", "silent", "unasked"} {
+		if n := others[state]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, standingWord(state)))
+		}
+	}
+	if len(parts) > 0 {
+		line += ": " + strings.Join(parts, ", ")
+	}
+	return line
 }

@@ -49,6 +49,10 @@ public API is unstable and may change without a deprecation period.
   serial, as the record commands do, and `disable` says how to undo it. They
   used to print a block of settings that had not changed.
 
+- `weg secondary status` opens with what the table adds up to, as
+  `2 of 6 copies not known to be in step: 1 behind, 1 silent`, so the rows are
+  read for the ones it names rather than scanned for them.
+
 #### Cluster
 
 - `weg cluster status` opens with whether the cluster takes writes and how
