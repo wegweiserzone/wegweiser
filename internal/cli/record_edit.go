@@ -41,7 +41,8 @@ func newRecordUpdateCommand(opts *options, f *clientFlags) *cobra.Command {
 			"record rather than removing and adding one is what keeps its comment,\n" +
 			"where it came from, and the history pointing at it.\n\n" +
 			"A record this server generated is refused: take it over with\n" +
-			"`weg record detach` first (docs/decisions/ D4).",
+			"`weg record detach` first.\n\n" +
+			"More at https://wegweiser.zone/docs/reverse-zones/",
 		Args: usageArgs(cobra.MinimumNArgs(3)),
 		Example: "  weg record update example.com www A 192.0.2.10 --ttl 60\n" +
 			"  weg record update example.com www A --data 192.0.2.99\n" +
@@ -151,8 +152,9 @@ func newRecordDetachCommand(opts *options, f *clientFlags) *cobra.Command {
 			"delegation) follows the record it came from, and editing it directly\n" +
 			"is refused. Detaching keeps the data and the identity, drops the link,\n" +
 			"and hands it over: from then on it is yours to change and yours to\n" +
-			"keep correct (docs/decisions/ D4).\n\n" +
-			"A record that was already yours is returned unchanged.",
+			"keep correct.\n\n" +
+			"A record that was already yours is returned unchanged.\n\n" +
+			"More at https://wegweiser.zone/docs/reverse-zones/",
 		Args: usageArgs(cobra.MinimumNArgs(3)),
 		Example: "  weg record detach 2.0.192.in-addr.arpa 10 PTR\n" +
 			"  weg record detach 2.0.192.in-addr.arpa 10.2.0.192.in-addr.arpa. PTR",
@@ -275,7 +277,8 @@ func newRecordCanonicalCommand(opts *options, f *clientFlags) *cobra.Command {
 			"zone does, in a commit of its own.\n\n" +
 			"An entry somebody wrote by hand is left alone. Detaching a generated\n" +
 			"record is how a person says to stop maintaining it, and taking it\n" +
-			"back would make detaching mean nothing (docs/decisions/ D4).",
+			"back would make detaching mean nothing.\n\n" +
+			"More at https://wegweiser.zone/docs/reverse-zones/",
 		Args: usageArgs(cobra.MinimumNArgs(3)),
 		Example: "  weg record canonical example.com mail A 192.0.2.10\n" +
 			"  weg zone check --reverse 2.0.192.in-addr.arpa.   # what claims what",

@@ -21,9 +21,11 @@ func newConfigCommand(opts *options) *cobra.Command {
 			"The file holds these and nothing else. Zones, records, tokens and the\n" +
 			"reverse conflict policy live in the database and are reachable through\n" +
 			"the API, because a setting that lives only in a file is a feature that\n" +
-			"exists only for whoever can log in to the machine\n" +
-			"(docs/decisions/ D11).",
+			"exists only for whoever can log in to the machine.\n\n" +
+			"More at https://wegweiser.zone/docs/configuration/",
 		Args: usageArgs(cobra.NoArgs),
+		Example: "  weg config show\n" +
+			"  weg config show --config ./wegweiser.yaml",
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 

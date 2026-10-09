@@ -29,6 +29,8 @@ type serverSettings struct {
 }
 
 func newSettingsCommand(opts *options) *cobra.Command {
+	var f clientFlags
+
 	cmd := &cobra.Command{
 		Use:   "settings",
 		Short: "Read and change what this server does by default",
@@ -38,15 +40,16 @@ func newSettingsCommand(opts *options) *cobra.Command {
 			"every client reaches them and a change takes effect on the next write\n" +
 			"without a restart.",
 		Args: usageArgs(cobra.NoArgs),
+		Example: "  weg settings show\n" +
+			"  weg settings set --transfer-allow 192.0.2.0/24",
 	}
-	cmd.AddCommand(newSettingsShowCommand(opts))
-	cmd.AddCommand(newSettingsSetCommand(opts))
+	f.register(cmd)
+	cmd.AddCommand(newSettingsShowCommand(opts, &f))
+	cmd.AddCommand(newSettingsSetCommand(opts, &f))
 	return cmd
 }
 
-func newSettingsShowCommand(opts *options) *cobra.Command {
-	var f clientFlags
-
+func newSettingsShowCommand(opts *options, f *clientFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "show",
 		Short:   "Print the settings in force",
@@ -54,10 +57,9 @@ func newSettingsShowCommand(opts *options) *cobra.Command {
 		Example: "  weg settings show\n  weg settings show --output json",
 
 		RunE: func(c *cobra.Command, _ []string) error {
-			return runSettingsShow(c.Context(), opts, &f)
+			return runSettingsShow(c.Context(), opts, f)
 		},
 	}
-	f.register(cmd)
 	return cmd
 }
 
@@ -77,9 +79,8 @@ func runSettingsShow(ctx context.Context, opts *options, f *clientFlags) error {
 	return printSettings(opts, *resp.JSON200)
 }
 
-func newSettingsSetCommand(opts *options) *cobra.Command {
+func newSettingsSetCommand(opts *options, f *clientFlags) *cobra.Command {
 	var (
-		f      clientFlags
 		policy string
 		allow  []string
 		notify []string
@@ -120,7 +121,7 @@ func newSettingsSetCommand(opts *options) *cobra.Command {
 			if setPolicy == nil && setAllow == nil && setNotify == nil {
 				return errors.New("nothing to change: name a setting, or see `weg settings show`")
 			}
-			return runSettingsSet(c.Context(), opts, &f, setPolicy, setAllow, setNotify)
+			return runSettingsSet(c.Context(), opts, f, setPolicy, setAllow, setNotify)
 		},
 	}
 	cmd.Flags().StringVar(&policy, "reverse-conflict-policy", "",
@@ -129,11 +130,10 @@ func newSettingsSetCommand(opts *options) *cobra.Command {
 	registerFlagCompletion(cmd, "reverse-conflict-policy", completeStatic(reversePolicies...))
 	cmd.Flags().StringSliceVar(&allow, "transfer-allow", nil,
 		"who may transfer a zone, whole or incrementally, "+
-			"as addresses or CIDR prefixes; empty is nobody")
+			"as `addresses` or CIDR prefixes; empty is nobody")
 	cmd.Flags().StringSliceVar(&notify, "notify", nil,
-		"who is told when a zone changes, as addresses with an optional port and "+
-			"an optional `key:<name>` after them; empty is nobody")
-	f.register(cmd)
+		"who is told when a zone changes, as `addresses` with an optional port and "+
+			"an optional key:NAME after each; empty is nobody")
 	return cmd
 }
 

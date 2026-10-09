@@ -58,6 +58,14 @@ public API is unstable and may change without a deprecation period.
   not on its default address, and says that the web interface is at that
   address and signs in with the same token.
 
+- `weg --help` lists the commands in groups by what they are for, and every
+  command group has examples. Help that pointed at `docs/decisions/`, which
+  nobody holding only the binary has, points at the page on wegweiser.zone.
+  `--yes` has `-y` beside it, `weg settings` takes `--server` and `--token`
+  itself, `weg health` no longer offers a `--token` it has no use for (it
+  still accepts one), and `--notify` and `--transfer-allow` show their value
+  as `addresses` rather than a mangled `key:<name>`.
+
 #### Cluster
 
 - `weg cluster status` opens with whether the cluster takes writes and how

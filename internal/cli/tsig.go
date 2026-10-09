@@ -31,6 +31,9 @@ func newTSIGCommand(opts *options) *cobra.Command {
 			"Unlike an API token, a secret can be read back. Verifying a signature\n" +
 			"means recomputing it, so this server has to keep it.",
 		Args: usageArgs(cobra.NoArgs),
+		Example: "  weg tsig create secondary.example.com.\n" +
+			"  weg tsig show secondary.example.com.\n" +
+			"  weg tsig list",
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	f.register(cmd)
@@ -303,7 +306,7 @@ func newTSIGRevokeCommand(opts *options, f *clientFlags) *cobra.Command {
 			return runTSIGRevoke(c.Context(), opts, f, args[0], yes)
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "withdraw without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "withdraw without asking")
 	return cmd
 }
 

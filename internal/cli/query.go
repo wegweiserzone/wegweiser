@@ -24,7 +24,9 @@ func newQueryCommand(opts *options) *cobra.Command {
 		Aliases: []string{"q"},
 		Short:   "Watch the queries the server is answering",
 		Args:    usageArgs(cobra.NoArgs),
-		RunE:    func(c *cobra.Command, _ []string) error { return c.Help() },
+		Example: "  weg query tail\n" +
+			"  weg query tail --name example.com.",
+		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	f.register(cmd)
 
@@ -47,10 +49,10 @@ func newQueryTailCommand(opts *options, f *clientFlags) *cobra.Command {
 		Use:   "tail",
 		Short: "Follow the queries as they are answered",
 		Long: "Follow the queries this server answers, as it answers them.\n\n" +
-			"The filter is applied on the server, before anything is buffered, so " +
-			"watching one zone stays complete however busy the rest of the server is. " +
-			"When more matches than a stream carries, it samples and says so on standard " +
-			"error rather than quietly leaving them out.",
+			"The filter is applied on the server, before anything is buffered, so\n" +
+			"watching one zone stays complete however busy the rest of the server is.\n" +
+			"When more matches than a stream carries, it samples and says so on\n" +
+			"standard error rather than quietly leaving them out.",
 		Example: strings.Join([]string{
 			"  weg query tail",
 			"  weg query tail --name example.com.",

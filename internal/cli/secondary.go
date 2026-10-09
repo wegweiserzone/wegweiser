@@ -33,6 +33,8 @@ func newSecondaryCommand(opts *options) *cobra.Command {
 			"This writes a file and never installs one. Where that file goes and how\n" +
 			"that server is reloaded belong to whatever owns that machine.",
 		Args: usageArgs(cobra.NoArgs),
+		Example: "  weg secondary status\n" +
+			"  weg secondary config bind --primary 192.0.2.1 > /etc/named/wegweiser.conf",
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	f.register(cmd)

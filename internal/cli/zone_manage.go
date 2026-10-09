@@ -502,7 +502,7 @@ func newZoneDeleteCommand(opts *options, f *clientFlags) *cobra.Command {
 		},
 		ValidArgsFunction: completeZones(f),
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "delete without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete without asking")
 	return cmd
 }
 
@@ -629,7 +629,7 @@ func newZoneRollbackCommand(opts *options, f *clientFlags) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&note, "comment", "", "why, for the history")
-	cmd.Flags().BoolVar(&yes, "yes", false, "restore without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "restore without asking")
 	return cmd
 }
 

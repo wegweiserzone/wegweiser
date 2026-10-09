@@ -41,7 +41,7 @@ func newZoneUpdateCommand(opts *options, f *clientFlags) *cobra.Command {
 		Long: "Change what a zone is, rather than what is in it.\n\n" +
 			"Only the flags given are changed; everything else is left as it was.\n" +
 			"The serial is not among them: one commit advances it by exactly one,\n" +
-			"and that is what lets the history be replayed (docs/decisions/ D2).\n\n" +
+			"and that is what lets the history be replayed.\n\n" +
 			"`--auto-reverse` has three states, and `server` is not `off`: it puts\n" +
 			"the zone back on the server-wide setting, so changing that setting\n" +
 			"reaches this zone again.",

@@ -53,6 +53,11 @@ func newHealthCommand(opts *options) *cobra.Command {
 		},
 	}
 	f.register(cmd)
+	// /healthz needs no credential, so the help does not offer one. The flag
+	// is still accepted, so a script that passes it everywhere goes on working.
+	if err := cmd.PersistentFlags().MarkHidden("token"); err != nil {
+		panic("cli: hide --token on health: " + err.Error())
+	}
 	return cmd
 }
 

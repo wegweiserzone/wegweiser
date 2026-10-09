@@ -21,7 +21,11 @@ func newRecordCommand(opts *options) *cobra.Command {
 		Aliases: []string{"r", "rr"},
 		Short:   "Work with the records inside a zone",
 		Args:    usageArgs(cobra.NoArgs),
-		RunE:    func(c *cobra.Command, _ []string) error { return c.Help() },
+		Example: "  weg record list example.com\n" +
+			"  weg record add example.com www A 192.0.2.10\n" +
+			"  weg record update example.com www A --data 192.0.2.99\n" +
+			"  weg record delete example.com www A 192.0.2.10",
+		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	f.register(cmd)
 
@@ -329,7 +333,7 @@ func newRecordDeleteCommand(opts *options, f *clientFlags) *cobra.Command {
 		},
 		ValidArgsFunction: completeRecordArgs(f, true),
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "delete without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "delete without asking")
 	return cmd
 }
 

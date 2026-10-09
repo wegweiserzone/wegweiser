@@ -26,7 +26,11 @@ func newZoneCommand(opts *options) *cobra.Command {
 		Aliases: []string{"z"},
 		Short:   "Work with whole zones",
 		Args:    usageArgs(cobra.NoArgs),
-		RunE:    func(c *cobra.Command, _ []string) error { return c.Help() },
+		Example: "  weg zone list\n" +
+			"  weg zone create example.com\n" +
+			"  weg zone import db.example.com\n" +
+			"  weg zone check example.com",
+		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	f.register(cmd)
 

@@ -28,6 +28,9 @@ func newTokenCommand(opts *options) *cobra.Command {
 			"method does not decide what a request needs: a write token that could\n" +
 			"mint an admin token would not be a write token.",
 		Args: usageArgs(cobra.NoArgs),
+		Example: "  weg token list\n" +
+			"  weg token create ansible --scope write\n" +
+			"  weg token revoke ansible",
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	f.register(cmd)
@@ -287,7 +290,7 @@ func newTokenRevokeCommand(opts *options, f *clientFlags) *cobra.Command {
 		},
 		ValidArgsFunction: completeTokens(f),
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "revoke without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "revoke without asking")
 	return cmd
 }
 

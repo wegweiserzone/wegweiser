@@ -27,9 +27,13 @@ func newClusterCommand(opts *options) *cobra.Command {
 			"A node takes part once its configuration file has a cluster section. One\n" +
 			"node starts the cluster with `weg cluster init`, and every other one joins\n" +
 			"it from its first start, with `weg serve --join`. A member leaves with\n" +
-			"`weg cluster leave`, or is taken out from another with `weg cluster remove`\n" +
-			"(docs/decisions/d44-starting-and-joining.md).",
+			"`weg cluster leave`, or is taken out from another with `weg cluster remove`.\n\n" +
+			"More at https://wegweiser.zone/docs/cluster/",
 		Args: usageArgs(cobra.NoArgs),
+		Example: "  weg cluster status\n" +
+			"  weg cluster status --watch\n" +
+			"  weg cluster init\n" +
+			"  weg cluster remove ns3",
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	f.register(cmd)
@@ -100,10 +104,10 @@ func newClusterStatusCommand(opts *options, f *clientFlags) *cobra.Command {
 			"cluster's configuration has them, with the role each holds, which one\n" +
 			"leads, and how far each has got through the log. The server asks every\n" +
 			"other member as it answers, and one that does not answer within a couple\n" +
-			"of seconds is listed as not reached, with why\n" +
-			"(docs/decisions/d47-status-asks-every-member.md).\n\n" +
+			"of seconds is listed as not reached, with why.\n\n" +
 			"A member that has left the cluster over an entry it could not apply says\n" +
-			"where it stopped and why (docs/decisions/d29-a-node-that-cannot-apply.md).",
+			"where it stopped and why.\n\n" +
+			"More at https://wegweiser.zone/docs/cluster/",
 		Args: usageArgs(cobra.NoArgs),
 		Example: "  weg cluster status\n" +
 			"  weg cluster status --watch\n" +
@@ -310,10 +314,10 @@ func newClusterLeaveCommand(opts *options, f *clientFlags) *cobra.Command {
 		Long: "Take the server out of the cluster it is a member of. Any member can be\n" +
 			"asked; the one leading carries it out. Needs the admin scope.\n\n" +
 			"The server goes on answering queries with what it held, and refuses\n" +
-			"writes. Joining it again takes an emptied database\n" +
-			"(docs/decisions/d46-a-member-that-has-left.md). A member that is off,\n" +
+			"writes. Joining it again takes an emptied database. A member that is off,\n" +
 			"or has stopped over a change it could not apply, cannot ask for itself:\n" +
-			"take it out from another with `weg cluster remove`.",
+			"take it out from another with `weg cluster remove`.\n\n" +
+			"More at https://wegweiser.zone/docs/cluster/",
 		Args:    usageArgs(cobra.NoArgs),
 		Example: "  weg cluster leave --server http://10.0.0.6:8053\n  weg cluster leave --yes",
 
@@ -321,7 +325,7 @@ func newClusterLeaveCommand(opts *options, f *clientFlags) *cobra.Command {
 			return runClusterLeave(c.Context(), opts, f, yes)
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "leave without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "leave without asking")
 	return cmd
 }
 
@@ -369,8 +373,8 @@ func newClusterRemoveCommand(opts *options, f *clientFlags) *cobra.Command {
 			"or has stopped over a change it could not apply. Needs the admin scope.\n\n" +
 			"The cluster's only voter cannot be removed. Take out a member that is off\n" +
 			"before one that is running: removing a running voter while another is off\n" +
-			"can leave the rest without a majority\n" +
-			"(docs/decisions/d46-a-member-that-has-left.md).",
+			"can leave the rest without a majority.\n\n" +
+			"More at https://wegweiser.zone/docs/cluster/",
 		Args:    usageArgs(cobra.ExactArgs(1)),
 		Example: "  weg cluster remove ns3\n  weg cluster remove ns3 --yes",
 
@@ -379,7 +383,7 @@ func newClusterRemoveCommand(opts *options, f *clientFlags) *cobra.Command {
 		},
 		ValidArgsFunction: completeClusterMembers(f),
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "remove without asking")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	return cmd
 }
 

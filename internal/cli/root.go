@@ -172,6 +172,10 @@ func newRootCommand(opts *options) *cobra.Command {
 			"zones and records, and inspects a running instance.\n\n" +
 			"Every command supports --output json and --output yaml, so anything\n" +
 			"you can read you can also script.",
+		Example: "  weg serve\n" +
+			"  weg zone create example.com\n" +
+			"  weg record add example.com www A 192.0.2.10\n" +
+			"  weg status",
 
 		// Cobra would otherwise print a full usage dump after every runtime
 		// error, burying the actual message. Usage is printed deliberately by
@@ -218,20 +222,41 @@ func newRootCommand(opts *options) *cobra.Command {
 		panic(fmt.Sprintf("cli: register completion for --output: %v", err))
 	}
 
-	cmd.AddCommand(newZoneCommand(opts))
-	cmd.AddCommand(newRecordCommand(opts))
-	cmd.AddCommand(newHistoryCommand(opts))
-	cmd.AddCommand(newTokenCommand(opts))
-	cmd.AddCommand(newTSIGCommand(opts))
-	cmd.AddCommand(newQueryCommand(opts))
-	cmd.AddCommand(newServeCommand(opts))
-	cmd.AddCommand(newConfigCommand(opts))
-	cmd.AddCommand(newSettingsCommand(opts))
-	cmd.AddCommand(newSecondaryCommand(opts))
-	cmd.AddCommand(newClusterCommand(opts))
-	cmd.AddCommand(newStatusCommand(opts))
-	cmd.AddCommand(newHealthCommand(opts))
+	// Grouped by what somebody came to do, the way gh lists its commands:
+	// sixteen names in alphabetical order make the reader do the sorting.
+	groups := []struct {
+		id, title string
+		commands  []*cobra.Command
+	}{
+		{"zones", "Zones and records:", []*cobra.Command{
+			newZoneCommand(opts), newRecordCommand(opts), newHistoryCommand(opts),
+		}},
+		{"watch", "Watch a running server:", []*cobra.Command{
+			newStatusCommand(opts), newQueryCommand(opts), newSecondaryCommand(opts),
+			newHealthCommand(opts),
+		}},
+		{"access", "Access and defaults:", []*cobra.Command{
+			newTokenCommand(opts), newTSIGCommand(opts), newSettingsCommand(opts),
+		}},
+		{"run", "Run a server:", []*cobra.Command{
+			newServeCommand(opts), newClusterCommand(opts), newConfigCommand(opts),
+		}},
+	}
+	for _, g := range groups {
+		cmd.AddGroup(&cobra.Group{ID: g.id, Title: g.title})
+		for _, sub := range g.commands {
+			sub.GroupID = g.id
+			cmd.AddCommand(sub)
+		}
+	}
 	cmd.AddCommand(newVersionCommand(opts))
+
+	// Cobra's own wording says how the script is made rather than what it is
+	// for.
+	cmd.InitDefaultCompletionCmd()
+	if completion, _, err := cmd.Find([]string{"completion"}); err == nil && completion != cmd {
+		completion.Short = "Print the script that lets a shell complete weg's commands"
+	}
 
 	return cmd
 }

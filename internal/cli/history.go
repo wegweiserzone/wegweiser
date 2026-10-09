@@ -25,6 +25,9 @@ func newHistoryCommand(opts *options) *cobra.Command {
 			"the source an earlier state is restored from, all reading from the one\n" +
 			"structure.",
 		Args: usageArgs(cobra.NoArgs),
+		Example: "  weg history list example.com\n" +
+			"  weg history show 01K2XQ8N4G7BVYJ0MZ9WTREHPD\n" +
+			"  weg zone rollback example.com 41",
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
 	f.register(cmd)
