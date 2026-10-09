@@ -112,6 +112,10 @@ func TestZoneEnableDisable(t *testing.T) {
 	if !strings.Contains(out, "disabled example.com.") {
 		t.Errorf("output = %q, want it to say what it did", out)
 	}
+	// And the way back, which is what somebody at two in the morning needs next.
+	if !strings.Contains(out, "`weg zone enable example.com.` brings it back") {
+		t.Errorf("output = %q, want it to say how to undo it", out)
+	}
 
 	listed := mustRun(t, srv, "zone", "list")
 	if !strings.Contains(listed, "disabled") {

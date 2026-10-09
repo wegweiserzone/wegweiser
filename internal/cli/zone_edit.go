@@ -217,12 +217,21 @@ func runZoneUpdate(
 
 	p := opts.Printer()
 	return p.Print(changed, func(w io.Writer) error {
-		if _, werr := fmt.Fprintf(w, "%s %s\n", past, changed.Zone); werr != nil {
+		if _, werr := fmt.Fprintf(w, "%s %s, serial %d → %d\n",
+			past, changed.Zone, changed.SerialFrom, changed.Serial); werr != nil {
+			return werr
+		}
+		// Switching a zone on or off changes nothing else, so its one line is
+		// the whole answer, and the way back is the one thing worth adding.
+		if in.Disabled != nil {
+			if !*in.Disabled {
+				return nil
+			}
+			_, werr := fmt.Fprintf(w, "  answered as though this server held nothing; "+
+				"`weg zone enable %s` brings it back\n", changed.Zone)
 			return werr
 		}
 		t := newRows(w, 2)
-		t.row(p.Paint(output.ColorDim, "serial"),
-			fmt.Sprintf("%d → %d", changed.SerialFrom, changed.Serial))
 		t.row(p.Paint(output.ColorDim, "status"), changed.Status)
 		t.row(p.Paint(output.ColorDim, "reverse automation"), autoReverseText(z.AutoReverse))
 		return t.flush()

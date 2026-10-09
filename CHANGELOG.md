@@ -45,6 +45,10 @@ public API is unstable and may change without a deprecation period.
   `weg query tail` and a setting that is set are no longer green, so that
   what is yellow or red stands out from the rows around it.
 
+- `weg zone disable` and `weg zone enable` answer in one line with the
+  serial, as the record commands do, and `disable` says how to undo it. They
+  used to print a block of settings that had not changed.
+
 #### Cluster
 
 - `weg cluster status` opens with whether the cluster takes writes and how
