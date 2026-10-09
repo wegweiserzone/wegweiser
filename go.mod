@@ -16,7 +16,7 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.70.1
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.9
+	github.com/spf13/pflag v1.0.10
 	golang.org/x/sys v0.48.0
 	modernc.org/sqlite v1.60.1
 	sigs.k8s.io/yaml v1.6.0
