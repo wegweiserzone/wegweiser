@@ -693,8 +693,9 @@ func runZoneRollback(
 			return werr
 		}
 		if _, werr := fmt.Fprintf(w,
-			"%s is back at the state it had at serial %d — %d record changes, now serial %d\n",
-			done.Zone, done.RestoredTo, done.Changed, done.Serial); werr != nil {
+			"%s is back at the state it had at serial %d — %d %s, now serial %d\n",
+			done.Zone, done.RestoredTo, done.Changed, plural(done.Changed, "record change"),
+			done.Serial); werr != nil {
 			return werr
 		}
 		for _, m := range done.MissingZones {

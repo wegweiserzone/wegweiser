@@ -223,6 +223,9 @@ public API is unstable and may change without a deprecation period.
   instead of quoting the whole error chain, and points at the setting the
   address came from.
 
+- `weg zone rollback` said `1 record changes`. It counts in the singular when
+  there is one.
+
 #### Web interface
 
 - The Check tab offered *Fill them in* for any reverse finding, including an
