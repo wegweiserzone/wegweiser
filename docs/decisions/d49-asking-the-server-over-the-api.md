@@ -50,4 +50,5 @@ reason. It is not an error of the request.
 
 ## Where this stands
 
-Built as described, as `GET /ask` and `weg ask NAME [TYPE]`.
+Built as described, as `GET /ask`, `weg ask NAME [TYPE]`, and the Ask page of the web
+interface.

@@ -31,6 +31,15 @@ public API is unstable and may change without a deprecation period.
   `NOERROR from example.com.: an alias, 2 records starting with the CNAME`,
   and lists the sections below.
 
+#### Web interface
+
+- An **Ask** page (`g a`) says what the server answers for a name and a type:
+  what kind of answer it is first, then the response code, the zone and the
+  records, section by section. Every name in an answer asks about itself, so
+  an alias or a delegation can be followed by clicking. Each record has a way
+  to ask about it from its row, a name in the query stream leads to the same
+  question, and a name typed into the palette can be asked about from there.
+
 #### Cluster
 
 - `weg cluster status --watch` asks again every two seconds, so a member

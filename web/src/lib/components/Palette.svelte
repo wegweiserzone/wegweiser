@@ -38,6 +38,7 @@
     { key: "o", label: "Overview", href: "/" },
     { key: "z", label: "Zones", href: "/zones" },
     { key: "s", label: "Query stream", href: "/stream" },
+    { key: "a", label: "Ask", href: "/ask" },
     { key: "h", label: "History", href: "/history" },
     // A digit, because the letters in the word are taken: the second server.
     { key: "2", label: "Secondaries", href: "/secondaries" },
@@ -95,6 +96,23 @@
     return all;
   });
 
+  /**
+   * Something typed that reads as a domain name can be asked about at once:
+   * "what does the server say for this" is a question a palette is for. Last,
+   * so that a name that is also a zone goes to the zone first.
+   */
+  const asking = $derived.by(() => {
+    const typedName = typed.trim();
+    if (!/^[^\s/]+\.[^\s/]*$/.test(typedName)) return [];
+    return [
+      {
+        group: "Ask",
+        label: `Ask about ${typedName}`,
+        run: () => goto(`/ask?name=${encodeURIComponent(typedName)}`),
+      },
+    ];
+  });
+
   const commands = $derived.by(() => {
     const all: Command[] = [...nearby, ...sections, ...starts];
 
@@ -113,6 +131,7 @@
       run: () => theme.toggle(),
     });
     all.push({ group: "Interface", label: "Sign out", run: () => session.close() });
+    all.push(...asking);
     return all;
   });
 

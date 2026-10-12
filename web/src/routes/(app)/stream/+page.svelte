@@ -349,7 +349,15 @@
           <td class="num py-1.5 pr-3 pl-5 text-[12px] text-ink-faint">{clock(row.at)}</td>
           <td class="num px-3 py-1.5 text-ink-mute">{row.client}</td>
           <td class="px-3 py-1.5"><Chip>{row.transport}</Chip></td>
-          <td class="num max-w-[18ch] truncate px-3 py-1.5 sm:max-w-[34ch]" title={row.name}>{row.name}</td>
+          <td class="num max-w-[18ch] truncate px-3 py-1.5 sm:max-w-[34ch]" title={row.name}>
+            <!-- What was answered here, asked again on its own page. -->
+            <a
+              href="/ask?name={encodeURIComponent(row.name)}&type={encodeURIComponent(row.type)}"
+              class="hover:text-signal hover:underline"
+            >
+              {row.name}
+            </a>
+          </td>
           <td class="num px-3 py-1.5 text-[12px]">{row.type}</td>
           <td class="flex items-center gap-1.5 px-3 py-1.5">
             {#if row.dropped}
