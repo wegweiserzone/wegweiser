@@ -2556,3 +2556,65 @@ func TestAWriteSaysWhatItTookAway(t *testing.T) {
 		t.Errorf("deleting took away %v, want the PTR", got)
 	}
 }
+
+// D49: the API says what the query path would answer, and names the kind of
+// answer so that no client has to work it out from the sections again.
+func TestAskSaysWhatTheServerAnswers(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	z := h.createZone("example.com.")
+	for _, rec := range []gen.CreateRecord{
+		{Name: "www.example.com.", Type: "A", Data: "192.0.2.10"},
+		{Name: "web.example.com.", Type: "CNAME", Data: "www.example.com."},
+		{Name: "sub.example.com.", Type: "NS", Data: "ns1.elsewhere.example."},
+	} {
+		h.createRecord(z.Id, rec)
+	}
+
+	ask := func(query string) gen.Asked {
+		t.Helper()
+		var out gen.Asked
+		h.decode(h.do(http.MethodGet, "/ask?"+query, nil), http.StatusOK, &out)
+		return out
+	}
+	for _, tc := range []struct {
+		query   string
+		outcome gen.AskedOutcome
+		rcode   string
+		first   string
+	}{
+		{"name=www.example.com", gen.AskedOutcomeAnswer, "NOERROR", "www.example.com. A 192.0.2.10"},
+		{"name=web.example.com.&type=A", gen.AskedOutcomeAlias, "NOERROR", "web.example.com. CNAME www.example.com."},
+		{"name=www.example.com.&type=MX", gen.AskedOutcomeNodata, "NOERROR", ""},
+		{"name=nope.example.com.", gen.AskedOutcomeNxdomain, "NXDOMAIN", ""},
+		{"name=host.sub.example.com.", gen.AskedOutcomeReferral, "NOERROR", ""},
+		{"name=example.org.", gen.AskedOutcomeRefused, "REFUSED", ""},
+	} {
+		got := ask(tc.query)
+		if got.Outcome != tc.outcome || got.Rcode != tc.rcode {
+			t.Errorf("%s: %s %s, want %s %s", tc.query, got.Rcode, got.Outcome, tc.rcode, tc.outcome)
+		}
+		if tc.first != "" {
+			if len(got.Answer) == 0 {
+				t.Errorf("%s: no answer, want %q first", tc.query, tc.first)
+			} else if a := got.Answer[0]; a.Name+" "+a.Type+" "+a.Data != tc.first {
+				t.Errorf("%s: answer starts %s %s %s, want %q", tc.query, a.Name, a.Type, a.Data, tc.first)
+			}
+		}
+	}
+
+	t.Run("it says which zone answered, and why when the code alone does not", func(t *testing.T) {
+		if got := ask("name=www.example.com."); deref(got.Zone, "") != "example.com." || !got.Authoritative {
+			t.Errorf("zone %q, authoritative %v; want example.com., true", deref(got.Zone, ""), got.Authoritative)
+		}
+		got := ask("name=example.org.")
+		if got.Zone != nil || deref(got.Explanation, "") == "" {
+			t.Errorf("a name nothing covers: zone %v, explanation %q; want none and a reason",
+				got.Zone, deref(got.Explanation, ""))
+		}
+	})
+
+	t.Run("a type that is not one is the request's mistake", func(t *testing.T) {
+		h.decode(h.do(http.MethodGet, "/ask?name=www.example.com.&type=AAA", nil), http.StatusBadRequest, nil)
+	})
+}

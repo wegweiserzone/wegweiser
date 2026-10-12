@@ -16,6 +16,13 @@ public API is unstable and may change without a deprecation period.
   counts the voters, how many make a majority, and how many of them answered
   the member that was asked.
 
+- `GET /ask?name=…&type=…` says what this server answers for a question, as
+  a query over TCP would be told: the response code, the AA bit, the three
+  sections, which zone answered, the server's own reason where the code is
+  not enough, and what kind of answer it is (an answer, an alias, no data, no
+  such name, a referral, refused). It reads the snapshot the query path
+  serves, so it never says anything the server would not (D49).
+
 #### Cluster
 
 - `weg cluster status --watch` asks again every two seconds, so a member
