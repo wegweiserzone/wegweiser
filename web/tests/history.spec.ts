@@ -135,3 +135,19 @@ test("the history opens on what people did, and says what followed", async ({ pa
   await expect(followed.first()).toBeVisible();
   await expect(page.getByText(/reverse entries kept in step with/).first()).toBeVisible();
 });
+
+// One name's history, as a record's row and the Ask page link to it, and a
+// way back to everything.
+test("the history narrows to one name, and widens again", async ({ page, server }) => {
+  await signIn(page, server);
+  await page.goto(`${server.url}/zones/example.com.`);
+  await page.getByRole("link", { name: "History of www.example.com." }).first().click();
+
+  await expect(page).toHaveURL(/\/history\?name=www\.example\.com\.$/);
+  const rows = page.locator("button").filter({ hasText: /→/ });
+  await expect(rows.filter({ hasText: "add www A 192.0.2.10" }).first()).toBeVisible();
+  await expect(rows.filter({ hasText: "add mail A" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Show every name again" }).click();
+  await expect(rows.filter({ hasText: "add mail A" }).first()).toBeVisible();
+});

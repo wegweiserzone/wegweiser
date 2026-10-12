@@ -26,6 +26,9 @@ public API is unstable and may change without a deprecation period.
 - A zone in a listing carries `records`, how many records the server answers
   from for it, counted as `/healthz` counts them.
 
+- `GET /commits?name=…` lists the commits that added or removed a record at
+  one name, in whichever zone: the history of a name rather than of a zone.
+
 #### CLI
 
 - `weg ask NAME [TYPE]` says what the server answers for a name, over the
@@ -33,6 +36,8 @@ public API is unstable and may change without a deprecation period.
   the response code, the zone and the kind of answer in one line, as in
   `NOERROR from example.com.: an alias, 2 records starting with the CNAME`,
   and lists the sections below.
+
+- `weg history list --name www.example.com` lists what happened to one name.
 
 #### Web interface
 
@@ -52,6 +57,10 @@ public API is unstable and may change without a deprecation period.
   secondaries stand, and its last change: when, by whom and what. The Check
   tab carries the number of findings a check would report, before anybody
   runs one.
+
+- The history narrows to one name, from the clock on each record's row or
+  from the Ask page, and shows everything that happened to it, the entries
+  the server wrote by itself included.
 
 #### Cluster
 

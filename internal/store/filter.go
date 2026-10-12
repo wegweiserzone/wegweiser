@@ -100,4 +100,7 @@ type CommitFilter struct {
 	// exclusive.
 	Since time.Time
 	Until time.Time
+	// Name selects the commits that added or removed a record owned by this
+	// name, which is the history of one name rather than of a zone.
+	Name zone.Name
 }

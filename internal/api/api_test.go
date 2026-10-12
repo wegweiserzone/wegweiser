@@ -2643,3 +2643,23 @@ func TestAZoneListingCountsWhatEachZoneAnswersFrom(t *testing.T) {
 		t.Errorf("a disabled zone is said to answer from %d records, want nothing said", *got)
 	}
 }
+
+// The history of one name: what was ever added or removed at it, in
+// whichever zone the commit was made.
+func TestHistoryOfOneName(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	z := h.createZone("example.com.")
+	rec := h.createRecord(z.Id, gen.CreateRecord{Name: "www.example.com.", Type: "A", Data: "192.0.2.10"}).Record
+	h.createRecord(z.Id, gen.CreateRecord{Name: "mail.example.com.", Type: "A", Data: "192.0.2.25"})
+	h.decode(h.do(http.MethodPatch, "/records/"+rec.Id, gen.UpdateRecord{Data: ptr("192.0.2.11")}),
+		http.StatusOK, nil)
+
+	got := h.commits(t, "?name=www.example.com")
+	if len(got) != 2 {
+		t.Fatalf("commits touching www = %d, want the addition and the change", len(got))
+	}
+	if c := deref(got[0].Comment, ""); c != "change www A 192.0.2.10 → 192.0.2.11" {
+		t.Errorf("newest commit touching www says %q", c)
+	}
+}

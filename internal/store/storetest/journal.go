@@ -205,6 +205,28 @@ func testJournal(t *testing.T, open Open) {
 		}
 	})
 
+	t.Run("listing what happened to one name", func(t *testing.T) {
+		t.Parallel()
+		s := open(t)
+		z := createZone(t, s, "example.com.")
+		for i, ev := range []journal.Event{
+			event(0, journal.OpAdd, "www.example.com.", zone.TypeA, "192.0.2.10"),
+			event(0, journal.OpAdd, "mail.example.com.", zone.TypeA, "192.0.2.25"),
+			event(0, journal.OpDel, "www.example.com.", zone.TypeA, "192.0.2.10"),
+		} {
+			c := newCommit(z, uint32(i)+1, journal.KindEdit, ev)
+			mustUpdate(t, s, func(tx store.Tx) error { return tx.AppendCommit(ctxOf(t), c) })
+		}
+
+		page, err := s.ListCommits(ctxOf(t), store.CommitFilter{Name: zone.MustParseName("www.example.com.")})
+		if err != nil {
+			t.Fatalf("ListCommits: %v", err)
+		}
+		if len(page.Items) != 2 {
+			t.Errorf("commits touching www = %d, want the addition and the removal", len(page.Items))
+		}
+	})
+
 	t.Run("listing", func(t *testing.T) {
 		t.Parallel()
 		s := open(t)

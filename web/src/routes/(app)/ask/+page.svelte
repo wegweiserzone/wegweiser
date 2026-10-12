@@ -172,6 +172,14 @@
         {#if told}
           <p class="mt-1 text-[13px] text-ink-mute">{told}</p>
         {/if}
+        <p class="mt-2 text-[12px]">
+          <a
+            href="/history?name={encodeURIComponent(asked.name)}"
+            class="text-ink-mute underline-offset-2 hover:text-signal hover:underline"
+          >
+            What happened to {asked.name}
+          </a>
+        </p>
       </section>
 
       {#if sections.length > 0}

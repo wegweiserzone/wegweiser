@@ -55,6 +55,8 @@
   let trouble = $state<string | null>(null);
 
   let zoneFilter = $state(page.url.searchParams.get("zone") ?? "");
+  /** One name's history, as a record's row and the Ask page link to it. */
+  let nameFilter = $state(page.url.searchParams.get("name") ?? "");
   let kindFilter = $state<CommitKind | "">("");
 
   /**
@@ -65,7 +67,9 @@
    * rather than as another entry to work out.
    */
   const byPeople: CommitSource[] = ["api", "cli", "import"];
-  let showFollowed = $state(false);
+  // A name's history is shown whole: for a reverse entry, what followed is
+  // all there is.
+  let showFollowed = $state(Boolean(page.url.searchParams.get("name")));
   let pageIndex = $state(0);
   let pageSize = $state(250);
   let cursors = $state<(string | undefined)[]>([undefined]);
@@ -107,6 +111,7 @@
           ...(chosenZone ? { zoneId: chosenZone.id } : {}),
           ...(kindFilter ? { kind: [kindFilter] } : {}),
           ...(showFollowed ? {} : { source: byPeople }),
+          ...(nameFilter ? { name: nameFilter } : {}),
         },
       });
       commits = answer.items;
@@ -182,6 +187,8 @@
     const url = new URL(page.url);
     if (zoneFilter) url.searchParams.set("zone", zoneFilter);
     else url.searchParams.delete("zone");
+    if (nameFilter) url.searchParams.set("name", nameFilter);
+    else url.searchParams.delete("name");
     replaceState(url, page.state);
     load();
   }
@@ -224,6 +231,27 @@
 
 <Bar title="History">
   {#snippet actions()}
+    {#if nameFilter}
+      <span
+        class="flex h-8 items-center gap-1.5 rounded-sm border border-signal bg-signal-lo pr-1 pl-2.5
+               text-[12px] text-signal"
+      >
+        <span class="num">{nameFilter}</span>
+        <button
+          type="button"
+          onclick={() => {
+            nameFilter = "";
+            applyFilters();
+          }}
+          aria-label="Show every name again"
+          class="grid size-6 cursor-pointer place-items-center rounded-xs hover:bg-surface"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-3">
+            <path d="M6 6l12 12M18 6 6 18" stroke-linecap="round" />
+          </svg>
+        </button>
+      </span>
+    {/if}
     <label class="flex items-center gap-2">
       <span class="sr-only">Zone</span>
       <select

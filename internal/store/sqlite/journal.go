@@ -77,6 +77,10 @@ func (r reader) ListCommits(ctx context.Context, f store.CommitFilter) (store.Pa
 	if !f.Until.IsZero() {
 		w.add(`created_at < ?`, f.Until.UnixMilli())
 	}
+	if !f.Name.IsZero() {
+		w.add(`EXISTS (SELECT 1 FROM journal_events e
+			WHERE e.commit_id = journal_commits.id AND e.name = ?)`, f.Name.String())
+	}
 
 	limit := f.EffectiveLimit()
 	rows, err := r.q.QueryContext(ctx,

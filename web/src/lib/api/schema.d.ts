@@ -2984,6 +2984,8 @@ export interface operations {
                 source?: components["schemas"]["CommitSource"][];
                 /** @description Match the recorded actor exactly. */
                 actor?: string;
+                /** @description Only commits that added or removed a record owned by this name, in whichever zone: the history of one name. */
+                name?: string;
                 /** @description Only commits at or after this time. */
                 since?: string;
                 /** @description Only commits before this time. */

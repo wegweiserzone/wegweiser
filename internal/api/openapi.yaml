@@ -1187,6 +1187,12 @@ paths:
           in: query
           description: Match the recorded actor exactly.
           schema: { type: string }
+        - name: name
+          in: query
+          description: >-
+            Only commits that added or removed a record owned by this name, in
+            whichever zone: the history of one name.
+          schema: { type: string }
         - name: since
           in: query
           description: Only commits at or after this time.
