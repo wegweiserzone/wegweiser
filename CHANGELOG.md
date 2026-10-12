@@ -23,6 +23,14 @@ public API is unstable and may change without a deprecation period.
   such name, a referral, refused). It reads the snapshot the query path
   serves, so it never says anything the server would not (D49).
 
+#### CLI
+
+- `weg ask NAME [TYPE]` says what the server answers for a name, over the
+  API, so it needs neither `dig` nor a route to the DNS port. It opens with
+  the response code, the zone and the kind of answer in one line, as in
+  `NOERROR from example.com.: an alias, 2 records starting with the CNAME`,
+  and lists the sections below.
+
 #### Cluster
 
 - `weg cluster status --watch` asks again every two seconds, so a member

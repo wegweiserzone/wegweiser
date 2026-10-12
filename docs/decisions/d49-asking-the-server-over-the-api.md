@@ -50,4 +50,4 @@ reason. It is not an error of the request.
 
 ## Where this stands
 
-Built as described, as `GET /ask`.
+Built as described, as `GET /ask` and `weg ask NAME [TYPE]`.
