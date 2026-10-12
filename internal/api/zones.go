@@ -43,9 +43,14 @@ func (s *Server) ListZones(
 		return nil, err
 	}
 
+	snap := s.snapshots.Snapshot()
 	items := make([]gen.Zone, 0, len(page.Items))
 	for _, z := range page.Items {
-		items = append(items, zoneToAPI(z))
+		item := zoneToAPI(z)
+		if n, ok := snap.Answering(z.Name); ok {
+			item.Records = ptr(int64(n))
+		}
+		items = append(items, item)
 	}
 	out := gen.ListZones200JSONResponse{Items: items}
 	if page.NextCursor != "" {

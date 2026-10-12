@@ -1515,6 +1515,13 @@ components:
         disabled:
           type: boolean
           description: A disabled zone is invisible on the wire, not merely marked.
+        records:
+          type: integer
+          format: int64
+          description: >-
+            How many records the server answers from for this zone, its SOA
+            included, counted the way /healthz counts them. Given in listings,
+            and absent while the zone is disabled.
         comment: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }

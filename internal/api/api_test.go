@@ -2618,3 +2618,28 @@ func TestAskSaysWhatTheServerAnswers(t *testing.T) {
 		h.decode(h.do(http.MethodGet, "/ask?name=www.example.com.&type=AAA", nil), http.StatusBadRequest, nil)
 	})
 }
+
+// A listing says how many records each zone answers from, as /healthz counts
+// them, and says nothing for a zone that is not answered at all.
+func TestAZoneListingCountsWhatEachZoneAnswersFrom(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	served := h.createZone("example.com.")
+	h.createRecord(served.Id, gen.CreateRecord{Name: "www.example.com.", Type: "A", Data: "192.0.2.10"})
+	off := h.createZone("off.example.")
+	h.decode(h.do(http.MethodPatch, "/zones/"+off.Id, gen.UpdateZone{Disabled: ptr(true)}), http.StatusOK, nil)
+
+	var page gen.ZonePage
+	h.decode(h.do(http.MethodGet, "/zones", nil), http.StatusOK, &page)
+	counts := map[string]*int64{}
+	for _, z := range page.Items {
+		counts[z.Name] = z.Records
+	}
+	// The SOA, the apex NS the zone was created with, and www.
+	if got := counts["example.com."]; got == nil || *got != 3 {
+		t.Errorf("example.com. answers from %v records, want 3", got)
+	}
+	if got := counts["off.example."]; got != nil {
+		t.Errorf("a disabled zone is said to answer from %d records, want nothing said", *got)
+	}
+}

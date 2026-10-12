@@ -8,7 +8,7 @@
   import { asked } from "$lib/asked";
   import { api, ApiError, NetworkError } from "$lib/api";
   import type { Zone, ZoneImported } from "$lib/api";
-  import { ago, exact, relative } from "$lib/format";
+  import { ago, count, exact, relative } from "$lib/format";
   import { standing } from "$lib/standing.svelte";
   import Bar from "$lib/components/Bar.svelte";
   import Button from "$lib/components/Button.svelte";
@@ -122,17 +122,45 @@
   const columns: Column[] = [
     { label: "Name" },
     { label: "Kind", width: "clamp(6rem, 18vw, 14rem)" },
-    { label: "Serial", align: "right", width: "7rem", narrow: false },
-    { label: "TTL", align: "right", width: "6rem", narrow: false },
-    { label: "Primary name server", narrow: false },
-    { label: "State", width: "8rem" },
-    { label: "Changed", align: "right", width: "8rem", narrow: false },
-    { label: "", width: "5rem" },
+    { label: "Records", align: "right", width: "6rem" },
+    { label: "Serial", align: "right", width: "6rem", narrow: false },
+    { label: "TTL", align: "right", width: "5rem", narrow: false },
+    { label: "Name server", narrow: false },
+    { label: "Secondaries", width: "9rem", narrow: false },
+    { label: "Changed", align: "right", width: "7rem", narrow: false },
+    { label: "", width: "4rem" },
   ];
+
+  /**
+   * Where each zone's copies on secondaries stand, from the one listing that
+   * says it for every zone at once. Optional: a server nobody transfers from
+   * has nothing here, and a listing that cannot be read leaves the column
+   * empty rather than the page broken.
+   */
+  type Copies = { all: number; inStep: number; states: string[] };
+  let copies = $state<Map<string, Copies>>(new Map());
+
+  async function loadCopies() {
+    try {
+      const standing = await api.get("/secondary-status");
+      const byZone = new Map<string, Copies>();
+      for (const pair of standing) {
+        const c = byZone.get(pair.zone) ?? { all: 0, inStep: 0, states: [] };
+        c.all += 1;
+        if (pair.state === "inStep") c.inStep += 1;
+        c.states.push(`${pair.target}: ${pair.state}`);
+        byZone.set(pair.zone, c);
+      }
+      copies = byZone;
+    } catch {
+      copies = new Map();
+    }
+  }
 
   async function load() {
     loading = true;
     trouble = null;
+    void loadCopies();
     try {
       const answer = await api.get("/zones", {
         query: {
@@ -347,6 +375,10 @@
       >
         {zone.name}
       </button>
+      <!-- Serving is what a zone does; only the exception is said. -->
+      {#if zone.disabled}
+        <span class="ml-2"><Chip tone="warn" dot>Disabled</Chip></span>
+      {/if}
     </td>
 
     <td class="px-3 py-1.5">
@@ -360,7 +392,10 @@
       {/if}
     </td>
 
-    <td class="num px-3 py-1.5 text-right">{zone.soa.serial}</td>
+    <td class="num px-3 py-1.5 text-right">
+      {zone.records === undefined ? "—" : count(zone.records)}
+    </td>
+    <td class="num px-3 py-1.5 text-right text-ink-mute">{zone.soa.serial}</td>
     <td class="num px-3 py-1.5 text-right text-ink-mute">{zone.defaultTtl}</td>
     <!-- Relative, as a zonefile writes it: inside its own zone it is nearly
          always ns1, and the zone name a second time says nothing new. -->
@@ -368,11 +403,18 @@
       {relative(zone.soa.primaryNs, zone.name)}
     </td>
 
-    <td class="px-3 py-1.5">
-      {#if zone.disabled}
-        <Chip tone="warn" dot>Disabled</Chip>
+    <td class="px-3 py-1.5 text-[12px]">
+      {#if copies.get(zone.name)}
+        {@const c = copies.get(zone.name)!}
+        <a
+          href="/secondaries"
+          title={c.states.join("\n")}
+          class="hover:underline {c.inStep === c.all ? 'text-ink-mute' : 'text-warn'}"
+        >
+          {c.inStep}/{c.all} in step
+        </a>
       {:else}
-        <Chip>Serving</Chip>
+        <span class="text-ink-faint">—</span>
       {/if}
     </td>
 

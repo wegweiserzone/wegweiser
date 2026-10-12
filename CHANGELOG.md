@@ -23,6 +23,9 @@ public API is unstable and may change without a deprecation period.
   such name, a referral, refused). It reads the snapshot the query path
   serves, so it never says anything the server would not (D49).
 
+- A zone in a listing carries `records`, how many records the server answers
+  from for it, counted as `/healthz` counts them.
+
 #### CLI
 
 - `weg ask NAME [TYPE]` says what the server answers for a name, over the
@@ -39,6 +42,11 @@ public API is unstable and may change without a deprecation period.
   an alias or a delegation can be followed by clicking. Each record has a way
   to ask about it from its row, a name in the query stream leads to the same
   question, and a name typed into the palette can be asked about from there.
+
+- The zone list says how many records each zone answers from and how many of
+  its copies on secondaries are in step, with each state under the pointer.
+  A disabled zone says so beside its name, and the column that said
+  *Serving* on every other row is gone.
 
 #### Cluster
 

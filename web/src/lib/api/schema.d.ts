@@ -1134,6 +1134,11 @@ export interface components {
             autoReverse?: boolean;
             /** @description A disabled zone is invisible on the wire, not merely marked. */
             disabled: boolean;
+            /**
+             * Format: int64
+             * @description How many records the server answers from for this zone, its SOA included, counted the way /healthz counts them. Given in listings, and absent while the zone is disabled.
+             */
+            records?: number;
             comment?: string;
             /** Format: date-time */
             createdAt: string;
