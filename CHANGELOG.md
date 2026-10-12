@@ -48,6 +48,11 @@ public API is unstable and may change without a deprecation period.
   A disabled zone says so beside its name, and the column that said
   *Serving* on every other row is gone.
 
+- A zone's page says how many records it answers from, where its copies on
+  secondaries stand, and its last change: when, by whom and what. The Check
+  tab carries the number of findings a check would report, before anybody
+  runs one.
+
 #### Cluster
 
 - `weg cluster status --watch` asks again every two seconds, so a member

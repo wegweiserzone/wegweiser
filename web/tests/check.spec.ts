@@ -35,6 +35,8 @@ test("a name server with no address is a warning, not an error", async ({ page, 
 
   await signIn(page, server);
   await page.goto(`${server.url}/zones/lame.example./check`);
+  // Counted on the tab before anybody presses the button.
+  await expect(page.getByRole("link", { name: "Check 1" })).toBeVisible();
   await page.getByRole("button", { name: "Check this zone" }).click();
 
   await expect(page.getByText("1 warning in")).toBeVisible();

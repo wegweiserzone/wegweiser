@@ -28,9 +28,11 @@ test("a zone can be created, and the interface lands on it", async ({ page, serv
   await expect(page.getByText("example.com.").first()).toBeVisible();
   // Creating the zone is one commit and the address record is a second, so
   // the zone lands on serial 2 (D2).
-  await expect(page.getByRole("definition").filter({ hasText: /^2$/ })).toBeVisible();
+  await expect(page.locator('dt:text-is("Serial") + dd')).toHaveText("2");
   await expect(page.getByRole("cell", { name: "192.0.2.10" })).toBeVisible();
   // And nothing is complaining about a name server with no address.
+  // Who changed it last, and what they did.
+  await expect(page.locator('dt:text-is("Last change") + dd')).toContainText("by bootstrap");
   await expect(page.getByText("A name server here has no address")).toHaveCount(0);
 });
 
@@ -66,7 +68,7 @@ test("the zone's settings save and come back", async ({ page, server }) => {
   await page.reload();
   await expect(page.getByLabel("Mailbox")).toHaveValue("dns.example.com.");
   // One commit, one step (D2).
-  await expect(page.getByRole("definition").filter({ hasText: /^3$/ })).toBeVisible();
+  await expect(page.locator('dt:text-is("Serial") + dd')).toHaveText("3");
 });
 
 test("automatic reverse has three states, and the middle one is not off", async ({
