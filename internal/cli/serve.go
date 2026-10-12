@@ -442,8 +442,8 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 		where = "the API and the web interface are on " + apiURL
 	}
 	if err := p.Print(status, func(w io.Writer) error {
-		if _, werr := fmt.Fprintf(w, "weg is answering on %s — %d zones, %d records from %s\n%s\n",
-			status.Address, status.Zones, status.Records, status.Database, where); werr != nil {
+		if _, werr := fmt.Fprintf(w, "weg is answering on %s — %s from %s\n%s\n",
+			status.Address, zonesAndRecords(status.Zones, status.Records), status.Database, where); werr != nil {
 			return werr
 		}
 		return printMemberStatus(w, status.Cluster)

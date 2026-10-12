@@ -223,8 +223,8 @@ public API is unstable and may change without a deprecation period.
   instead of quoting the whole error chain, and points at the setting the
   address came from.
 
-- `weg zone rollback` said `1 record changes`. It counts in the singular when
-  there is one.
+- `weg zone rollback` said `1 record changes`, and `weg serve` and `weg
+  health` said `1 zones`. They count in the singular when there is one.
 
 #### Web interface
 

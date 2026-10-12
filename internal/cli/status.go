@@ -187,8 +187,12 @@ func writeStatus(w io.Writer, p *output.Printer, s *metrics.Summary) error {
 
 // held describes the snapshot being answered from.
 func held(s *metrics.Summary) string {
-	return fmt.Sprintf("%d %s, %d %s",
-		s.Zones, plural(s.Zones, "zone"), s.Records, plural(s.Records, "record"))
+	return zonesAndRecords(s.Zones, s.Records)
+}
+
+// zonesAndRecords counts both, each in the singular when there is one.
+func zonesAndRecords(zones, records int) string {
+	return fmt.Sprintf("%d %s, %d %s", zones, plural(zones, "zone"), records, plural(records, "record"))
 }
 
 // plural is the English "add an s unless there is exactly one" rule, which is

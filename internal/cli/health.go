@@ -95,8 +95,8 @@ func runHealth(ctx context.Context, opts *options, f *clientFlags) error {
 		if got.Status != string(gen.HealthStatusServing) {
 			colour = output.ColorYellow
 		}
-		if _, werr := fmt.Fprintf(w, "%s — %d zones, %d records, %s\n",
-			p.Paint(colour, got.Status), got.Zones, got.Records, got.Version); werr != nil {
+		if _, werr := fmt.Fprintf(w, "%s — %s, %s\n",
+			p.Paint(colour, got.Status), zonesAndRecords(got.Zones, got.Records), got.Version); werr != nil {
 			return werr
 		}
 		// /healthz says only that the member is not current. Whether it
