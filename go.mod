@@ -3,7 +3,7 @@ module github.com/wegweiserzone/wegweiser
 go 1.26.5
 
 require (
-	github.com/getkin/kin-openapi v0.147.0
+	github.com/getkin/kin-openapi v0.150.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/raft v1.8.0
@@ -47,7 +47,7 @@ require (
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	go.etcd.io/bbolt v1.4.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/net v0.59.0 // indirect
