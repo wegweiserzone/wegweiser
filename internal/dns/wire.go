@@ -98,6 +98,16 @@ type Responder struct {
 	hasCookie   bool
 	cookieValid bool
 
+	// subnet is the client subnet option of the response, the query's own
+	// with a scope of 0, and hasSubnet whether one is going back, which it is
+	// only when the query brought one (RFC 7871 §7.2.1, docs/decisions/ D50).
+	subnet    wire.EDNS0_SUBNET
+	hasSubnet bool
+
+	// resolvers is where the server publishes the resolvers whose word on a
+	// client is believed, and is nil for a responder nobody wired one into.
+	resolvers *atomic.Pointer[resolverHolder]
+
 	// load reports whether the datagram readers are keeping up, and is nil on
 	// a path that is never refused: a stream client has proved its address by
 	// completing a handshake, which is what a cookie is for.
@@ -180,6 +190,7 @@ func (r *Responder) Respond(
 	// be answered with a cookie whatever the rest of the query turns out to
 	// be.
 	cookieOK := unpackErr != nil || r.readCookie(reqOPT, from)
+	subnetOK := unpackErr != nil || r.readSubnet(reqOPT, query, from)
 
 	// The order is the table in architecture §2.2, and it is an order
 	// rather than a set: a query can be wrong in several ways at once, and the
@@ -214,6 +225,12 @@ func (r *Responder) Respond(
 		// guessing at one we do not.
 		r.fail(wire.RcodeBadVers, wire.ExtendedErrorCodeOther,
 			"this server implements EDNS version 0")
+
+	case !subnetOK:
+		// RFC 7871 §6: an address in more or fewer octets than its source
+		// prefix needs is a malformed option.
+		r.fail(wire.RcodeFormatError, wire.ExtendedErrorCodeOther,
+			"the client subnet option's address is not as long as its source prefix calls for")
 
 	// Guarded, because the case above no longer guarantees a question: the
 	// cookie query of RFC 7873 §5.4 reaches here with none, and asks about no
@@ -270,6 +287,7 @@ func (r *Responder) begin() {
 	r.hasEDE = false
 	r.hasCookie = false
 	r.cookieValid = false
+	r.hasSubnet = false
 	r.ev.Refused = NotRefused
 	r.signer = nil
 }
@@ -419,6 +437,9 @@ func (r *Responder) finish(reqOPT *wire.OPT, tr Transport, out []byte) ([]byte, 
 			// ourselves.
 			r.cookie.Cookie = hex.EncodeToString(r.cookieOut[:])
 			r.opt.Option = append(r.opt.Option, &r.cookie)
+		}
+		if r.hasSubnet {
+			r.opt.Option = append(r.opt.Option, &r.subnet)
 		}
 		r.resp.Extra = append(r.resp.Extra, &r.opt)
 

@@ -8,6 +8,16 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
+### Added
+
+#### DNS
+
+- A query carrying the client subnet option of RFC 7871, which a resolver in front sends
+  to say whom it asks for, is answered with the option back and a scope of 0, as RFC 7871
+  asks of an authority. The answer is the same for every client, and the scope says so,
+  so a resolver keeps one cache for all of them. An option that cannot be read is answered
+  FORMERR.
+
 ### Fixed
 
 #### CLI

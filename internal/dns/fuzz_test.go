@@ -137,6 +137,23 @@ func FuzzRespond(f *testing.F) {
 			seeds = append(seeds, b)
 		}
 	}
+	// A client subnet option, well formed in both families and with an
+	// address one octet too long (D50), so the walk that measures it has
+	// somewhere to start from.
+	for _, option := range []wire.EDNS0{
+		&wire.EDNS0_SUBNET{Code: wire.EDNS0SUBNET, Family: 1, SourceNetmask: 24, Address: []byte{198, 51, 100, 0}},
+		&wire.EDNS0_SUBNET{Code: wire.EDNS0SUBNET, Family: 2, SourceNetmask: 56,
+			Address: []byte{0x20, 0x01, 0x0d, 0xb8, 0x12, 0x34, 0x56, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
+		&wire.EDNS0_LOCAL{Code: wire.EDNS0SUBNET, Data: []byte{0, 1, 24, 0, 198, 51, 100, 0}},
+	} {
+		m := new(wire.Msg)
+		m.SetQuestion("www.example.com.", wire.TypeA)
+		m.SetEdns0(1232, false)
+		m.IsEdns0().Option = append(m.IsEdns0().Option, option)
+		if b, err := m.Pack(); err == nil {
+			seeds = append(seeds, b)
+		}
+	}
 	for _, s := range seeds {
 		f.Add(s, false)
 		f.Add(s, true)

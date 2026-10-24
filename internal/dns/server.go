@@ -154,6 +154,10 @@ type Server struct {
 	// swapped whole when the control plane rotates them.
 	cookies atomic.Pointer[cookieHolder]
 
+	// resolvers is who may name the client a query is asked for, swapped whole
+	// when the setting changes (docs/decisions/ D50).
+	resolvers atomic.Pointer[resolverHolder]
+
 	// load reports whether the datagram readers are keeping up. It exists
 	// from Start, because until the sockets are bound there is nothing to
 	// measure and nobody to measure it for.
@@ -428,6 +432,7 @@ func (s *Server) readUDP(conn *net.UDPConn, meter *loadMeter) {
 	r := NewResponder(s.cfg.Limits)
 	r.keys = &s.keys
 	r.cookies = &s.cookies
+	r.resolvers = &s.resolvers
 	r.load = meter
 	in := make([]byte, maxUDPQuery)
 	out := make([]byte, r.limits.MaxUDPResponse)
@@ -558,6 +563,7 @@ func (s *Server) serveConn(conn *net.TCPConn) {
 	r := NewResponder(s.cfg.Limits)
 	r.keys = &s.keys
 	r.cookies = &s.cookies
+	r.resolvers = &s.resolvers
 	from := remoteAddrPort(conn)
 	var (
 		length [2]byte

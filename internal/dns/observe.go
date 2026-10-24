@@ -28,6 +28,13 @@ type Event struct {
 	Client    netip.AddrPort
 	Transport Transport
 
+	// For is the client a resolver asked on behalf of, as the client subnet
+	// option it sent names it: a whole address, or the network the resolver
+	// cut it to. It is the zero prefix unless that resolver is one this server
+	// believes, and for a client that asked not to be named
+	// (docs/decisions/ D50).
+	For netip.Prefix
+
 	// Name, Type and Class are the question, as far as it could be read. Name
 	// is empty when the message carried none; it is the name the client sent,
 	// in the casing it sent, because that is what somebody watching the stream
