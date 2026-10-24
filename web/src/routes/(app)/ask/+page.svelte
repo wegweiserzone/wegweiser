@@ -6,7 +6,7 @@
    */
   import { untrack } from "svelte";
 
-  import { replaceState } from "$app/navigation";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { api, ApiError, NetworkError } from "#lib/api/index.ts";
   import type { AnsweredRecord, Asked } from "#lib/api/index.ts";
@@ -55,10 +55,10 @@
       asked = await api.get("/ask", { query: { name: q, type } });
       remember(asked);
       // The question is in the address, so it can be sent to somebody else.
-      const url = new URL(page.url);
+      const url = new URL(page.url.href);
       url.searchParams.set("name", q);
       url.searchParams.set("type", type);
-      replaceState(url, page.state);
+      void goto(url, { state: page.state, shallow: true, replace: true });
     } catch (err) {
       asked = null;
       refused =

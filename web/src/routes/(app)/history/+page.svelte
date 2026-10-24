@@ -5,7 +5,7 @@
   import { untrack } from "svelte";
 
   import { page } from "$app/state";
-  import { replaceState } from "$app/navigation";
+  import { goto } from "$app/navigation";
   import { api, ApiError, NetworkError } from "#lib/api/index.ts";
   import type { Commit, CommitKind, CommitSource, Conflict, MissingZone, Zone } from "#lib/api/index.ts";
   import { ago, exact } from "#lib/format.ts";
@@ -184,12 +184,12 @@
     selected = null;
     detail = null;
     // The zone is in the URL so that a link to this view carries it.
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     if (zoneFilter) url.searchParams.set("zone", zoneFilter);
     else url.searchParams.delete("zone");
     if (nameFilter) url.searchParams.set("name", nameFilter);
     else url.searchParams.delete("name");
-    replaceState(url, page.state);
+    void goto(url, { state: page.state, shallow: true, replace: true });
     load();
   }
 

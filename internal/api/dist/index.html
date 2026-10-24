@@ -8,15 +8,19 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Wegweiser</title>
     <script src="/theme.js"></script>
-    <meta http-equiv="content-security-policy" content="default-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self' data:; object-src 'none'; script-src 'self' 'sha256-A8TWDlJUyYOXqTa7c7xB/ezTL+H3NtxuYy3p9R/d8yU='; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'">
-		<link href="/_app/immutable/entry/start.S18CWwD_.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BCYw6EMg.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/DwR3OiLT.js" rel="modulepreload">
+    <meta http-equiv="content-security-policy" content="default-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self' data:; object-src 'none'; script-src 'self' 'sha256-+9m0sRRqkD0vSLSvq7o7pORRPbS0y+z9mn7hM7GQg5g='; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+		<link href="/_app/immutable/entry/start.DN8Eo8ZI.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/payload.DSmR2FwN.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CRzLMJPS.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/B3Qq3PfY.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DbO0U4V8.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/BqhsmpNn.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CbADPH2h.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Ddc1fAXI.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/CvlLlHQ2.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.C6-Yx6mo.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.uz7zfPQr.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DK3Fl9T5.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/Dt-HX3Vu.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.Boddz_5I.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.BHOfe9-_.js" rel="modulepreload">
 		
 		<link href="/_app/immutable/assets/0.Dpq-ItI5.css" rel="stylesheet">
   </head>
@@ -25,15 +29,15 @@
 			<script>
 				{
 					__sveltekit_1vzh91 = {
-						base: ""
+						base: "",
+						version: "0.0.0"
 					};
 
 					const element = document.currentScript.parentElement;
 
-					Promise.all([
-						import("/_app/immutable/entry/start.S18CWwD_.js"),
-						import("/_app/immutable/entry/app.Boddz_5I.js")
-					]).then(([kit, app]) => {
+					import("/_app/immutable/entry/start.DN8Eo8ZI.js").then(async (kit) => {
+						kit.init(__sveltekit_1vzh91);
+						const app = await import("/_app/immutable/entry/app.C6-Yx6mo.js");
 						kit.start(app, element);
 					});
 				}

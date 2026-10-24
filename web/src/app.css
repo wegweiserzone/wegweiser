@@ -12,7 +12,6 @@
  * the build's configuration and the browser tests. A comment there about a
  * "container image" put `.container` in the stylesheet once. */
 @source not "../vite.config.ts";
-@source not "../svelte.config.js";
 @source not "../playwright.config.ts";
 @source not "../tests";
 

@@ -93,7 +93,7 @@ web: ## Build the web interface into internal/api/dist
 # production, and the build output, so that installing the binary needs no
 # Node. This target keeps both honest, the same way generate-check does for the
 # Go side. The build is deterministic: the version SvelteKit stamps into the
-# document is pinned in svelte.config.js, because its default is a timestamp
+# document is pinned in web/vite.config.ts, because its default is a timestamp
 # and this could then never be green.
 .PHONY: web-check
 web-check: ## Fail if the committed web types or build are out of date
