@@ -89,5 +89,6 @@ wrong, and both libraries are what most Go programs speaking them use.
 Sessions are built as described, for the token sessions that exist: sealed in
 `internal/api/session.go` under the `session_keys` setting, rotated with the cookie secret's
 loop, and ended through the `ended_sessions` setting, which a member that does not lead hands
-to the leader. Providers, group mappings and ending every session of one person are not
-built.
+to the leader. Providers and their group mappings are held in the `identity_providers`
+setting and managed through `/identity-providers`. Signing in through a provider and ending
+every session of one person are not built.

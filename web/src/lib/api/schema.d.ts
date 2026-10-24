@@ -701,6 +701,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/identity-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the providers people sign in through
+         * @description No listing carries a client secret or a bind password. They are written
+         *     and never read back, because nothing a client does needs them.
+         */
+        get: operations["listIdentityProviders"];
+        put?: never;
+        /**
+         * Add a provider
+         * @description A provider whose groups map to no scope signs nobody in, so a new one
+         *     harms nothing until its mappings say otherwise.
+         */
+        post: operations["createIdentityProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identity-providers/{providerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        /** Read one provider */
+        get: operations["getIdentityProvider"];
+        /**
+         * Replace what a provider says about itself
+         * @description The whole provider is sent, as it should stand afterwards, with one
+         *     exception: a client secret or bind password left out is kept, so that
+         *     changing a mapping does not mean typing the secret again. A bind
+         *     password is kept only while the bind DN stays the same. A provider
+         *     stays the kind it was made as.
+         */
+        put: operations["updateIdentityProvider"];
+        post?: never;
+        /**
+         * Remove a provider
+         * @description Nobody signs in through it afterwards.
+         */
+        delete: operations["deleteIdentityProvider"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/secondary-config": {
         parameters: {
             query?: never;
@@ -1668,6 +1726,152 @@ export interface components {
             key: components["schemas"]["TSIGKey"];
             /** @description The shared secret, base64, as every implementation writes it. */
             secret: string;
+        };
+        /**
+         * @description The protocol a provider is spoken to in: OpenID Connect by the
+         *     authorization code flow with PKCE, or a directory a person binds to as
+         *     themselves (docs/decisions/d51-accounts-come-from-an-identity-provider.md).
+         * @enum {string}
+         */
+        IdentityProviderKind: "oidc" | "ldap";
+        /**
+         * @description The members of a group are granted a scope. A person holds the strongest
+         *     scope any of their groups maps to, and a person in no mapped group is
+         *     refused.
+         */
+        GroupMapping: {
+            /**
+             * @description The group as the provider names it: a value of the groups claim, or
+             *     for a directory the group's DN or the value of its first RDN.
+             * @example dns-admins
+             */
+            group: string;
+            scope: components["schemas"]["Scope"];
+        };
+        OIDCSettings: {
+            /**
+             * @description The issuer identifier. The discovery document is read from below
+             *     it. HTTPS, or plain HTTP on loopback.
+             * @example https://auth.example.com/application/o/wegweiser/
+             */
+            issuer: string;
+            clientId: string;
+            /**
+             * @description Required when a provider is made. Never returned, and kept when an
+             *     update leaves it out.
+             */
+            clientSecret?: string;
+            /**
+             * @description Asked for at sign-in. `openid` is always among them.
+             * @default [
+             *       "openid",
+             *       "profile",
+             *       "email",
+             *       "groups"
+             *     ]
+             */
+            scopes: string[];
+            /**
+             * @description The claim a person's groups are read from.
+             * @default groups
+             */
+            groupsClaim: string;
+            /**
+             * @description The claim a person is called by in a commit.
+             * @default preferred_username
+             */
+            nameClaim: string;
+            /**
+             * @description The callbacks registered with the provider, one for each address a
+             *     member is reached by. Each ends in `/api/v1/auth/oidc/callback`, and
+             *     a sign-in returns only to one of these.
+             * @example [
+             *       "https://ns1.example.com/api/v1/auth/oidc/callback"
+             *     ]
+             */
+            redirectUris: string[];
+        };
+        LDAPSettings: {
+            /**
+             * @description `ldaps://host[:port]`, or `ldap://host[:port]` with `startTls`. A
+             *     password never crosses the network in the clear.
+             * @example ldaps://ipa.example.com
+             */
+            url: string;
+            /** @default false */
+            startTls: boolean;
+            /**
+             * @description Who searches for a person's entry. Absent is an anonymous search.
+             * @example uid=wegweiser,cn=sysaccounts,cn=etc,dc=example,dc=com
+             */
+            bindDn?: string;
+            /**
+             * @description Required with a bind DN. Never returned, and kept when an update
+             *     leaves it out and the bind DN stays the same.
+             */
+            bindPassword?: string;
+            /** @example cn=users,cn=accounts,dc=example,dc=com */
+            userBase: string;
+            /**
+             * @description Finds a person's entry. `{username}` is replaced, escaped.
+             * @example (uid={username})
+             */
+            userFilter: string;
+            /**
+             * @description The attribute a person is called by in a commit.
+             * @default uid
+             */
+            nameAttribute: string;
+            /**
+             * @description Where a person's groups are read from: the `memberOf` attribute of
+             *     their entry, or a search under `groupBase`.
+             * @default memberOf
+             * @enum {string}
+             */
+            groups: "memberOf" | "search";
+            groupBase?: string;
+            /**
+             * @description For a search, the groups naming a person. `{dn}` is their entry's DN
+             *     and `{username}` what they signed in as, each escaped. Active
+             *     Directory's nested groups are reached with the matching rule
+             *     `member:1.2.840.113556.1.4.1941:={dn}`.
+             * @example (member={dn})
+             */
+            groupFilter?: string;
+        };
+        /** @description A provider as it should stand. The settings of its kind are required, and those of the other kind absent. */
+        IdentityProviderInput: {
+            /**
+             * @description What the sign-in page offers it as. Unique, ignoring case.
+             * @example Authentik
+             */
+            name: string;
+            kind: components["schemas"]["IdentityProviderKind"];
+            /** @default true */
+            enabled: boolean;
+            mappings?: components["schemas"]["GroupMapping"][];
+            /**
+             * @description PEM, for a provider whose certificate an internal CA signed, as
+             *     FreeIPA's is. Absent trusts what the system trusts.
+             */
+            caCertificate?: string;
+            oidc?: components["schemas"]["OIDCSettings"];
+            ldap?: components["schemas"]["LDAPSettings"];
+        };
+        /** @description A place people sign in through, without its secret. */
+        IdentityProvider: {
+            id: string;
+            name: string;
+            kind: components["schemas"]["IdentityProviderKind"];
+            enabled: boolean;
+            mappings: components["schemas"]["GroupMapping"][];
+            caCertificate?: string;
+            oidc?: components["schemas"]["OIDCSettings"];
+            ldap?: components["schemas"]["LDAPSettings"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         };
         /**
          * @description The software a configuration is written for. PowerDNS is absent on
@@ -2811,6 +3015,126 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TSIGKeySecret"];
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listIdentityProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every provider, in the order they were made. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"][];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createIdentityProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityProviderInput"];
+            };
+        };
+        responses: {
+            /** @description The provider, with the defaults it left out filled in. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getIdentityProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The provider, without its secret. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateIdentityProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityProviderInput"];
+            };
+        };
+        responses: {
+            /** @description The provider as it now stands. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProvider"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteIdentityProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The provider is gone. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };

@@ -44,6 +44,10 @@ var writes = map[string]bool{
 	"DELETE /tokens/{tokenId}":           true,
 	"POST /tsig-keys":                    true,
 	"DELETE /tsig-keys/{keyId}":          true,
+
+	"POST /identity-providers":                true,
+	"PUT /identity-providers/{providerId}":    true,
+	"DELETE /identity-providers/{providerId}": true,
 }
 
 // forwardedHeader carries who a forwarded write is from. It is read on the

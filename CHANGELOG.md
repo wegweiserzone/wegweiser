@@ -10,6 +10,13 @@ public API is unstable and may change without a deprecation period.
 
 ### Added
 
+#### API
+
+- `/identity-providers` holds the OpenID Connect providers and LDAP directories people are
+  to sign in through, and which of their groups is given which scope. Managing them needs
+  the `admin` scope, and a client secret or bind password is written and never read back.
+  Signing in through one is not built yet.
+
 #### Observation
 
 - `weg_process_start_timestamp_seconds` says when the server started. Unlike the process

@@ -41,6 +41,12 @@ tags:
       The keys a secondary signs a zone transfer with (RFC 8945). Managing them
       needs the `admin` scope, for the same reason tokens do: a key is a
       credential, and one that may transfer may take every zone.
+  - name: identity
+    description: |
+      The providers people sign in through, and which of their groups may do
+      what (docs/decisions/d51-accounts-come-from-an-identity-provider.md).
+      Managing them needs the `admin` scope: a mapping is how an account
+      becomes an administrator.
   - name: auth
     description: |
       How a browser authenticates. It posts a token once and works from a
@@ -927,6 +933,96 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TSIGKeySecret" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /identity-providers:
+    get:
+      operationId: listIdentityProviders
+      tags: [identity]
+      summary: List the providers people sign in through
+      description: |
+        No listing carries a client secret or a bind password. They are written
+        and never read back, because nothing a client does needs them.
+      responses:
+        "200":
+          description: Every provider, in the order they were made.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IdentityProvider" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    post:
+      operationId: createIdentityProvider
+      tags: [identity]
+      summary: Add a provider
+      description: |
+        A provider whose groups map to no scope signs nobody in, so a new one
+        harms nothing until its mappings say otherwise.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdentityProviderInput" }
+      responses:
+        "201":
+          description: The provider, with the defaults it left out filled in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentityProvider" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /identity-providers/{providerId}:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        description: The ULID of a provider.
+        schema: { type: string }
+    get:
+      operationId: getIdentityProvider
+      tags: [identity]
+      summary: Read one provider
+      responses:
+        "200":
+          description: The provider, without its secret.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentityProvider" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    put:
+      operationId: updateIdentityProvider
+      tags: [identity]
+      summary: Replace what a provider says about itself
+      description: |
+        The whole provider is sent, as it should stand afterwards, with one
+        exception: a client secret or bind password left out is kept, so that
+        changing a mapping does not mean typing the secret again. A bind
+        password is kept only while the bind DN stays the same. A provider
+        stays the kind it was made as.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdentityProviderInput" }
+      responses:
+        "200":
+          description: The provider as it now stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentityProvider" }
+        default: { $ref: "#/components/responses/Problem" }
+
+    delete:
+      operationId: deleteIdentityProvider
+      tags: [identity]
+      summary: Remove a provider
+      description: Nobody signs in through it afterwards.
+      responses:
+        "204":
+          description: The provider is gone.
         default: { $ref: "#/components/responses/Problem" }
 
   /secondary-config:
@@ -2241,6 +2337,158 @@ components:
         secret:
           type: string
           description: The shared secret, base64, as every implementation writes it.
+
+    IdentityProviderKind:
+      type: string
+      description: |
+        The protocol a provider is spoken to in: OpenID Connect by the
+        authorization code flow with PKCE, or a directory a person binds to as
+        themselves (docs/decisions/d51-accounts-come-from-an-identity-provider.md).
+      enum: [oidc, ldap]
+
+    GroupMapping:
+      type: object
+      description: |
+        The members of a group are granted a scope. A person holds the strongest
+        scope any of their groups maps to, and a person in no mapped group is
+        refused.
+      required: [group, scope]
+      properties:
+        group:
+          type: string
+          description: |
+            The group as the provider names it: a value of the groups claim, or
+            for a directory the group's DN or the value of its first RDN.
+          example: dns-admins
+        scope: { $ref: "#/components/schemas/Scope" }
+
+    OIDCSettings:
+      type: object
+      required: [issuer, clientId, redirectUris]
+      properties:
+        issuer:
+          type: string
+          description: |
+            The issuer identifier. The discovery document is read from below
+            it. HTTPS, or plain HTTP on loopback.
+          example: https://auth.example.com/application/o/wegweiser/
+        clientId: { type: string }
+        clientSecret:
+          type: string
+          writeOnly: true
+          description: |
+            Required when a provider is made. Never returned, and kept when an
+            update leaves it out.
+        scopes:
+          type: array
+          description: Asked for at sign-in. `openid` is always among them.
+          items: { type: string }
+          default: [openid, profile, email, groups]
+        groupsClaim:
+          type: string
+          description: The claim a person's groups are read from.
+          default: groups
+        nameClaim:
+          type: string
+          description: The claim a person is called by in a commit.
+          default: preferred_username
+        redirectUris:
+          type: array
+          description: |
+            The callbacks registered with the provider, one for each address a
+            member is reached by. Each ends in `/api/v1/auth/oidc/callback`, and
+            a sign-in returns only to one of these.
+          items: { type: string }
+          example: [https://ns1.example.com/api/v1/auth/oidc/callback]
+
+    LDAPSettings:
+      type: object
+      required: [url, userBase, userFilter]
+      properties:
+        url:
+          type: string
+          description: |
+            `ldaps://host[:port]`, or `ldap://host[:port]` with `startTls`. A
+            password never crosses the network in the clear.
+          example: ldaps://ipa.example.com
+        startTls: { type: boolean, default: false }
+        bindDn:
+          type: string
+          description: Who searches for a person's entry. Absent is an anonymous search.
+          example: uid=wegweiser,cn=sysaccounts,cn=etc,dc=example,dc=com
+        bindPassword:
+          type: string
+          writeOnly: true
+          description: |
+            Required with a bind DN. Never returned, and kept when an update
+            leaves it out and the bind DN stays the same.
+        userBase:
+          type: string
+          example: cn=users,cn=accounts,dc=example,dc=com
+        userFilter:
+          type: string
+          description: Finds a person's entry. `{username}` is replaced, escaped.
+          example: (uid={username})
+        nameAttribute:
+          type: string
+          description: The attribute a person is called by in a commit.
+          default: uid
+        groups:
+          type: string
+          description: |
+            Where a person's groups are read from: the `memberOf` attribute of
+            their entry, or a search under `groupBase`.
+          enum: [memberOf, search]
+          default: memberOf
+        groupBase: { type: string }
+        groupFilter:
+          type: string
+          description: |
+            For a search, the groups naming a person. `{dn}` is their entry's DN
+            and `{username}` what they signed in as, each escaped. Active
+            Directory's nested groups are reached with the matching rule
+            `member:1.2.840.113556.1.4.1941:={dn}`.
+          example: (member={dn})
+
+    IdentityProviderInput:
+      type: object
+      description: A provider as it should stand. The settings of its kind are required, and those of the other kind absent.
+      required: [name, kind]
+      properties:
+        name:
+          type: string
+          description: What the sign-in page offers it as. Unique, ignoring case.
+          example: Authentik
+        kind: { $ref: "#/components/schemas/IdentityProviderKind" }
+        enabled: { type: boolean, default: true }
+        mappings:
+          type: array
+          items: { $ref: "#/components/schemas/GroupMapping" }
+        caCertificate:
+          type: string
+          description: |
+            PEM, for a provider whose certificate an internal CA signed, as
+            FreeIPA's is. Absent trusts what the system trusts.
+        oidc: { $ref: "#/components/schemas/OIDCSettings" }
+        ldap: { $ref: "#/components/schemas/LDAPSettings" }
+
+    IdentityProvider:
+      type: object
+      description: A place people sign in through, without its secret.
+      required: [id, name, kind, enabled, mappings, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/IdentityProviderKind" }
+        enabled: { type: boolean }
+        mappings:
+          type: array
+          items: { $ref: "#/components/schemas/GroupMapping" }
+        caCertificate: { type: string }
+        oidc: { $ref: "#/components/schemas/OIDCSettings" }
+        ldap: { $ref: "#/components/schemas/LDAPSettings" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 
     SecondaryFormat:
       type: string
