@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"io"
+	"io/fs"
 	"net/http"
 	"strings"
 	"testing"
@@ -86,6 +87,55 @@ func TestUIMissingAssetIsNotTheDocument(t *testing.T) {
 	}
 	if got := resp.Header.Get("Content-Type"); strings.HasPrefix(got, "text/html") {
 		t.Errorf("Content-Type = %q, want anything but a document", got)
+	}
+}
+
+// The fonts are under the SIL Open Font License, which asks that its text
+// travel with them. The binary is how they travel, so every font in the build
+// has its licence beside it, served as text.
+func TestUICarriesTheFontLicences(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, withUI)
+
+	files, err := fs.Sub(dist, "dist")
+	if err != nil {
+		t.Fatalf("open the embedded build: %v", err)
+	}
+	const assets, licenceDir = immutablePrefix + "assets/", "licenses/"
+	fonts, err := fs.Glob(files, assets+"*.woff2")
+	if err != nil || len(fonts) == 0 {
+		t.Fatalf("the build holds no fonts (%v); this test looks in the wrong place", err)
+	}
+	licences, err := fs.Glob(files, licenceDir+"*.txt")
+	if err != nil {
+		t.Fatalf("list the licences: %v", err)
+	}
+
+	for _, font := range fonts {
+		font = strings.TrimPrefix(font, assets)
+		licensed := false
+		for _, licence := range licences {
+			family := strings.TrimSuffix(strings.TrimPrefix(licence, licenceDir), ".txt")
+			licensed = licensed || strings.HasPrefix(font, family+"-latin")
+		}
+		if !licensed {
+			t.Errorf("%s has no licence beside it under %s", font, licenceDir)
+		}
+	}
+
+	for _, licence := range licences {
+		resp := h.get(t, "/"+licence)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET /%s: status %d, want 200", licence, resp.StatusCode)
+			continue
+		}
+		if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/plain") {
+			t.Errorf("GET /%s: Content-Type = %q, want text/plain", licence, got)
+		}
+		body, rerr := io.ReadAll(resp.Body)
+		if rerr != nil || !strings.Contains(string(body), "SIL Open Font License") {
+			t.Errorf("GET /%s does not carry the licence text (%v)", licence, rerr)
+		}
 	}
 }
 

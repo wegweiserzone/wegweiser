@@ -16,6 +16,12 @@ public API is unstable and may change without a deprecation period.
   web interface does. A reverse entry was only ever written by the server, so its history
   used to say that no commits matched unless `--all` was given.
 
+#### Web interface
+
+- The fonts the interface ships, Barlow, Barlow Condensed and JetBrains Mono, now travel
+  with the SIL Open Font License they are under, as that licence asks. The binary carries
+  the text beside them and serves it at `/licenses/`, so it reaches a container image too.
+
 ## [0.6.0] - 2026-10-24
 
 ### Added

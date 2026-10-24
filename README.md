@@ -226,3 +226,7 @@ Security issues: please follow [SECURITY.md](SECURITY.md) rather than opening a 
 Chosen deliberately for a network-facing server: if you run a modified Wegweiser as a
 service, its users are entitled to the source. Note that this is more restrictive than
 PowerDNS (GPLv2), Knot DNS (GPLv3) and CoreDNS (Apache-2.0).
+
+The web interface embeds three typefaces of other people's, Barlow, Barlow Condensed and
+JetBrains Mono, which are under the SIL Open Font License 1.1. Their licences are built
+into the binary beside them, and a running server serves them at `/licenses/`.
