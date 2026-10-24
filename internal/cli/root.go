@@ -236,7 +236,7 @@ func newRootCommand(opts *options) *cobra.Command {
 			newHealthCommand(opts),
 		}},
 		{"access", "Access and defaults:", []*cobra.Command{
-			newTokenCommand(opts), newTSIGCommand(opts), newSettingsCommand(opts),
+			newTokenCommand(opts), newTSIGCommand(opts), newIDPCommand(opts), newSettingsCommand(opts),
 		}},
 		{"run", "Run a server:", []*cobra.Command{
 			newServeCommand(opts), newClusterCommand(opts), newConfigCommand(opts),

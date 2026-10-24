@@ -226,6 +226,35 @@ func completeTSIGKeys(f *clientFlags) cobra.CompletionFunc {
 	}
 }
 
+// completeIDPs suggests the identity providers this server holds.
+func completeIDPs(f *clientFlags) cobra.CompletionFunc {
+	return func(c *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		ctx, cancel := context.WithTimeout(c.Context(), completionTimeout)
+		defer cancel()
+
+		client, err := f.client()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		list, err := fetchIDPs(ctx, client)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		var names []string
+		for i := range list {
+			if strings.HasPrefix(strings.ToLower(list[i].Name), strings.ToLower(prefix)) {
+				names = append(names, list[i].Name)
+			}
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
 // completeStatic suggests a fixed set, for a flag whose values are a closed
 // vocabulary this side already knows.
 func completeStatic(values ...string) cobra.CompletionFunc {

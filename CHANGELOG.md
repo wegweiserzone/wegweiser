@@ -17,6 +17,12 @@ public API is unstable and may change without a deprecation period.
   the `admin` scope, and a client secret or bind password is written and never read back.
   Signing in through one is not built yet.
 
+#### CLI
+
+- `weg idp` adds, lists, shows, changes and removes the identity providers and their group
+  mappings. A client secret or bind password is read from a file, or from standard input
+  with `-`, so that it stays out of the shell's history.
+
 #### Observation
 
 - `weg_process_start_timestamp_seconds` says when the server started. Unlike the process
