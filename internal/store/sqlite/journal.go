@@ -78,8 +78,10 @@ func (r reader) ListCommits(ctx context.Context, f store.CommitFilter) (store.Pa
 		w.add(`created_at < ?`, f.Until.UnixMilli())
 	}
 	if !f.Name.IsZero() {
-		w.add(`EXISTS (SELECT 1 FROM journal_events e
-			WHERE e.commit_id = journal_commits.id AND e.name = ?)`, f.Name.String())
+		// IN rather than a correlated EXISTS: this reads the name's events off
+		// journal_events_name_idx and looks their commits up by key, where
+		// EXISTS walked every commit in the journal to test each one.
+		w.add(`id IN (SELECT commit_id FROM journal_events WHERE name = ?)`, f.Name.String())
 	}
 
 	limit := f.EffectiveLimit()
