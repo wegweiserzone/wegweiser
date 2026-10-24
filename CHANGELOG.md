@@ -8,7 +8,13 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+#### CLI
+
+- `weg history list --name` lists what the server wrote by itself at that name too, as the
+  web interface does. A reverse entry was only ever written by the server, so its history
+  used to say that no commits matched unless `--all` was given.
 
 ## [0.6.0] - 2026-10-24
 

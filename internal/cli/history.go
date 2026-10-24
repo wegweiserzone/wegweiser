@@ -107,7 +107,9 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 				}
 				*params.Source = append(*params.Source, src)
 			}
-			if params.Source == nil && !all {
+			// One name's history is shown whole, as the web interface shows it:
+			// for a reverse entry, what followed is all there is.
+			if params.Source == nil && !all && name == "" {
 				params.Source = &[]gen.CommitSource{
 					gen.CommitSourceApi, gen.CommitSourceCli, gen.CommitSourceImport,
 				}
@@ -153,7 +155,8 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("all", "source")
 	cmd.Flags().StringVar(&actor, "actor", "", "only what this actor did")
 	cmd.Flags().StringVar(&name, "name", "",
-		"only what added or removed a record at this name, in whichever zone")
+		"only what added or removed a record at this name, in whichever zone, what the server "+
+			"wrote by itself included")
 	cmd.Flags().StringVar(&since, "since", "", "only at or after this time (a date, or a date and time)")
 	cmd.Flags().StringVar(&until, "until", "", "only before this time")
 	cmd.Flags().IntVar(&limit, "limit", 50,
