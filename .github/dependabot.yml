@@ -36,14 +36,10 @@ updates:
         dependency-type: development
         update-types: [minor, patch]
     ignore:
-      # openapi-typescript declares a peer dependency of typescript ^5.x, and
-      # the generated client is what the interface is built against. Major
-      # bumps stay out until that peer range moves.
+      # SvelteKit 3 and svelte-check declare a peer dependency of typescript
+      # ^6, so a major bump waits until they move. openapi-typescript still
+      # says ^5.x and is handed 6 by an override in web/package.json, which
+      # holds only because the types it writes from the spec came out the
+      # same; a TypeScript major is where that has to be checked again.
       - dependency-name: typescript
-        update-types: [version-update:semver-major]
-      # SvelteKit 3, and the adapter made for it, want typescript ^6, which is
-      # the bump held back above. They wait for the same peer range.
-      - dependency-name: "@sveltejs/kit"
-        update-types: [version-update:semver-major]
-      - dependency-name: "@sveltejs/adapter-static"
         update-types: [version-update:semver-major]
