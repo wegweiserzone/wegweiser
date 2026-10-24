@@ -227,7 +227,7 @@ function summarise(samples: Sample[]): Readings {
     truncated: all("weg_dns_responses_truncated_total").reduce((sum, s) => sum + s.value, 0),
     withinTarget: counted === 0 ? null : withinMillisecond / counted,
     latency,
-    startedAt: seconds("process_start_time_seconds"),
+    startedAt: seconds("weg_process_start_timestamp_seconds"),
     snapshotAt: seconds("weg_snapshot_published_timestamp_seconds"),
     zones: one("weg_snapshot_zones") ?? 0,
     records: one("weg_snapshot_records") ?? 0,

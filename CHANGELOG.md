@@ -8,7 +8,24 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+#### Observation
+
+- `weg_process_start_timestamp_seconds` says when the server started. Unlike the process
+  collector's `process_start_time_seconds`, it is there under the shipped systemd unit too,
+  which hides the boot time that one is worked out from.
+
+### Fixed
+
+#### Web interface
+
+- The overview shows the uptime again on a server run by the shipped systemd unit. It
+  showed a dash there, because the start time it read was never exported.
+
+#### CLI
+
+- `weg status --output json` carries `startedAt`, which it always meant to but never did.
 
 ## [0.7.0] - 2026-10-24
 

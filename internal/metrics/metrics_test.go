@@ -217,6 +217,7 @@ func TestWriteTo(t *testing.T) {
 		`weg_dns_queries_total{rcode="NOERROR",transport="udp",type="A"} 1`,
 		"weg_dns_query_duration_seconds_bucket",
 		"weg_build_info{",
+		"weg_process_start_timestamp_seconds ",
 		// The runtime and process collectors are registered so that an
 		// operator does not need a second exporter beside this one.
 		"go_goroutines",

@@ -52,7 +52,7 @@ test("the overview reads what the server has answered", async ({ page, server })
   await expect(page.getByRole("heading", { name: "Latency" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recent changes" })).toBeVisible();
 
-  // Uptime is derived from process_start_time_seconds, so a duration here
+  // Uptime is derived from weg_process_start_timestamp_seconds, so a duration here
   // means the exposition format was parsed rather than skipped. Read off the
   // metric itself: a page-wide match also finds the build's commit, which is
   // seven hex digits and often starts with a number followed by a letter.

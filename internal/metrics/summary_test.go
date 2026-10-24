@@ -33,6 +33,9 @@ weg_snapshot_zones 4
 # HELP weg_snapshot_records Records in the snapshot being answered from.
 # TYPE weg_snapshot_records gauge
 weg_snapshot_records 1200
+# HELP weg_process_start_timestamp_seconds When this server started.
+# TYPE weg_process_start_timestamp_seconds gauge
+weg_process_start_timestamp_seconds 1.7e+09
 `
 
 func TestSummarise(t *testing.T) {
@@ -54,6 +57,9 @@ func TestSummarise(t *testing.T) {
 	}
 	if got.Zones != 4 || got.Records != 1200 {
 		t.Errorf("snapshot = %d zones, %d records, want 4 and 1200", got.Zones, got.Records)
+	}
+	if got.StartedAt == nil || got.StartedAt.Unix() != 1_700_000_000 {
+		t.Errorf("started at = %v, want the server's own start time", got.StartedAt)
 	}
 
 	// Biggest first, so the thing worth looking at is the first line printed.

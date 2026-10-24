@@ -82,6 +82,7 @@ type Metrics struct {
 	zones   prometheus.Gauge
 	records prometheus.Gauge
 	built   prometheus.Gauge
+	started prometheus.Gauge
 
 	// load is where the under-load state is read from, published by the
 	// wiring rather than passed in, and nil until it is.
@@ -196,7 +197,17 @@ func New() *Metrics {
 			Namespace: namespace, Subsystem: "snapshot", Name: "published_timestamp_seconds",
 			Help: "When the snapshot being answered from was published.",
 		}),
+
+		// The process collector exports a start time too, but works it out
+		// from the boot time in /proc/stat, which the shipped systemd unit
+		// hides (ProcSubset=pid). The collector then leaves the series out
+		// without a word, so the uptime is taken from here instead.
+		started: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "process", Name: "start_timestamp_seconds",
+			Help: "When this server started.",
+		}),
 	}
+	m.started.Set(float64(time.Now().UnixNano()) / float64(time.Second))
 
 	underLoad := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: namespace, Subsystem: "dns", Name: "under_load",
@@ -216,7 +227,7 @@ func New() *Metrics {
 	m.reg.MustRegister(
 		m.queries, m.dropped, m.truncated, m.duration, m.size, m.notify, m.refusals,
 		m.probes, m.lag, m.behind, m.unanswered,
-		m.zones, m.records, m.built, underLoad, clusterBehind,
+		m.zones, m.records, m.built, m.started, underLoad, clusterBehind,
 		buildInfo(),
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
