@@ -20,8 +20,11 @@ public API is unstable and may change without a deprecation period.
   the strongest scope their groups map to. A person in no mapped group is refused.
   Switching the provider off or removing it ends the sessions opened through it, and a
   commit names the person and the provider. `/auth/providers` tells the sign-in page,
-  without a credential, which providers are switched on. Signing in through a directory,
-  and the sign-in page offering either, are not built yet.
+  without a credential, which providers are switched on.
+- A person signs in through an LDAP directory with `POST /auth/ldap/{providerId}`, which
+  finds their entry, binds as it with their password over TLS and forgets the password.
+  A wrong password and a name nobody has are answered alike. The sign-in page does not
+  offer either kind of provider yet.
 
 #### CLI
 

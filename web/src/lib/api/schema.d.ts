@@ -516,9 +516,12 @@ export interface paths {
         post: operations["createSession"];
         /**
          * End the session
-         * @description The cookies are cleared and the session is forgotten here, so a copy of
-         *     the cookie taken beforehand stops working too. The token it was opened
-         *     with is untouched.
+         * @description The cookies are cleared, and while the cluster takes writes the session
+         *     is recorded as ended on every member, so a copy of the cookie taken
+         *     beforehand stops working too. Without a leader the cookies are cleared
+         *     and nothing more can be done; the copy then works until it expires
+         *     (docs/decisions/d51-accounts-come-from-an-identity-provider.md). The
+         *     token it was opened with is untouched.
          */
         delete: operations["deleteSession"];
         options?: never;
@@ -542,6 +545,39 @@ export interface paths {
         get: operations["listSignInProviders"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/ldap/{providerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a directory. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign a person in through a directory
+         * @description The person's entry is looked up with the directory's filter, and the
+         *     password is checked by binding as that entry. It is passed to the
+         *     directory and forgotten; this server keeps no password
+         *     (docs/decisions/d51-accounts-come-from-an-identity-provider.md). The
+         *     person holds the strongest scope their groups map to, and a person in
+         *     no mapped group is refused.
+         *
+         *     The session it opens is the one a token opens, with the same two
+         *     cookies. Unauthenticated, and rate-limited as a token is, because a
+         *     password can be guessed the same way. A wrong password, a name nobody
+         *     has and a person in no mapped group are told apart only by the last.
+         */
+        post: operations["createDirectorySession"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1700,6 +1736,15 @@ export interface components {
         CreateSession: {
             /** @description The API token to open the session with. */
             token: string;
+        };
+        CreateDirectorySession: {
+            /** @description What the person signs in as, put into the directory's user filter escaped. */
+            username: string;
+            /**
+             * Format: password
+             * @description Passed to the directory to bind with, and kept nowhere.
+             */
+            password: string;
         };
         /** @description Who a request is authenticated as, and what it may do. */
         Session: {
@@ -2917,6 +2962,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SignInProvider"][];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createDirectorySession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a directory. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDirectorySession"];
+            };
+        };
+        responses: {
+            /** @description The session was opened. The cookies are in the headers. */
+            201: {
+                headers: {
+                    /** @description The session cookie and the CSRF cookie. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
                 };
             };
             default: components["responses"]["Problem"];

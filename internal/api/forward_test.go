@@ -248,9 +248,10 @@ func TestOnlyAMemberTakesAForwardedWrite(t *testing.T) {
 func TestEveryRouteIsSortedForForwarding(t *testing.T) {
 	t.Parallel()
 	local := map[string]bool{
-		"POST /auth/session":   true, // signing in writes nothing (D51)
-		"DELETE /auth/session": true, // the member hands the leader the session itself
-		"POST /cluster/init":   true, // this node, and no other, starts a cluster (D44)
+		"POST /auth/session":           true, // signing in writes nothing (D51)
+		"DELETE /auth/session":         true, // the member hands the leader the session itself
+		"POST /auth/ldap/{providerId}": true, // signing in writes nothing (D51)
+		"POST /cluster/init":           true, // this node, and no other, starts a cluster (D44)
 	}
 
 	spec, err := gen.GetSpec()

@@ -163,6 +163,10 @@ type Config struct {
 
 	// Now supplies the current time. Nil picks [time.Now]; tests set it.
 	Now func() time.Time
+
+	// dialLDAP connects to a directory; nil is the real thing. A test stands
+	// one in here.
+	dialLDAP func(context.Context, *apply.IdentityProvider) (directory, error)
 }
 
 // Server implements the generated API.
@@ -185,6 +189,8 @@ type Server struct {
 
 	// oidc holds what each OpenID Connect provider's discovery said.
 	oidc oidcClients
+	// dialLDAP connects to a directory; a test stands one in.
+	dialLDAP func(context.Context, *apply.IdentityProvider) (directory, error)
 
 	// ui is the embedded web interface, or nil when it is switched off.
 	ui http.Handler
@@ -217,6 +223,9 @@ func New(cfg Config) (*Server, http.Handler, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	if cfg.dialLDAP == nil {
+		cfg.dialLDAP = dialDirectory
+	}
 
 	s := &Server{
 		store:       cfg.Store,
@@ -230,6 +239,7 @@ func New(cfg Config) (*Server, http.Handler, error) {
 		onError:     cfg.OnError,
 		now:         cfg.Now,
 		limiter:     newAuthLimiter(),
+		dialLDAP:    cfg.dialLDAP,
 		tokenUse:    newTokenUse(),
 		done:        make(chan struct{}),
 	}

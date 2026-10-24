@@ -330,6 +330,8 @@ func (s *Server) unauthenticated(r *http.Request) bool {
 		return true
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, basePath+oidcPath+"/"):
 		return true
+	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, basePath+ldapPath+"/"):
+		return true
 	}
 	return false
 }
