@@ -45,9 +45,9 @@
     }
   }
 
-  const tabs = $derived<{ href: string; label: string; badge?: boolean }[]>([
+  const tabs = $derived([
     { href: base, label: "Records" },
-    { href: `${base}/check`, label: "Check", badge: true },
+    { href: `${base}/check`, label: "Check" },
     { href: `${base}/settings`, label: "Settings" },
     // The history lives in one place for the whole server; this arrives there
     // already narrowed to this zone.
@@ -55,12 +55,13 @@
   ]);
 
   /*
-   * Three things read beside the zone, each optional: the findings of a check
-   * for the badge on its tab, the last commit, and where the copies on
-   * secondaries stand. One that cannot be read leaves its place empty rather
-   * than the page broken. Read again whenever the serial moves.
+   * Two things read beside the zone, each optional: the last commit, and where
+   * the copies on secondaries stand. One that cannot be read leaves its place
+   * empty rather than the page broken. Read again whenever the serial moves.
+   *
+   * A check is not among them. It walks every record of the zone, and D31
+   * shows a diagnosis unasked only when it costs no walk.
    */
-  let findings = $state<{ errors: number; warnings: number } | null>(null);
   let last = $state<Commit | null>(null);
   let copies = $state<{ all: number; inStep: number } | null>(null);
 
@@ -68,13 +69,6 @@
     const id = zone.id;
     const name = zone.name;
     void zone.soa.serial;
-    void api
-      .get("/zones/{zoneId}/check", { path: { zoneId: id }, query: { reverse: false } })
-      .then((r) => {
-        const errors = r.findings.filter((f) => f.severity === "error").length;
-        findings = { errors, warnings: r.findings.length - errors };
-      })
-      .catch(() => (findings = null));
     void api
       .get("/commits", { query: { zoneId: id, limit: 1 } })
       .then((r) => (last = r.items[0] ?? null))
@@ -116,16 +110,6 @@
                  aria-[current=page]:bg-signal-lo aria-[current=page]:text-signal"
         >
           {tab.label}
-          {#if tab.badge && findings && findings.errors + findings.warnings > 0}
-            <!-- What a check would report, counted before anybody asks. -->
-            <span
-              class="num ml-1.5 rounded-xs px-1 text-[10px]
-                     {findings.errors > 0 ? 'bg-crit-lo text-crit' : 'bg-warn-lo text-warn'}"
-              title="{findings.errors} errors, {findings.warnings} warnings"
-            >
-              {findings.errors + findings.warnings}
-            </span>
-          {/if}
         </a>
       {/each}
     </nav>

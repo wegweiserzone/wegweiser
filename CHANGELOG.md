@@ -54,9 +54,7 @@ public API is unstable and may change without a deprecation period.
   *Serving* on every other row is gone.
 
 - A zone's page says how many records it answers from, where its copies on
-  secondaries stand, and its last change: when, by whom and what. The Check
-  tab carries the number of findings a check would report, before anybody
-  runs one.
+  secondaries stand, and its last change: when, by whom and what.
 
 - The history narrows to one name, from the clock on each record's row or
   from the Ask page, and shows everything that happened to it, the entries
