@@ -188,6 +188,8 @@ and the order is roughly what each costs against what it buys.
 | --- | --- |
 | PostgreSQL | The `Store` interface, which is why persistence is an interface at all. |
 | User accounts, and LDAP or AD behind them | D5 left the door open: the schema does not preclude users, and `sessionStore` is the seam. Tokens stay, because a program should not need an account. |
+| TLS on the API and the interface, without a proxy in front | The API listener, plain HTTP today. The certificate comes from ACME, is uploaded with its key, or is signed from a request the server writes, so that the key never leaves it. Each member answers under its own name, so each holds its own. |
+| RFC 2136 updates, for ACME's DNS-01 | `internal/apply`, so that an update is a commit like any other, and the TSIG keys of D28 to say who may send one. The scope fence does not list it, so it starts with a decision record. |
 | DNSSEC | Nothing yet. Signing touches the write path, the snapshot and the query path at once. |
 | DoT, DoH, DoQ | New listeners beside the two that exist. |
 | Views and split-horizon | The snapshot: an answer would depend on who asked, which the current one has no notion of. |
