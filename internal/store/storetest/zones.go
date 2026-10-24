@@ -347,7 +347,10 @@ func testZoneListing(t *testing.T, open Open) {
 func testEmptyZoneStream(t *testing.T, open Open) {
 	s := open(t)
 
-	for range s.IterZones(ctxOf(t)) {
+	for _, err := range s.IterZones(ctxOf(t)) {
+		if err != nil {
+			t.Fatalf("IterZones: %v", err)
+		}
 		t.Fatal("an empty store produced a zone")
 	}
 }
