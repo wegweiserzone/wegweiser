@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -19,7 +20,9 @@ import (
 // writes are the routes a member that is not leading forwards to the one that
 // is (docs/decisions/d40-a-write-reaches-the-leader.md). Whether a route
 // writes is a property of the route rather than of its method: logging in is
-// a POST, and the session it creates belongs to the node that was asked. A
+// a POST, and writes nothing (D51). Logging out is answered where it lands
+// too, because the browser's cookies are cleared there whatever the leader
+// says, and the member hands the leader the session to record itself. A
 // test holds this list to the specification, so that a route added there is
 // sorted into one side or the other on purpose.
 var writes = map[string]bool{
@@ -49,12 +52,15 @@ var writes = map[string]bool{
 const forwardedHeader = "Weg-Forwarded-Subject"
 
 // forwardedSubject is the caller as the member that authenticated it
-// describes it. The credential stays behind: a session lives on one node, and
-// one of the two kinds working would be worse than neither (D40).
+// describes it. The credential stays behind: what the leader needs is who the
+// caller is, which the member has established already (D40).
 type forwardedSubject struct {
 	TokenID string  `json:"tokenId"`
 	Name    string  `json:"name"`
 	Scopes  []Scope `json:"scopes"`
+
+	// Ends is the session a member hands over to be recorded as ended.
+	Ends *ending `json:"ends,omitempty"`
 }
 
 // forwardedAs is the header value that tells another member who a request is
@@ -173,8 +179,48 @@ func (s *Server) forwardedIdentity(next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), subjectKey{}, sub)
+		if in.Ends != nil {
+			ctx = context.WithValue(ctx, endingKey{}, in.Ends)
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, viaClusterPort{}, struct{}{})))
 	})
+}
+
+// forwardEnding hands the leader a session to record as ended, the way a
+// write is forwarded, but from here rather than from the browser: the request
+// that ended it has been answered by the time the leader is asked.
+func (s *Server) forwardEnding(ctx context.Context, e *ending) error {
+	leaderID, leader := s.cluster.Leader()
+	switch {
+	case leader == "":
+		return noLeader()
+	case cluster.IsWitness(leaderID):
+		return witnessLeads()
+	}
+	sub := subjectOf(ctx)
+	if sub == nil {
+		return errors.New("api: a session is being ended with no caller")
+	}
+	identity, err := json.Marshal(forwardedSubject{
+		TokenID: string(sub.tokenID), Name: sub.name, Scopes: sub.scopes, Ends: e,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, "http://"+leader+basePath+sessionPath, http.NoBody)
+	if err != nil {
+		return err
+	}
+	req.Header.Set(forwardedHeader, string(identity))
+	resp, err := (&http.Client{Transport: s.forwardTransport}).Do(req)
+	if err != nil {
+		return fmt.Errorf("hand the ended session to the leader at %s: %w", leader, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("the leader at %s answered %s to an ended session", leader, resp.Status)
+	}
+	return nil
 }
 
 // witnessLeads is a write while a witness leads, for the moment it takes to

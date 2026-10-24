@@ -40,13 +40,14 @@ func (s *snapshots) SetSnapshot(n *dns.Snapshot) { s.current.Store(n) }
 
 // harness is a server, the database behind it, and a token that may use it.
 type harness struct {
-	t      *testing.T
-	api    *Server
-	http   *httptest.Server
-	store  store.Store
-	snaps  *snapshots
-	stream *stream.Hub
-	token  string
+	t       *testing.T
+	api     *Server
+	http    *httptest.Server
+	store   store.Store
+	applier *apply.Applier
+	snaps   *snapshots
+	stream  *stream.Hub
+	token   string
 }
 
 // newHarness brings up an API over a fresh database, with one admin token.
@@ -103,6 +104,10 @@ func startHarness(t *testing.T, copies func(*publish.Config), tweak ...func(*Con
 	if err != nil {
 		t.Fatalf("mint the bootstrap token: %v", err)
 	}
+	// Minted as `weg serve` mints it on the way up.
+	if _, _, rerr := applier.RotateSessionKeys(t.Context()); rerr != nil {
+		t.Fatalf("mint the session key: %v", rerr)
+	}
 
 	// A small bound, so that the refusal past it is reachable in a test
 	// without opening sixteen connections. No test here opens more than two
@@ -135,7 +140,7 @@ func startHarness(t *testing.T, copies func(*publish.Config), tweak ...func(*Con
 
 	return &harness{
 		t: t, api: srvAPI, http: srv,
-		store: st, snaps: snaps, stream: hub, token: secret,
+		store: st, applier: applier, snaps: snaps, stream: hub, token: secret,
 	}
 }
 
@@ -1413,8 +1418,8 @@ func TestSession(t *testing.T) {
 				t.Errorf("%s was not cleared", c.Name)
 			}
 		}
-		// Forgotten here, not merely cleared in the browser, so a copy of the
-		// cookie taken beforehand is worth nothing either.
+		// Recorded as ended, not merely cleared in the browser, so a copy of
+		// the cookie taken beforehand is worth nothing either.
 		if got := h.do(http.MethodGet, "/zones", nil, withSession); got.StatusCode != http.StatusUnauthorized {
 			t.Errorf("status = %d for the ended session, want 401", got.StatusCode)
 		}
@@ -1471,6 +1476,171 @@ func TestSessionScopes(t *testing.T) {
 			t.Errorf("status = %d, want 204", got.StatusCode)
 		}
 	})
+}
+
+// D51: a session is a sealed cookie, so it holds wherever the key is held and
+// for as long as its token does, and nothing about it is in memory.
+func TestSessionIsSealed(t *testing.T) {
+	t.Parallel()
+
+	open := func(t *testing.T, h *harness, token string) (value, csrf string) {
+		t.Helper()
+		resp := h.do(http.MethodPost, sessionPath, gen.CreateSession{Token: token},
+			func(r *http.Request) { r.Header.Del("Authorization") })
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("open a session: status %d", resp.StatusCode)
+		}
+		return cookiesOf(t, resp)
+	}
+	with := func(value, csrf string) func(*http.Request) {
+		return func(r *http.Request) {
+			r.Header.Del("Authorization")
+			r.AddCookie(&http.Cookie{Name: sessionCookie, Value: value})
+			r.Header.Set(csrfHeader, csrf)
+		}
+	}
+	status := func(t *testing.T, h *harness, value, csrf string) int {
+		t.Helper()
+		return h.do(http.MethodGet, "/zones", nil, with(value, csrf)).StatusCode
+	}
+
+	t.Run("it outlives the server that opened it", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		value, csrf := open(t, h, h.token)
+
+		// Another server over the same database is what a restart is, and
+		// what another member holding the same key is.
+		again := h.again()
+		if got := status(t, again, value, csrf); got != http.StatusOK {
+			t.Errorf("status = %d on a server that did not open the session, want 200", got)
+		}
+		got := again.do(http.MethodPost, "/zones", gen.CreateZone{Name: "sealed.example."}, with(value, csrf))
+		if got.StatusCode != http.StatusCreated {
+			t.Errorf("a write with the session's CSRF value: status %d, want 201", got.StatusCode)
+		}
+	})
+
+	t.Run("a cookie that was tampered with opens nothing", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		value, csrf := open(t, h, h.token)
+		flipped := []byte(value)
+		flipped[len(flipped)/2] ^= 1
+		for _, v := range []string{string(flipped), value[:len(value)-4], "not a session"} {
+			if got := status(t, h, v, csrf); got != http.StatusUnauthorized {
+				t.Errorf("status = %d for %q, want 401", got, v)
+			}
+		}
+	})
+
+	t.Run("a cookie sealed under another server's key opens nothing", func(t *testing.T) {
+		t.Parallel()
+		h, other := newHarness(t), newHarness(t)
+		value, csrf := open(t, other, other.token)
+		if got := status(t, h, value, csrf); got != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", got)
+		}
+	})
+
+	t.Run("a rotation ends no session, and the one after it does", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		value, csrf := open(t, h, h.token)
+
+		rotate := func() {
+			t.Helper()
+			var keys apply.SessionKeys
+			if err := h.store.View(t.Context(), func(r store.Reader) error {
+				var verr error
+				keys, verr = apply.StoredSessionKeys(t.Context(), r)
+				return verr
+			}); err != nil {
+				t.Fatalf("read the session keys: %v", err)
+			}
+			next, err := keys.Rotate(time.Now())
+			if err != nil {
+				t.Fatalf("Rotate: %v", err)
+			}
+			raw, err := json.Marshal(next)
+			if err != nil {
+				t.Fatalf("encode the session keys: %v", err)
+			}
+			if err := h.applier.SetSettings(t.Context(),
+				[]apply.SettingChange{{Key: apply.SessionKeySetting, Value: raw}}); err != nil {
+				t.Fatalf("SetSettings: %v", err)
+			}
+		}
+
+		rotate()
+		if got := status(t, h, value, csrf); got != http.StatusOK {
+			t.Errorf("status = %d after one rotation, want 200", got)
+		}
+		got := h.do(http.MethodPost, "/zones", gen.CreateZone{Name: "rotated.example."}, with(value, csrf))
+		if got.StatusCode != http.StatusCreated {
+			t.Errorf("the CSRF value after one rotation: status %d, want 201", got.StatusCode)
+		}
+		rotate()
+		if got := status(t, h, value, csrf); got != http.StatusUnauthorized {
+			t.Errorf("status = %d after two rotations, want 401", got)
+		}
+	})
+
+	t.Run("revoking the token ends its sessions", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		var minted gen.TokenCreated
+		h.decode(h.do(http.MethodPost, "/tokens", gen.CreateToken{
+			Name: "a writer", Scopes: []gen.Scope{gen.ScopeWrite},
+		}), http.StatusCreated, &minted)
+		value, csrf := open(t, h, minted.Secret)
+		if got := status(t, h, value, csrf); got != http.StatusOK {
+			t.Fatalf("status = %d before the revocation, want 200", got)
+		}
+
+		h.decode(h.do(http.MethodDelete, "/tokens/"+minted.Token.Id, nil), http.StatusNoContent, nil)
+		if got := status(t, h, value, csrf); got != http.StatusUnauthorized {
+			t.Errorf("status = %d after the token was revoked, want 401", got)
+		}
+	})
+
+	t.Run("an ended session is ended on every server", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		value, csrf := open(t, h, h.token)
+		again := h.again()
+
+		if got := h.do(http.MethodDelete, sessionPath, nil, with(value, csrf)); got.StatusCode != http.StatusNoContent {
+			t.Fatalf("end the session: status %d", got.StatusCode)
+		}
+		if got := status(t, again, value, csrf); got != http.StatusUnauthorized {
+			t.Errorf("status = %d on the other server, want 401", got)
+		}
+	})
+}
+
+// again brings up another API over h's database and applier, sharing nothing
+// else with it: a restart of h, or another member holding its data.
+func (h *harness) again() *harness {
+	h.t.Helper()
+	srvAPI, handler, err := New(Config{
+		Store: h.store, Applier: h.applier, Snapshots: h.snaps, Metrics: metrics.New(),
+		Stream:  stream.NewHub(stream.Options{}),
+		OnError: func(err error) { h.t.Errorf("the second server reported a fault: %v", err) },
+	})
+	if err != nil {
+		h.t.Fatalf("build the second API: %v", err)
+	}
+	h.t.Cleanup(func() {
+		if cerr := srvAPI.Close(); cerr != nil {
+			h.t.Errorf("close the second API: %v", cerr)
+		}
+	})
+	srv := httptest.NewServer(handler)
+	h.t.Cleanup(srv.Close)
+	other := *h
+	other.api, other.http = srvAPI, srv
+	return &other
 }
 
 // cookiesOf pulls the session and CSRF values out of a login response.

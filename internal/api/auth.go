@@ -111,10 +111,10 @@ func (s *subject) allows(need Scope) bool {
 // The context keys. Unexported types, so nothing another package stores can
 // collide with them.
 type (
-	subjectKey   struct{}
-	sessionKey   struct{}
-	sessionIDKey struct{}
-	factsKey     struct{}
+	subjectKey struct{}
+	sessionKey struct{}
+	endingKey  struct{}
+	factsKey   struct{}
 )
 
 // facts are the things about a request that a strict handler cannot see,
@@ -174,14 +174,14 @@ func sessionOf(ctx context.Context) *session {
 	return s
 }
 
-// sessionIDOf returns the identifier addressing that session, so that ending
-// it can find it again.
-func sessionIDOf(ctx context.Context) string {
-	sid, ok := ctx.Value(sessionIDKey{}).(string)
+// endingOf returns the session a request to end one names: the one it
+// authenticated with, or the one another member forwarded. Nil otherwise.
+func endingOf(ctx context.Context) *ending {
+	e, ok := ctx.Value(endingKey{}).(*ending)
 	if !ok {
-		return ""
+		return nil
 	}
-	return sid
+	return e
 }
 
 // isTokenInvalid reports whether a failure was the credential rather than the
@@ -223,12 +223,16 @@ func (s *Server) authenticate(ctx context.Context, secret string) (*subject, err
 		}
 		return nil, err
 	}
+	return s.tokenSubject(tok, sum[:])
+}
 
+// tokenSubject is the caller holding the token found by hash.
+func (s *Server) tokenSubject(tok *store.Token, hash []byte) (*subject, error) {
 	// The lookup already matched on the hash, so this compares two values that
 	// are equal or the database is lying. It is here because D5 says token
 	// comparison is constant-time, and a comparison that only happens to be
 	// safe is one refactor away from not being.
-	if subtle.ConstantTimeCompare(tok.Hash, sum[:]) != 1 {
+	if subtle.ConstantTimeCompare(tok.Hash, hash) != 1 {
 		return nil, ErrTokenInvalid
 	}
 	if !tok.Active(s.now()) {
@@ -331,9 +335,12 @@ func (s *Server) credential(r *http.Request) (context.Context, *subject, error) 
 	if cerr != nil {
 		return nil, nil, ErrTokenInvalid
 	}
-	sess := s.sessions.lookup(c.Value, s.now())
-	if sess == nil {
-		return nil, nil, ErrTokenInvalid
+	sess, sub, err := s.openedSession(ctx, c.Value)
+	if err != nil {
+		if !isTokenInvalid(err) {
+			return nil, nil, internal(err)
+		}
+		return nil, nil, err
 	}
 
 	// Only here. A bearer token is not ambient (a cross-site request cannot
@@ -345,11 +352,57 @@ func (s *Server) credential(r *http.Request) (context.Context, *subject, error) 
 		}
 	}
 
-	sub := &subject{tokenID: sess.tokenID, name: sess.name, scopes: sess.scopes}
 	ctx = context.WithValue(ctx, subjectKey{}, sub)
 	ctx = context.WithValue(ctx, sessionKey{}, sess)
-	ctx = context.WithValue(ctx, sessionIDKey{}, c.Value)
+	ctx = context.WithValue(ctx, endingKey{}, &ending{ID: endedID(sess.ID), Until: sess.Expires})
 	return ctx, sub, nil
+}
+
+// openedSession opens a session cookie and resolves it to its caller.
+//
+// The key, the list of sessions ended early and the token are read in one
+// transaction, so that a session is judged against one state of the store.
+// The token is looked up every time: a session holds exactly what its token
+// does, for as long as the token still does.
+func (s *Server) openedSession(ctx context.Context, value string) (*session, *subject, error) {
+	now := s.now()
+	var (
+		sess *session
+		tok  *store.Token
+	)
+	err := s.store.View(ctx, func(r store.Reader) error {
+		keys, kerr := apply.StoredSessionKeys(ctx, r)
+		if kerr != nil {
+			return kerr
+		}
+		if sess = openSession(keys, value, now); sess == nil {
+			return ErrTokenInvalid
+		}
+		ended, eerr := apply.StoredEndedSessions(ctx, r)
+		if eerr != nil {
+			return eerr
+		}
+		id := endedID(sess.ID)
+		for _, e := range ended {
+			if e.ID == id {
+				return ErrTokenInvalid
+			}
+		}
+		var terr error
+		tok, terr = r.TokenByHash(ctx, sess.Token)
+		return terr
+	})
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil, ErrTokenInvalid
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	sub, err := s.tokenSubject(tok, sess.Token)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sess, sub, nil
 }
 
 // notAllowed reports a caller whose token does not reach this far.

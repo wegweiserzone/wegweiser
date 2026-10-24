@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -317,6 +318,11 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 		if _, _, rerr := applier.RotateCookieSecrets(ctx); rerr != nil {
 			return fmt.Errorf("mint the cookie secret: %w", rerr)
 		}
+		// A browser session is sealed under a key minted the same way, for the
+		// same reason (docs/decisions/d51-accounts-come-from-an-identity-provider.md).
+		if _, _, rerr := applier.RotateSessionKeys(ctx); rerr != nil {
+			return fmt.Errorf("mint the session key: %w", rerr)
+		}
 	}
 
 	if nerr := notifier.Start(); nerr != nil {
@@ -329,17 +335,25 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 	}
 	defer func() { err = errors.Join(err, stopProber(prober)) }()
 
-	// The secret turns over for as long as the server runs. Stopped before the
-	// store closes, because it writes through it.
+	// The secrets turn over for as long as the server runs. Stopped before the
+	// store closes, because they are written through it.
 	rotations, stopRotating := context.WithCancel(ctx)
-	rotating := make(chan struct{})
-	go func() {
-		defer close(rotating)
-		rotateCookies(rotations, applier, report)
-	}()
+	var rotating sync.WaitGroup
+	rotating.Go(func() {
+		rotate(rotations, "the cookie secret", apply.CookieRotation, func(ctx context.Context) (time.Time, error) {
+			secrets, _, rerr := applier.RotateCookieSecrets(ctx)
+			return secrets.RotatedAt, rerr
+		}, report)
+	})
+	rotating.Go(func() {
+		rotate(rotations, "the session key", apply.SessionRotation, func(ctx context.Context) (time.Time, error) {
+			keys, _, rerr := applier.RotateSessionKeys(ctx)
+			return keys.RotatedAt, rerr
+		}, report)
+	})
 	defer func() {
 		stopRotating()
-		<-rotating
+		rotating.Wait()
 	}()
 
 	if serr := srv.Start(); serr != nil {
@@ -480,22 +494,25 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 
 // shutdown stops the DNS server, giving the queries in flight a deadline of
 // their own: the context that got us here is already cancelled.
-// rotateCookies keeps the cookie secret turning over for as long as the server
-// runs.
+// rotate keeps a secret turning over for as long as the server runs: the
+// cookie secret, or the key browser sessions are sealed under.
 //
 // It sleeps until the pair it holds is due rather than on a cadence of its
 // own, so the schedule is the one in the database and a restart does not push
-// the next rotation an hour out. A failed rotation is reported and retried
-// shortly: the secret in force stays valid, so there is nothing urgent about
-// it, and the cookies handed out under it keep working meanwhile.
-func rotateCookies(ctx context.Context, applier *apply.Applier, report func(error)) {
+// the next rotation a whole period out. A failed rotation is reported and
+// retried shortly: the secret in force stays valid, so there is nothing urgent
+// about it, and what was handed out under it keeps working meanwhile.
+func rotate(
+	ctx context.Context, what string, every time.Duration,
+	turn func(context.Context) (time.Time, error), report func(error),
+) {
 	const retry = time.Minute
 
 	for {
 		wait := retry
 		// A rotation is a setting written through the applier, so the new
-		// secret reaches the query path the way every other change does.
-		secrets, _, err := applier.RotateCookieSecrets(ctx)
+		// secret reaches whatever holds a copy the way every other change does.
+		rotatedAt, err := turn(ctx)
 		switch {
 		case errors.Is(err, cluster.ErrNotLeader), errors.Is(err, cluster.ErrBehind),
 			errors.Is(err, cluster.ErrRemoved):
@@ -503,9 +520,9 @@ func rotateCookies(ctx context.Context, applier *apply.Applier, report func(erro
 			// leader does it alone (docs/decisions/d41-what-follows-applying-a-batch.md),
 			// and a member that has left the cluster has said why already.
 		case err != nil:
-			report(fmt.Errorf("rotate the cookie secret: %w", err))
+			report(fmt.Errorf("rotate %s: %w", what, err))
 		default:
-			wait = max(time.Until(secrets.RotatedAt.Add(apply.CookieRotation)), retry)
+			wait = max(time.Until(rotatedAt.Add(every)), retry)
 		}
 
 		select {

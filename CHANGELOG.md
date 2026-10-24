@@ -28,6 +28,10 @@ public API is unstable and may change without a deprecation period.
 
 #### Web interface
 
+- Signing in holds on every member of a cluster and survives a restart. It used to hold
+  on the member it was made on, and only until that member restarted. Signing out ends
+  the session on every member while the cluster takes writes, and revoking a token ends
+  the sessions opened with it.
 - The overview shows the uptime again on a server run by the shipped systemd unit. It
   showed a dash there, because the start time it read was never exported.
 

@@ -181,8 +181,7 @@ type Server struct {
 	onError          func(error)
 	now              func() time.Time
 
-	limiter  *authLimiter
-	sessions *sessionStore
+	limiter *authLimiter
 
 	// ui is the embedded web interface, or nil when it is switched off.
 	ui http.Handler
@@ -228,7 +227,6 @@ func New(cfg Config) (*Server, http.Handler, error) {
 		onError:     cfg.OnError,
 		now:         cfg.Now,
 		limiter:     newAuthLimiter(),
-		sessions:    newSessionStore(),
 		tokenUse:    newTokenUse(),
 		done:        make(chan struct{}),
 	}

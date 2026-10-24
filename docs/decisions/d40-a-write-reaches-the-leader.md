@@ -1,6 +1,7 @@
 # D40 — A write is forwarded to the leader, never bounced back to the client
 
 - Decided: 2026-09-10
+- Amended by: [D51](d51-accounts-come-from-an-identity-provider.md)
 
 ## Context
 

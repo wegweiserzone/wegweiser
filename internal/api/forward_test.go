@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/cluster"
+	"github.com/wegweiserzone/wegweiser/internal/store"
 )
 
 // follower stands in for a member that does not lead. It reaches the leader
@@ -132,8 +134,8 @@ func TestAFollowerForwardsAWrite(t *testing.T) {
 	})
 }
 
-// Logging in creates a session on the node that was asked, which is where the
-// browser will present it, so it is never forwarded (D40).
+// Logging in writes nothing, so it is answered where it lands and works while
+// no member leads (D51).
 func TestALoginStaysWhereItLands(t *testing.T) {
 	t.Parallel()
 	f := newHarness(t, func(cfg *Config) { cfg.Cluster = &follower{leader: unreachableAddr(t)} })
@@ -143,6 +145,41 @@ func TestALoginStaysWhereItLands(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		t.Errorf("logging in on a follower is %d, want it answered here", resp.StatusCode)
+	}
+}
+
+// D51: logging out on a member that does not lead clears the browser there and
+// hands the leader the session to record, so that no member opens it again.
+func TestALogoutOnAFollowerIsRecordedByTheLeader(t *testing.T) {
+	t.Parallel()
+	leader := newLeading(t)
+	f := newHarness(t, func(cfg *Config) { cfg.Cluster = &follower{leader: leader.port} })
+
+	resp := f.do(http.MethodPost, sessionPath, gen.CreateSession{Token: f.token},
+		func(r *http.Request) { r.Header.Del("Authorization") })
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("open a session on the follower: status %d", resp.StatusCode)
+	}
+	value, csrf := cookiesOf(t, resp)
+	out := f.do(http.MethodDelete, sessionPath, nil, func(r *http.Request) {
+		r.Header.Del("Authorization")
+		r.AddCookie(&http.Cookie{Name: sessionCookie, Value: value})
+		r.Header.Set(csrfHeader, csrf)
+	})
+	if out.StatusCode != http.StatusNoContent {
+		t.Fatalf("log out on the follower: status %d", out.StatusCode)
+	}
+
+	var ended []apply.EndedSession
+	if err := leader.store.View(t.Context(), func(r store.Reader) error {
+		var verr error
+		ended, verr = apply.StoredEndedSessions(t.Context(), r)
+		return verr
+	}); err != nil {
+		t.Fatalf("read what the leader ended: %v", err)
+	}
+	if len(ended) != 1 || ended[0].Until.IsZero() {
+		t.Errorf("the leader holds %+v, want the session the follower ended", ended)
 	}
 }
 
@@ -211,8 +248,8 @@ func TestOnlyAMemberTakesAForwardedWrite(t *testing.T) {
 func TestEveryRouteIsSortedForForwarding(t *testing.T) {
 	t.Parallel()
 	local := map[string]bool{
-		"POST /auth/session":   true, // a session is node-local (D5, D32)
-		"DELETE /auth/session": true,
+		"POST /auth/session":   true, // signing in writes nothing (D51)
+		"DELETE /auth/session": true, // the member hands the leader the session itself
 		"POST /cluster/init":   true, // this node, and no other, starts a cluster (D44)
 	}
 

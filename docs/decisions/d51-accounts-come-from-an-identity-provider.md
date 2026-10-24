@@ -1,7 +1,8 @@
 # D51 — Accounts come from an identity provider, and a session is signed rather than stored
 
 - Decided: 2026-10-24
-- Amends: [D5](d05-tokens-and-sessions.md), [D32](d32-what-else-the-cluster-replicates.md)
+- Amends: [D5](d05-tokens-and-sessions.md), [D32](d32-what-else-the-cluster-replicates.md),
+  [D40](d40-a-write-reaches-the-leader.md)
 
 ## Context
 
@@ -85,4 +86,8 @@ wrong, and both libraries are what most Go programs speaking them use.
 
 ## Where this stands
 
-Not built.
+Sessions are built as described, for the token sessions that exist: sealed in
+`internal/api/session.go` under the `session_keys` setting, rotated with the cookie secret's
+loop, and ended through the `ended_sessions` setting, which a member that does not lead hands
+to the leader. Providers, group mappings and ending every session of one person are not
+built.

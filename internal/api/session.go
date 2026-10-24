@@ -2,18 +2,23 @@ package api
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hkdf"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/netip"
-	"sync"
 	"time"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 )
 
@@ -29,104 +34,126 @@ const (
 	// reach, because a request that could authenticate would not need it.
 	sessionPath = "/auth/session"
 
-	// sessionTTL is how long a session lasts. Long enough for a working day,
-	// short enough that a laptop left open overnight is not an open door.
-	sessionTTL = 12 * time.Hour
-
-	// sessionBytes is the length of a session identifier and of a CSRF value.
+	// sessionBytes is the length of a session identifier.
 	sessionBytes = 32
 )
 
-// session is a browser's authenticated state.
-type session struct {
-	tokenID store.TokenID
-	name    string
-	scopes  []Scope
-	csrf    string
-	expires time.Time
-}
-
-// sessionStore holds the open sessions.
+// session is a browser's authenticated state, as its cookie carries it.
 //
-// TODO: in memory, so a restart ends every session and the interface asks for
-// the token again. That is a real cost and a deliberate one for v0.1, which is
-// single-node by scope: the alternative is a table, four store methods and a
-// migration, and a session is not zone data; it does not belong in the
-// journal, and it is not what the store exists to hold. The seam is this type;
-// a store-backed one replaces it without the rest of the package noticing.
-type sessionStore struct {
-	mu sync.Mutex
-	// Keyed by the SHA-256 of the identifier rather than by the identifier, so
-	// that what is held in memory is not itself a usable credential: the same
-	// reason the database holds a token's hash and not the token.
-	open map[[sha256.Size]byte]*session
+// Nothing about it is held on the server. The cookie is sealed under the
+// cluster's session key, so every member that holds the key opens it, and a
+// restart or a failover ends nothing
+// (docs/decisions/d51-accounts-come-from-an-identity-provider.md).
+type session struct {
+	// ID names the session, so that it can be ended before its time. It is
+	// minted when the session opens and means nothing on its own.
+	ID string `json:"id"`
+
+	// Token is the SHA-256 of the token the session was opened with. The token
+	// is looked up by it on every request, so that revoking the token ends its
+	// sessions everywhere and a session never holds more than the token does.
+	Token []byte `json:"tok"`
+
+	// Expires is when the session ends.
+	Expires time.Time `json:"exp"`
+
+	// csrf is the value the page has to repeat, worked out from the key the
+	// session was opened under rather than carried.
+	csrf string
 }
 
-func newSessionStore() *sessionStore {
-	return &sessionStore{open: make(map[[sha256.Size]byte]*session)}
-}
+// The labels the session key is stretched under, one per use, so that the
+// key sealing a cookie is never also the one a CSRF value is computed with.
+const (
+	sealLabel = "wegweiser session seal"
+	csrfLabel = "wegweiser session csrf"
+)
 
-// start opens a session and returns the identifier that addresses it.
-func (s *sessionStore) start(sub *subject, now time.Time) (string, *session, error) {
-	id, err := randomSecret()
+// sealSession writes a session into the value its cookie carries: AES-256-GCM
+// under the current key, with the nonce in front.
+func sealSession(key apply.SessionKey, sess *session) (string, error) {
+	plain, err := json.Marshal(sess)
 	if err != nil {
-		return "", nil, err
+		return "", fmt.Errorf("api: encode the session: %w", err)
 	}
-	csrf, err := randomSecret()
+	aead, err := sealerFor(key)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
-
-	sess := &session{
-		tokenID: sub.tokenID,
-		name:    sub.name,
-		scopes:  sub.scopes,
-		csrf:    csrf,
-		expires: now.Add(sessionTTL),
+	nonce := make([]byte, aead.NonceSize(), aead.NonceSize()+len(plain)+aead.Overhead())
+	if _, rerr := rand.Read(nonce); rerr != nil {
+		return "", fmt.Errorf("api: generate a session nonce: %w", rerr)
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sweepLocked(now)
-	s.open[sha256.Sum256([]byte(id))] = sess
-	return id, sess, nil
+	sealed := aead.Seal(nonce, nonce, plain, []byte(sessionCookie))
+	return base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
-// lookup resolves an identifier to a session that has not expired.
-func (s *sessionStore) lookup(id string, now time.Time) *session {
-	sum := sha256.Sum256([]byte(id))
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	sess, ok := s.open[sum]
-	if !ok {
+// openSession reads a cookie back, under the current key or the one before
+// it. A value that opens under neither, or that has run out, is no session.
+func openSession(keys apply.SessionKeys, value string, now time.Time) *session {
+	raw, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
 		return nil
 	}
-	if !now.Before(sess.expires) {
-		delete(s.open, sum)
-		return nil
-	}
-	return sess
-}
-
-// end forgets a session, so that a copy of the cookie taken beforehand stops
-// working as well as the browser that had it.
-func (s *sessionStore) end(id string) {
-	sum := sha256.Sum256([]byte(id))
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.open, sum)
-}
-
-// sweepLocked drops what has expired. It runs when a session is opened, which
-// is often enough: the map grows only there.
-func (s *sessionStore) sweepLocked(now time.Time) {
-	for k, sess := range s.open {
-		if !now.Before(sess.expires) {
-			delete(s.open, k)
+	for _, key := range []apply.SessionKey{keys.Current, keys.Previous} {
+		if key.IsZero() {
+			continue
 		}
+		aead, aerr := sealerFor(key)
+		if aerr != nil || len(raw) < aead.NonceSize() {
+			continue
+		}
+		nonce, sealed := raw[:aead.NonceSize()], raw[aead.NonceSize():]
+		plain, oerr := aead.Open(nil, nonce, sealed, []byte(sessionCookie))
+		if oerr != nil {
+			continue
+		}
+		var sess session
+		if uerr := json.Unmarshal(plain, &sess); uerr != nil {
+			return nil
+		}
+		if sess.ID == "" || len(sess.Token) != sha256.Size || !now.Before(sess.Expires) {
+			return nil
+		}
+		csrf, cerr := csrfFor(key, sess.ID)
+		if cerr != nil {
+			return nil
+		}
+		sess.csrf = csrf
+		return &sess
 	}
+	return nil
+}
+
+// sealerFor is the AEAD a session key seals with.
+func sealerFor(key apply.SessionKey) (cipher.AEAD, error) {
+	sub, err := hkdf.Key(sha256.New, key[:], nil, sealLabel, apply.SessionKeyLen)
+	if err != nil {
+		return nil, fmt.Errorf("api: derive the session seal: %w", err)
+	}
+	block, err := aes.NewCipher(sub)
+	if err != nil {
+		return nil, fmt.Errorf("api: build the session seal: %w", err)
+	}
+	return cipher.NewGCM(block)
+}
+
+// csrfFor is the CSRF value of the session by this identifier, under key.
+func csrfFor(key apply.SessionKey, id string) (string, error) {
+	sub, err := hkdf.Key(sha256.New, key[:], nil, csrfLabel, sha256.Size)
+	if err != nil {
+		return "", fmt.Errorf("api: derive the CSRF key: %w", err)
+	}
+	mac := hmac.New(sha256.New, sub)
+	mac.Write([]byte(id))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+// endedID is how an ended session is recorded: the hash of its identifier,
+// so that the list holds nothing a cookie could be made from.
+func endedID(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(sum[:])
 }
 
 // randomSecret returns an unguessable value in a form a cookie may carry.
@@ -160,11 +187,40 @@ func (s *Server) CreateSession(
 		return nil, unauthorized("the token is not valid")
 	}
 
-	id, sess, err := s.sessions.start(sub, s.now())
+	var keys apply.SessionKeys
+	if verr := s.store.View(ctx, func(r store.Reader) error {
+		var kerr error
+		keys, kerr = apply.StoredSessionKeys(ctx, r)
+		return kerr
+	}); verr != nil {
+		return nil, verr
+	}
+	if keys.IsZero() {
+		// Minted as the server starts, or arriving in the log a member is
+		// replaying, so this is the moment before either has happened.
+		return nil, &apiError{
+			status: http.StatusServiceUnavailable,
+			kind:   typeUnavailable,
+			title:  "No session can be opened yet",
+			detail: "this server holds no key to seal a session under yet; a member that is joining " +
+				"receives it from the cluster shortly. A bearer token works meanwhile",
+		}
+	}
+
+	id, err := randomSecret()
 	if err != nil {
 		return nil, err
 	}
-	return &sessionOpened{id: id, sess: sess, secure: secure}, nil
+	hash := sha256.Sum256([]byte(req.Body.Token))
+	sess := &session{ID: id, Token: hash[:], Expires: s.now().Add(apply.SessionLifetime).UTC()}
+	value, err := sealSession(keys.Current, sess)
+	if err != nil {
+		return nil, err
+	}
+	if sess.csrf, err = csrfFor(keys.Current, id); err != nil {
+		return nil, err
+	}
+	return &sessionOpened{value: value, sess: sess, sub: sub, secure: secure}, nil
 }
 
 // checkTransport refuses to put a credential on a cookie that would travel the
@@ -200,19 +256,47 @@ func (s *Server) GetSession(
 	// the token's here would say the request is about to stop working when it
 	// is the credential that is.
 	if sess := sessionOf(ctx); sess != nil {
-		out.ExpiresAt = ptr(sess.expires)
+		out.ExpiresAt = ptr(sess.Expires)
 	}
 	return gen.GetSession200JSONResponse(out), nil
 }
 
 // DeleteSession ends the session, if the request came with one.
+//
+// The browser's cookies are cleared whatever happens. Recording the session as
+// ended is a write, and it is one the cluster may not be taking: a member that
+// does not lead hands it to the one that does, and without a leader the cookie
+// a browser no longer holds stays valid until it runs out (D51).
 func (s *Server) DeleteSession(
 	ctx context.Context, _ gen.DeleteSessionRequestObject,
 ) (gen.DeleteSessionResponseObject, error) {
-	if id := sessionIDOf(ctx); id != "" {
-		s.sessions.end(id)
+	if e := endingOf(ctx); e != nil {
+		if err := s.endSession(ctx, e); err != nil {
+			s.report(fmt.Errorf("the session is closed in the browser, and not recorded as ended: %w", err))
+		}
 	}
 	return &sessionClosed{secure: secureOf(ctx)}, nil
+}
+
+// ending is a session being ended, as the member that holds the cookie
+// describes it to the one that leads.
+type ending struct {
+	ID    string    `json:"id"`
+	Until time.Time `json:"until"`
+}
+
+// endSession records a session as ended, here or on the leader. It decides
+// the way a write is forwarded, and one handed over by another member is
+// never handed on.
+func (s *Server) endSession(ctx context.Context, e *ending) error {
+	c := s.cluster
+	if c != nil && c.Replicating() && !c.IsLeader() && ctx.Value(viaClusterPort{}) == nil {
+		if err := c.Left(); err != nil {
+			return err
+		}
+		return s.forwardEnding(ctx, e)
+	}
+	return s.applier.EndSession(ctx, e.ID, e.Until)
 }
 
 // sessionOpened writes the two cookies and the body.
@@ -222,19 +306,20 @@ func (s *Server) DeleteSession(
 // the credential, which the page may not read, and the CSRF value, which it
 // must.
 type sessionOpened struct {
-	id     string
+	value  string
 	sess   *session
+	sub    *subject
 	secure bool
 }
 
 func (r *sessionOpened) VisitCreateSessionResponse(w http.ResponseWriter) error {
 	http.SetCookie(w, &http.Cookie{
 		Name:  sessionCookie,
-		Value: r.id,
+		Value: r.value,
 		// Scoped to the API: it is the only thing that reads it, and a cookie
 		// sent where it is not needed is a cookie in more logs than necessary.
 		Path:     basePath,
-		Expires:  r.sess.expires,
+		Expires:  r.sess.Expires,
 		HttpOnly: true,
 		Secure:   r.secure,
 		SameSite: http.SameSiteStrictMode,
@@ -245,7 +330,7 @@ func (r *sessionOpened) VisitCreateSessionResponse(w http.ResponseWriter) error 
 		// Readable by the page, and at the root, because the interface is
 		// served from there and has to put this value in a header.
 		Path:     "/",
-		Expires:  r.sess.expires,
+		Expires:  r.sess.Expires,
 		HttpOnly: false,
 		Secure:   r.secure,
 		SameSite: http.SameSiteStrictMode,
@@ -254,9 +339,9 @@ func (r *sessionOpened) VisitCreateSessionResponse(w http.ResponseWriter) error 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	return json.NewEncoder(w).Encode(gen.Session{
-		Name:      r.sess.name,
-		Scopes:    scopesToAPI(r.sess.scopes),
-		ExpiresAt: ptr(r.sess.expires),
+		Name:      r.sub.name,
+		Scopes:    scopesToAPI(r.sub.scopes),
+		ExpiresAt: ptr(r.sess.Expires),
 	})
 }
 
