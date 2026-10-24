@@ -78,6 +78,29 @@ func (s *Snapshot) WithoutZone(name zone.Name) *Snapshot {
 	return s.clone(name, nil)
 }
 
+// Covering returns the apex of the zone that answers for a name, the one a
+// query for it would be answered from, and false when no zone here covers it.
+func (s *Snapshot) Covering(name zone.Name) (zone.Name, bool) {
+	t := s.zoneFor(name)
+	if t == nil {
+		return zone.Name{}, false
+	}
+	return t.name, true
+}
+
+// Answering returns how many records a zone answers from, its SOA included,
+// and false for a zone the snapshot does not serve, such as a disabled one.
+func (s *Snapshot) Answering(apex zone.Name) (int, bool) {
+	if s == nil {
+		return 0, false
+	}
+	t, ok := s.zones[apex]
+	if !ok {
+		return 0, false
+	}
+	return t.count, true
+}
+
 // Zones returns the number of zones the snapshot answers for.
 func (s *Snapshot) Zones() int {
 	if s == nil {

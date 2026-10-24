@@ -765,6 +765,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Say what this server answers for a question
+         * @description Answered from the snapshot the query path is serving, by the same
+         *     function, so it is what a query over TCP would be told. What depends on
+         *     the client and the transport is left out: the casing it used,
+         *     truncation to a UDP size, and the cookie check under load.
+         *
+         *     A name no zone here covers is answered as the query path answers it,
+         *     refused and with the reason, rather than as an error of the request.
+         */
+        get: operations["ask"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cluster": {
         parameters: {
             query?: never;
@@ -1108,6 +1134,11 @@ export interface components {
             autoReverse?: boolean;
             /** @description A disabled zone is invisible on the wire, not merely marked. */
             disabled: boolean;
+            /**
+             * Format: int64
+             * @description How many records the server answers from for this zone, its SOA included, counted the way /healthz counts them. Given in listings, and absent while the zone is disabled.
+             */
+            records?: number;
             comment?: string;
             /** Format: date-time */
             createdAt: string;
@@ -1653,6 +1684,38 @@ export interface components {
              * @example 192.0.2.1:8054
              */
             address: string;
+        };
+        /** @description What this server answers for one question. */
+        Asked: {
+            /** @description The name asked about */
+            name: string;
+            /** @description The type asked for. */
+            type: string;
+            /** @description The response code */
+            rcode: string;
+            /** @description The AA bit, which says this server is an authority for the name asked. */
+            authoritative: boolean;
+            /**
+             * @description What kind of answer it is. `alias` is an answer that starts with a CNAME the question did not ask for; `nodata` is a name that exists without the type asked for; `referral` hands the question to the name servers of a delegated child; `failed` is a SERVFAIL, such as a CNAME chain longer than the server follows.
+             * @enum {string}
+             */
+            outcome: "answer" | "alias" | "nodata" | "nxdomain" | "referral" | "refused" | "notImplemented" | "failed";
+            /** @description The zone that answered. Absent when none covers the name. */
+            zone?: string;
+            /** @description The server's own reason for a response its code alone does not explain, the extended error of RFC 8914. */
+            explanation?: string;
+            answer: components["schemas"]["AnsweredRecord"][];
+            authority: components["schemas"]["AnsweredRecord"][];
+            additional: components["schemas"]["AnsweredRecord"][];
+        };
+        /** @description One record of a response, as a zonefile writes it. */
+        AnsweredRecord: {
+            name: string;
+            /** Format: int64 */
+            ttl: number;
+            class: string;
+            type: string;
+            data: string;
         };
         ClusterStatus: {
             self: components["schemas"]["ClusterMember"];
@@ -2811,6 +2874,32 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    ask: {
+        parameters: {
+            query: {
+                /** @description The name asked about. A missing trailing dot is added. */
+                name: string;
+                /** @description The type asked for, as a mnemonic or as TYPE123. */
+                type?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the server answers, and what kind of answer it is. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asked"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     getCluster: {
         parameters: {
             query?: never;
@@ -2895,6 +2984,8 @@ export interface operations {
                 source?: components["schemas"]["CommitSource"][];
                 /** @description Match the recorded actor exactly. */
                 actor?: string;
+                /** @description Only commits that added or removed a record owned by this name, in whichever zone: the history of one name. */
+                name?: string;
                 /** @description Only commits at or after this time. */
                 since?: string;
                 /** @description Only commits before this time. */

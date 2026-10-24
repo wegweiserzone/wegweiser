@@ -28,6 +28,11 @@
       icon: "M2 12h4l3-7 4 15 3-8h6",
     },
     {
+      href: "/ask",
+      label: "Ask",
+      icon: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-4-4M9 9.2a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6.9M11 14h.01",
+    },
+    {
       href: "/history",
       label: "History",
       icon: "M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v4l3 2",

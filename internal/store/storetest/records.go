@@ -272,7 +272,10 @@ func testRecords(t *testing.T, open Open) {
 		t.Parallel()
 		s := open(t)
 
-		for range s.IterZoneRecords(ctxOf(t), newID[zone.ZoneID]()) {
+		for _, err := range s.IterZoneRecords(ctxOf(t), newID[zone.ZoneID]()) {
+			if err != nil {
+				t.Fatalf("IterZoneRecords: %v", err)
+			}
 			t.Fatal("an unknown zone produced a record")
 		}
 	})

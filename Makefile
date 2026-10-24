@@ -29,6 +29,13 @@ GOLANGCI_LINT := $(GOBIN)/golangci-lint
 GOVULNCHECK   := $(GOBIN)/govulncheck
 OAPI_CODEGEN  := $(GOBIN)/oapi-codegen
 
+# Pinned, because "latest" turned CI red on changes that touched no code. A new
+# golangci-lint brings new findings; a new oapi-codegen writes different code
+# from the same spec, which generate-check then calls stale. The lint version
+# is repeated in .github/workflows/ci.yml.
+GOLANGCI_LINT_VERSION := v2.15.0
+OAPI_CODEGEN_VERSION  := v2.8.0
+
 FUZZTIME ?= 30s
 
 # The web interface is built with npm but is not needed to build the binary:
@@ -237,10 +244,10 @@ fuzz: ## Run every fuzz target for FUZZTIME (default 30s)
 tools: $(GOLANGCI_LINT) $(GOVULNCHECK) $(OAPI_CODEGEN) ## Install the development tools
 
 $(GOLANGCI_LINT):
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 $(GOVULNCHECK):
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 
 $(OAPI_CODEGEN):
-	go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
+	go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)

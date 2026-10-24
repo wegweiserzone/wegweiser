@@ -18,10 +18,10 @@ concurrency:
 env:
   GOTOOLCHAIN: local
 
-# Every job asks for the newest 1.26.x: "1.26" with check-latest. Without
-# check-latest, setup-go takes whichever 1.26 the runner image already holds,
-# which trails a security release by days, and govulncheck reports the
-# standard library of the older one. The go directive in go.mod is the minimum
+# Every job but the fuzz smoke, which says why, asks for the newest 1.26.x:
+# "1.26" with check-latest. Without check-latest, setup-go takes whichever
+# 1.26 the runner image already holds, which trails a security release by
+# days, and govulncheck reports the standard library of the older one. The go directive in go.mod is the minimum
 # this module supports, not the version it is built and checked with.
 jobs:
   lint:
@@ -41,12 +41,13 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          # The same version as GOLANGCI_LINT_VERSION in the Makefile.
+          version: v2.15.0
           args: --timeout=5m
 
       - name: Formatting
         run: |
-          go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest fmt --diff ./... \
+          go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 fmt --diff ./... \
             || (echo "::error::code is not formatted; run 'make fmt'" && exit 1)
 
       - name: go.mod is tidy
@@ -212,9 +213,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # 1.27, not 1.26: the 1.26 fuzzer can report its own -fuzztime running
+      # out as "context deadline exceeded" and fail a clean run, with no input
+      # to show for it (go.dev/issue/75804). The fix was not backported.
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version: "1.27"
           check-latest: true
           cache: true
 

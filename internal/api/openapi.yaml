@@ -56,6 +56,10 @@ tags:
       The configuration the other end of a zone transfer needs. This server
       writes it and never installs it; docs/decisions/ D34 says where that line
       is drawn and why.
+  - name: ask
+    description: |
+      What this server answers for a question, decided the way the query path
+      decides it (docs/decisions/ D49).
   - name: cluster
     description: |
       The servers this one keeps its data in step with. Managing them needs
@@ -1032,6 +1036,37 @@ paths:
                 items: { $ref: "#/components/schemas/SecondaryStanding" }
         default: { $ref: "#/components/responses/Problem" }
 
+  /ask:
+    get:
+      operationId: ask
+      tags: [ask]
+      summary: Say what this server answers for a question
+      description: |
+        Answered from the snapshot the query path is serving, by the same
+        function, so it is what a query over TCP would be told. What depends on
+        the client and the transport is left out: the casing it used,
+        truncation to a UDP size, and the cookie check under load.
+
+        A name no zone here covers is answered as the query path answers it,
+        refused and with the reason, rather than as an error of the request.
+      parameters:
+        - name: name
+          in: query
+          required: true
+          description: The name asked about. A missing trailing dot is added.
+          schema: { type: string }
+        - name: type
+          in: query
+          description: The type asked for, as a mnemonic or as TYPE123.
+          schema: { type: string, default: A }
+      responses:
+        "200":
+          description: What the server answers, and what kind of answer it is.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Asked" }
+        default: { $ref: "#/components/responses/Problem" }
+
   /cluster:
     get:
       operationId: getCluster
@@ -1151,6 +1186,12 @@ paths:
         - name: actor
           in: query
           description: Match the recorded actor exactly.
+          schema: { type: string }
+        - name: name
+          in: query
+          description: >-
+            Only commits that added or removed a record owned by this name, in
+            whichever zone: the history of one name.
           schema: { type: string }
         - name: since
           in: query
@@ -1480,6 +1521,13 @@ components:
         disabled:
           type: boolean
           description: A disabled zone is invisible on the wire, not merely marked.
+        records:
+          type: integer
+          format: int64
+          description: >-
+            How many records the server answers from for this zone, its SOA
+            included, counted the way /healthz counts them. Given in listings,
+            and absent while the zone is disabled.
         comment: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -2209,6 +2257,55 @@ components:
           type: string
           description: Where the other members reach it, and where a new node asks to join.
           example: "192.0.2.1:8054"
+
+    Asked:
+      type: object
+      description: What this server answers for one question.
+      required: [name, type, rcode, authoritative, outcome, answer, authority, additional]
+      properties:
+        name: { type: string, description: The name asked about, absolute. }
+        type: { type: string, description: The type asked for. }
+        rcode: { type: string, description: The response code, as NOERROR or NXDOMAIN. }
+        authoritative:
+          type: boolean
+          description: The AA bit, which says this server is an authority for the name asked.
+        outcome:
+          type: string
+          enum: [answer, alias, nodata, nxdomain, referral, refused, notImplemented, failed]
+          description: >-
+            What kind of answer it is. `alias` is an answer that starts with a
+            CNAME the question did not ask for; `nodata` is a name that exists
+            without the type asked for; `referral` hands the question to the
+            name servers of a delegated child; `failed` is a SERVFAIL, such as
+            a CNAME chain longer than the server follows.
+        zone:
+          type: string
+          description: The zone that answered. Absent when none covers the name.
+        explanation:
+          type: string
+          description: >-
+            The server's own reason for a response its code alone does not
+            explain, the extended error of RFC 8914.
+        answer:
+          type: array
+          items: { $ref: "#/components/schemas/AnsweredRecord" }
+        authority:
+          type: array
+          items: { $ref: "#/components/schemas/AnsweredRecord" }
+        additional:
+          type: array
+          items: { $ref: "#/components/schemas/AnsweredRecord" }
+
+    AnsweredRecord:
+      type: object
+      description: One record of a response, as a zonefile writes it.
+      required: [name, ttl, class, type, data]
+      properties:
+        name: { type: string }
+        ttl: { type: integer, format: int64 }
+        class: { type: string }
+        type: { type: string }
+        data: { type: string }
 
     ClusterStatus:
       type: object

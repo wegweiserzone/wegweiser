@@ -232,7 +232,7 @@ func newRootCommand(opts *options) *cobra.Command {
 			newZoneCommand(opts), newRecordCommand(opts), newHistoryCommand(opts),
 		}},
 		{"watch", "Watch a running server:", []*cobra.Command{
-			newStatusCommand(opts), newQueryCommand(opts), newSecondaryCommand(opts),
+			newStatusCommand(opts), newAskCommand(opts), newQueryCommand(opts), newSecondaryCommand(opts),
 			newHealthCommand(opts),
 		}},
 		{"access", "Access and defaults:", []*cobra.Command{

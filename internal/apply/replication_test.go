@@ -273,8 +273,8 @@ func TestNothingIsWrittenWhileExclusiveRuns(t *testing.T) {
 		outside <- err
 	}()
 	select {
-	case <-outside:
-		t.Fatal("a write went through while Exclusive held the lock")
+	case err := <-outside:
+		t.Fatalf("a write went through while Exclusive held the lock (err %v)", err)
 	case <-time.After(100 * time.Millisecond):
 	}
 

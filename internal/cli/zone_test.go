@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/dns"
 	"github.com/wegweiserzone/wegweiser/internal/metrics"
+	"github.com/wegweiserzone/wegweiser/internal/publish"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 	"github.com/wegweiserzone/wegweiser/internal/store/sqlite"
 	"github.com/wegweiserzone/wegweiser/internal/stream"
@@ -64,7 +66,21 @@ func newServer(t *testing.T, tweak ...func(*api.Config)) server {
 		t.Fatalf("migrate: %v", merr)
 	}
 
-	applier, err := apply.New(st, apply.Options{})
+	// The snapshot follows every write, as in `weg serve`, so that what the
+	// commands are told about the wire (weg ask) is what the wire would say.
+	holder := &snapshots{}
+	pub, err := publish.New(publish.Config{
+		Store: st, Snapshots: holder,
+		OnError: func(err error) { t.Errorf("the publisher reported a fault: %v", err) },
+	})
+	if err != nil {
+		t.Fatalf("build the publisher: %v", err)
+	}
+	if lerr := pub.Load(t.Context()); lerr != nil {
+		t.Fatalf("build the first snapshot: %v", lerr)
+	}
+
+	applier, err := apply.New(st, apply.Options{OnApplied: pub.Applied})
 	if err != nil {
 		t.Fatalf("build the applier: %v", err)
 	}
@@ -72,16 +88,6 @@ func newServer(t *testing.T, tweak ...func(*api.Config)) server {
 	if err != nil {
 		t.Fatalf("mint a token: %v", err)
 	}
-
-	var snap *dns.Snapshot
-	if verr := st.View(t.Context(), func(r store.Reader) error {
-		var berr error
-		snap, berr = dns.Rebuild(t.Context(), r)
-		return berr
-	}); verr != nil {
-		t.Fatalf("build the first snapshot: %v", verr)
-	}
-	holder := &snapshots{current: snap}
 
 	hub := stream.NewHub(stream.Options{})
 	cfg := api.Config{
@@ -123,10 +129,10 @@ func newServer(t *testing.T, tweak ...func(*api.Config)) server {
 	return server{addr: "http://" + l.Addr().String(), token: token, stream: hub, store: st}
 }
 
-type snapshots struct{ current *dns.Snapshot }
+type snapshots struct{ current atomic.Pointer[dns.Snapshot] }
 
-func (s *snapshots) Snapshot() *dns.Snapshot     { return s.current }
-func (s *snapshots) SetSnapshot(n *dns.Snapshot) { s.current = n }
+func (s *snapshots) Snapshot() *dns.Snapshot     { return s.current.Load() }
+func (s *snapshots) SetSnapshot(n *dns.Snapshot) { s.current.Store(n) }
 
 func TestZoneImportAndExport(t *testing.T) {
 	t.Parallel()
@@ -315,5 +321,25 @@ func TestZoneWithoutAToken(t *testing.T) {
 	// leave somebody who has never run this before with nowhere to go.
 	if !strings.Contains(stderr.String(), tokenEnv) {
 		t.Errorf("stderr = %q, want it to name the environment variable", stderr.String())
+	}
+}
+
+// weg ask answers with what the server answers, the kind of answer first.
+func TestAsk(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+	mustRun(t, srv, "zone", "create", "example.com")
+	mustRun(t, srv, "record", "add", "example.com", "www", "A", "192.0.2.10")
+
+	out := mustRun(t, srv, "ask", "www.example.com")
+	if !strings.HasPrefix(out, "NOERROR from example.com.: 1 record") ||
+		!strings.Contains(out, "www.example.com.  3600  IN  A  192.0.2.10") {
+		t.Errorf("weg ask www.example.com says:\n%s", out)
+	}
+	if out := mustRun(t, srv, "ask", "nope.example.com"); !strings.HasPrefix(out, "NXDOMAIN from example.com.: no such name") {
+		t.Errorf("weg ask nope.example.com says:\n%s", out)
+	}
+	if out := mustRun(t, srv, "ask", "example.org", "mx"); !strings.HasPrefix(out, "REFUSED: ") {
+		t.Errorf("weg ask example.org mx says:\n%s", out)
 	}
 }

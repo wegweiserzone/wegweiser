@@ -2556,3 +2556,115 @@ func TestAWriteSaysWhatItTookAway(t *testing.T) {
 		t.Errorf("deleting took away %v, want the PTR", got)
 	}
 }
+
+// D49: the API says what the query path would answer, and names the kind of
+// answer so that no client has to work it out from the sections again.
+func TestAskSaysWhatTheServerAnswers(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	z := h.createZone("example.com.")
+	for _, rec := range []gen.CreateRecord{
+		{Name: "www.example.com.", Type: "A", Data: "192.0.2.10"},
+		{Name: "web.example.com.", Type: "CNAME", Data: "www.example.com."},
+		{Name: "old.example.com.", Type: "CNAME", Data: "gone.example.com."},
+		{Name: "sub.example.com.", Type: "NS", Data: "ns1.elsewhere.example."},
+	} {
+		h.createRecord(z.Id, rec)
+	}
+
+	ask := func(query string) gen.Asked {
+		t.Helper()
+		var out gen.Asked
+		h.decode(h.do(http.MethodGet, "/ask?"+query, nil), http.StatusOK, &out)
+		return out
+	}
+	for _, tc := range []struct {
+		query   string
+		outcome gen.AskedOutcome
+		rcode   string
+		first   string
+	}{
+		{"name=www.example.com", gen.AskedOutcomeAnswer, "NOERROR", "www.example.com. A 192.0.2.10"},
+		{"name=web.example.com.&type=A", gen.AskedOutcomeAlias, "NOERROR", "web.example.com. CNAME www.example.com."},
+		// The name exists; the one it leads to does not, and the code says so
+		// for the end of the chain (RFC 6604).
+		{"name=old.example.com.", gen.AskedOutcomeAlias, "NXDOMAIN", "old.example.com. CNAME gone.example.com."},
+		{"name=web.example.com.&type=ANY", gen.AskedOutcomeAnswer, "NOERROR", "web.example.com. CNAME www.example.com."},
+		{"name=www.example.com.&type=MX", gen.AskedOutcomeNodata, "NOERROR", ""},
+		{"name=nope.example.com.", gen.AskedOutcomeNxdomain, "NXDOMAIN", ""},
+		{"name=host.sub.example.com.", gen.AskedOutcomeReferral, "NOERROR", ""},
+		{"name=example.org.", gen.AskedOutcomeRefused, "REFUSED", ""},
+	} {
+		got := ask(tc.query)
+		if got.Outcome != tc.outcome || got.Rcode != tc.rcode {
+			t.Errorf("%s: %s %s, want %s %s", tc.query, got.Rcode, got.Outcome, tc.rcode, tc.outcome)
+		}
+		if tc.first != "" {
+			if len(got.Answer) == 0 {
+				t.Errorf("%s: no answer, want %q first", tc.query, tc.first)
+			} else if a := got.Answer[0]; a.Name+" "+a.Type+" "+a.Data != tc.first {
+				t.Errorf("%s: answer starts %s %s %s, want %q", tc.query, a.Name, a.Type, a.Data, tc.first)
+			}
+		}
+	}
+
+	t.Run("it says which zone answered, and why when the code alone does not", func(t *testing.T) {
+		if got := ask("name=www.example.com."); deref(got.Zone, "") != "example.com." || !got.Authoritative {
+			t.Errorf("zone %q, authoritative %v; want example.com., true", deref(got.Zone, ""), got.Authoritative)
+		}
+		got := ask("name=example.org.")
+		if got.Zone != nil || deref(got.Explanation, "") == "" {
+			t.Errorf("a name nothing covers: zone %v, explanation %q; want none and a reason",
+				got.Zone, deref(got.Explanation, ""))
+		}
+	})
+
+	t.Run("a type that is not one is the request's mistake", func(t *testing.T) {
+		h.decode(h.do(http.MethodGet, "/ask?name=www.example.com.&type=AAA", nil), http.StatusBadRequest, nil)
+	})
+}
+
+// A listing says how many records each zone answers from, as /healthz counts
+// them, and says nothing for a zone that is not answered at all.
+func TestAZoneListingCountsWhatEachZoneAnswersFrom(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	served := h.createZone("example.com.")
+	h.createRecord(served.Id, gen.CreateRecord{Name: "www.example.com.", Type: "A", Data: "192.0.2.10"})
+	off := h.createZone("off.example.")
+	h.decode(h.do(http.MethodPatch, "/zones/"+off.Id, gen.UpdateZone{Disabled: ptr(true)}), http.StatusOK, nil)
+
+	var page gen.ZonePage
+	h.decode(h.do(http.MethodGet, "/zones", nil), http.StatusOK, &page)
+	counts := map[string]*int64{}
+	for _, z := range page.Items {
+		counts[z.Name] = z.Records
+	}
+	// The SOA, the apex NS the zone was created with, and www.
+	if got := counts["example.com."]; got == nil || *got != 3 {
+		t.Errorf("example.com. answers from %v records, want 3", got)
+	}
+	if got := counts["off.example."]; got != nil {
+		t.Errorf("a disabled zone is said to answer from %d records, want nothing said", *got)
+	}
+}
+
+// The history of one name: what was ever added or removed at it, in
+// whichever zone the commit was made.
+func TestHistoryOfOneName(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	z := h.createZone("example.com.")
+	rec := h.createRecord(z.Id, gen.CreateRecord{Name: "www.example.com.", Type: "A", Data: "192.0.2.10"}).Record
+	h.createRecord(z.Id, gen.CreateRecord{Name: "mail.example.com.", Type: "A", Data: "192.0.2.25"})
+	h.decode(h.do(http.MethodPatch, "/records/"+rec.Id, gen.UpdateRecord{Data: ptr("192.0.2.11")}),
+		http.StatusOK, nil)
+
+	got := h.commits(t, "?name=www.example.com")
+	if len(got) != 2 {
+		t.Fatalf("commits touching www = %d, want the addition and the change", len(got))
+	}
+	if c := deref(got[0].Comment, ""); c != "change www A 192.0.2.10 → 192.0.2.11" {
+		t.Errorf("newest commit touching www says %q", c)
+	}
+}

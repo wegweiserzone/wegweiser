@@ -57,6 +57,7 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 		sources []string
 		all     bool
 		actor   string
+		name    string
 		since   string
 		until   string
 		limit   int
@@ -78,6 +79,7 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 			"  weg history list example.com --kind rollback\n" +
 			"  weg history list --all                     # and what followed from it\n" +
 			"  weg history list --source system           # only what followed\n" +
+			"  weg history list --name www.example.com    # what happened to one name\n" +
 			"  weg history list --since 2026-08-01 --actor alice",
 
 		RunE: func(c *cobra.Command, args []string) error {
@@ -113,6 +115,9 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 			if actor != "" {
 				params.Actor = &actor
 			}
+			if name != "" {
+				params.Name = &name
+			}
 			for _, when := range []struct {
 				flag string
 				text string
@@ -147,6 +152,8 @@ func newHistoryListCommand(opts *options, f *clientFlags) *cobra.Command {
 		"also what the server wrote by itself because of what somebody did")
 	cmd.MarkFlagsMutuallyExclusive("all", "source")
 	cmd.Flags().StringVar(&actor, "actor", "", "only what this actor did")
+	cmd.Flags().StringVar(&name, "name", "",
+		"only what added or removed a record at this name, in whichever zone")
 	cmd.Flags().StringVar(&since, "since", "", "only at or after this time (a date, or a date and time)")
 	cmd.Flags().StringVar(&until, "until", "", "only before this time")
 	cmd.Flags().IntVar(&limit, "limit", 50,

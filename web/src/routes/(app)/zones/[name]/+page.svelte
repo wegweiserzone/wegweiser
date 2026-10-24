@@ -63,7 +63,7 @@
     { label: "Type", width: "7rem" },
     { label: "TTL", align: "right", width: "6rem", narrow: false },
     { label: "Data" },
-    { label: "", width: "6rem" },
+    { label: "", width: "7.5rem" },
   ];
 
   /** managed reports a record this server writes and maintains. */
@@ -501,12 +501,35 @@
       </td>
 
       <td class="py-1.5 pr-5 pl-3 text-right">
-        {#if writable && record.type !== "SOA"}
-          <!-- Quiet until pointed at, and always there on a screen nothing hovers over. -->
-          <div
-            class="flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100
-                   group-focus-within:opacity-100 pointer-coarse:opacity-100"
+        <!-- Quiet until pointed at, and always there on a screen nothing hovers over. -->
+        <div
+          class="flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100
+                 group-focus-within:opacity-100 pointer-coarse:opacity-100"
+        >
+          <!-- Asking is a read, so a session that may only read has it too. -->
+          <a
+            href="/ask?name={encodeURIComponent(record.name)}&type={encodeURIComponent(record.type)}"
+            aria-label="Ask what the server answers for {record.name} {record.type}"
+            title="Ask what the server answers"
+            class="grid size-6 place-items-center rounded-xs text-ink-faint transition-colors
+                   hover:bg-raised hover:text-ink"
           >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-3.5">
+              <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-4-4" />
+            </svg>
+          </a>
+          <a
+            href="/history?name={encodeURIComponent(record.name)}"
+            aria-label="History of {record.name}"
+            title="What happened to this name"
+            class="grid size-6 place-items-center rounded-xs text-ink-faint transition-colors
+                   hover:bg-raised hover:text-ink"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-3.5">
+              <path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 8v4l3 2" />
+            </svg>
+          </a>
+          {#if writable && record.type !== "SOA"}
             <button
               type="button"
               onclick={() => startEdit(record)}
@@ -529,8 +552,8 @@
                 <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
               </svg>
             </button>
-          </div>
-        {/if}
+          {/if}
+        </div>
       </td>
     {/snippet}
 

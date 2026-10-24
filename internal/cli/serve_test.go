@@ -166,22 +166,39 @@ func TestServe(t *testing.T) {
 	// The query path, the metrics and the API are three packages that know
 	// nothing about each other; what connects them is the wiring above, and
 	// this is where a wire left unattached shows. It runs after the queries
-	// above, so both an answer and a denial have been counted by now.
+	// above, but a query is counted after its response has been sent, so the
+	// last one can still be on its way into the counters: it is scraped until
+	// everything is there.
 	t.Run("it exports what it has been doing", func(t *testing.T) {
-		out := scrape(t, status.APIAddress,
-			bootstrapToken(t, awaitStderr(t, &stderr, api.TokenPrefix)))
-
-		for _, want := range []string{
+		token := bootstrapToken(t, awaitStderr(t, &stderr, api.TokenPrefix))
+		wants := []string{
 			`weg_dns_queries_total{rcode="NOERROR",transport="udp",type="A"} 1`,
 			`weg_dns_queries_total{rcode="NXDOMAIN",transport="udp",type="A"} 1`,
 			// The snapshot gauges follow every publish, including the first
 			// one at startup, which no write is responsible for.
 			"weg_snapshot_zones 1",
 			"weg_snapshot_records 2",
-		} {
-			if !strings.Contains(out, want) {
-				t.Errorf("the exposition does not say %q", want)
+		}
+
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			out := scrape(t, status.APIAddress, token)
+			var missing []string
+			for _, want := range wants {
+				if !strings.Contains(out, want) {
+					missing = append(missing, want)
+				}
 			}
+			if len(missing) == 0 {
+				return
+			}
+			if time.Now().After(deadline) {
+				for _, want := range missing {
+					t.Errorf("the exposition does not say %q", want)
+				}
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
 	})
 

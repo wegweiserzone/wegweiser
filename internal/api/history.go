@@ -36,6 +36,13 @@ func (s *Server) ListCommits(
 			f.Sources = append(f.Sources, journal.Source(src))
 		}
 	}
+	if req.Params.Name != nil && *req.Params.Name != "" {
+		name, err := parseName("the name", *req.Params.Name)
+		if err != nil {
+			return nil, err
+		}
+		f.Name = name
+	}
 
 	var page store.Page[*journal.Commit]
 	if err := s.store.View(ctx, func(r store.Reader) error {

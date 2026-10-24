@@ -211,6 +211,12 @@ func TestHistoryListFiltersByCause(t *testing.T) {
 		t.Errorf("--all leaves out what the server did on its own:\n%s", all)
 	}
 
+	// One name's history, whichever zone it happened in.
+	www := mustRun(t, srv, "history", "list", "--name", "www.example.com")
+	if !strings.Contains(www, "add www A 192.0.2.10") || strings.Contains(www, "create zone") {
+		t.Errorf("--name www.example.com lists:\n%s", www)
+	}
+
 	system := mustRun(t, srv, "history", "list", "--source", "system")
 	if !strings.Contains(system, "2.0.192.in-addr.arpa.") {
 		t.Errorf("the reverse entry the server wrote is not listed:\n%s", system)

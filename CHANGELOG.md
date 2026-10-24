@@ -16,6 +16,50 @@ public API is unstable and may change without a deprecation period.
   counts the voters, how many make a majority, and how many of them answered
   the member that was asked.
 
+- `GET /ask?name=…&type=…` says what this server answers for a question, as
+  a query over TCP would be told: the response code, the AA bit, the three
+  sections, which zone answered, the server's own reason where the code is
+  not enough, and what kind of answer it is (an answer, an alias, no data, no
+  such name, a referral, refused). It reads the snapshot the query path
+  serves, so it never says anything the server would not (D49).
+
+- A zone in a listing carries `records`, how many records the server answers
+  from for it, counted as `/healthz` counts them.
+
+- `GET /commits?name=…` lists the commits that added or removed a record at
+  one name, in whichever zone: the history of a name rather than of a zone.
+
+#### CLI
+
+- `weg ask NAME [TYPE]` says what the server answers for a name, over the
+  API, so it needs neither `dig` nor a route to the DNS port. It opens with
+  the response code, the zone and the kind of answer in one line, as in
+  `NOERROR from example.com.: an alias, 2 records starting with the CNAME`,
+  and lists the sections below.
+
+- `weg history list --name www.example.com` lists what happened to one name.
+
+#### Web interface
+
+- An **Ask** page (`g a`) says what the server answers for a name and a type:
+  what kind of answer it is first, then the response code, the zone and the
+  records, section by section. Every name in an answer asks about itself, so
+  an alias or a delegation can be followed by clicking. Each record has a way
+  to ask about it from its row, a name in the query stream leads to the same
+  question, and a name typed into the palette can be asked about from there.
+
+- The zone list says how many records each zone answers from and how many of
+  its copies on secondaries are in step, with each state under the pointer.
+  A disabled zone says so beside its name, and the column that said
+  *Serving* on every other row is gone.
+
+- A zone's page says how many records it answers from, where its copies on
+  secondaries stand, and its last change: when, by whom and what.
+
+- The history narrows to one name, from the clock on each record's row or
+  from the Ask page, and shows everything that happened to it, the entries
+  the server wrote by itself included.
+
 #### Cluster
 
 - `weg cluster status --watch` asks again every two seconds, so a member
