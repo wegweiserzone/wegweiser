@@ -2,7 +2,7 @@
  * The API, as the rest of the interface sees it.
  */
 
-import { ApiError, Client, NetworkError } from "./client";
+import { ApiError, Client, NetworkError, basePath } from "./client";
 import type { components } from "./schema";
 
 export { ApiError, NetworkError, basePath } from "./client";
@@ -37,6 +37,10 @@ export type ClusterMember = components["schemas"]["ClusterMember"];
 export type ClusterStatus = components["schemas"]["ClusterStatus"];
 export type ZoneImported = components["schemas"]["ZoneImported"];
 export type ReverseConflictPolicy = components["schemas"]["ReverseConflictPolicy"];
+export type SignInProvider = components["schemas"]["SignInProvider"];
+export type IdentityProvider = components["schemas"]["IdentityProvider"];
+export type IdentityProviderInput = components["schemas"]["IdentityProviderInput"];
+export type GroupMapping = components["schemas"]["GroupMapping"];
 
 /**
  * onUnauthenticated is what the interface does when a session has ended.
@@ -63,6 +67,28 @@ export const api = new Client({
 /** signIn exchanges a token for a browser session. */
 export function signIn(token: string) {
   return api.post("/auth/session", { body: { token } });
+}
+
+/** providers names what may be signed in through beside a token (D51). */
+export function providers() {
+  return api.get("/auth/providers");
+}
+
+/** signInToDirectory has a directory check a name and password. */
+export function signInToDirectory(providerId: string, username: string, password: string) {
+  return api.post("/auth/ldap/{providerId}", {
+    path: { providerId },
+    body: { username, password },
+  });
+}
+
+/**
+ * oidcStart is where the browser goes to sign in through an OpenID Connect
+ * provider. It is a navigation rather than a call: the provider's page has to
+ * be shown, and it comes back to the server, not to this script.
+ */
+export function oidcStart(providerId: string) {
+  return `${basePath}/auth/oidc/${encodeURIComponent(providerId)}/start`;
 }
 
 /** whoami reports who this browser is authenticated as, if anybody. */

@@ -92,5 +92,6 @@ loop, and ended through the `ended_sessions` setting, which a member that does n
 to the leader. Providers and their group mappings are held in the `identity_providers`
 setting and managed through `/identity-providers`. Signing in through an OpenID Connect
 provider is built in `internal/api/oidc.go`, the flow sealed in a cookie of its own under the
-session key. Signing in through a directory is built in `internal/api/ldap.go`. The sign-in
-page offering the providers, and ending every session of one person, are not built.
+session key. Signing in through a directory is built in `internal/api/ldap.go`, and the
+sign-in page offers both. Managing the providers in the interface, and ending every session
+of one person, are not built.

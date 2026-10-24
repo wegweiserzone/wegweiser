@@ -23,8 +23,13 @@ public API is unstable and may change without a deprecation period.
   without a credential, which providers are switched on.
 - A person signs in through an LDAP directory with `POST /auth/ldap/{providerId}`, which
   finds their entry, binds as it with their password over TLS and forgets the password.
-  A wrong password and a name nobody has are answered alike. The sign-in page does not
-  offer either kind of provider yet.
+  A wrong password and a name nobody has are answered alike.
+
+#### Web interface
+
+- The sign-in page offers the identity providers that are switched on: a button for each
+  OpenID Connect provider, and a directory's name and password beside the token. When a
+  provider refuses somebody, the page says why.
 
 #### CLI
 

@@ -8,7 +8,16 @@
  * server is the only one who can give it.
  */
 
-import { ApiError, NetworkError, allows, onSessionEnded, signIn, signOut, whoami } from "./api";
+import {
+  ApiError,
+  NetworkError,
+  allows,
+  onSessionEnded,
+  signIn,
+  signInToDirectory,
+  signOut,
+  whoami,
+} from "./api";
 import type { Scope, Session } from "./api";
 
 /** Status is what the interface should be showing. */
@@ -33,6 +42,32 @@ onSessionEnded(() => {
   status = "anonymous";
   who = null;
 });
+
+/** attempt opens a session one way, and says why not if it does not work. */
+async function attempt(open: () => Promise<Session>, notAccepted: string): Promise<boolean> {
+  busy = true;
+  refused = null;
+  try {
+    who = await open();
+    status = "authenticated";
+    return true;
+  } catch (err) {
+    if (err instanceof NetworkError) {
+      refused = "The server could not be reached. Check that it is running and that this page is served by it.";
+    } else if (err instanceof ApiError && err.status === 429) {
+      refused = err.detail ?? "Too many attempts. Wait a moment and try again.";
+    } else if (err instanceof ApiError && err.unauthenticated) {
+      refused = notAccepted;
+    } else if (err instanceof ApiError) {
+      refused = err.detail ?? err.title;
+    } else {
+      refused = "Something went wrong that the interface does not recognise.";
+    }
+    return false;
+  } finally {
+    busy = false;
+  }
+}
 
 export const session = {
   get status(): Status {
@@ -77,29 +112,28 @@ export const session = {
   },
 
   /** open exchanges a token for a session. */
-  async open(token: string): Promise<boolean> {
-    busy = true;
-    refused = null;
-    try {
-      who = await signIn(token.trim());
-      status = "authenticated";
-      return true;
-    } catch (err) {
-      if (err instanceof NetworkError) {
-        refused = "The server could not be reached. Check that it is running and that this page is served by it.";
-      } else if (err instanceof ApiError && err.status === 429) {
-        refused = err.detail ?? "Too many attempts. Wait a moment and try again.";
-      } else if (err instanceof ApiError && err.unauthenticated) {
-        refused = "That token was not accepted. Tokens start with weg_ and are shown once, when they are created.";
-      } else if (err instanceof ApiError) {
-        refused = err.detail ?? err.title;
-      } else {
-        refused = "Something went wrong that the interface does not recognise.";
-      }
-      return false;
-    } finally {
-      busy = false;
-    }
+  open(token: string): Promise<boolean> {
+    return attempt(
+      () => signIn(token.trim()),
+      "That token was not accepted. Tokens start with weg_ and are shown once, when they are created.",
+    );
+  },
+
+  /** openThrough signs a person in through a directory. */
+  openThrough(providerId: string, username: string, password: string): Promise<boolean> {
+    return attempt(
+      () => signInToDirectory(providerId, username.trim(), password),
+      "That name and password were not accepted.",
+    );
+  },
+
+  /**
+   * refuse says why a sign-in did not work, for one that failed somewhere
+   * this page was not: an OpenID Connect provider sends the browser back with
+   * the reason in the address.
+   */
+  refuse(reason: string) {
+    refused = reason;
   },
 
   /** close ends the session here and on the server. */

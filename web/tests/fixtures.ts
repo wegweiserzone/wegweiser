@@ -33,7 +33,7 @@ export const test = base.extend<Fixtures>({
 export async function signIn(page: Page, server: Server, token = server.token) {
   await page.goto(server.url);
   await page.getByLabel("API token").fill(token);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
 }
 

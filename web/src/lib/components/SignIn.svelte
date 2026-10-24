@@ -2,8 +2,10 @@
   /**
    * The session screen.
    */
-  import { api, NetworkError } from "#lib/api/index.ts";
-  import type { Health } from "#lib/api/index.ts";
+  import { onMount } from "svelte";
+  import { replaceState } from "$app/navigation";
+  import { api, NetworkError, oidcStart, providers } from "#lib/api/index.ts";
+  import type { Health, SignInProvider } from "#lib/api/index.ts";
   import { session } from "#lib/session.svelte.ts";
   import Button from "./Button.svelte";
   import Chip from "./Chip.svelte";
@@ -13,6 +15,35 @@
   let token = $state("");
   let health = $state<Health | null>(null);
   let reachable = $state(true);
+
+  // What may be signed in through beside a token (D51). A token always works,
+  // so a server that cannot say leaves the token form alone on the page.
+  let offered = $state<SignInProvider[]>([]);
+  const redirected = $derived(offered.filter((p) => p.kind === "oidc"));
+  const directories = $derived(offered.filter((p) => p.kind === "ldap"));
+
+  /** method is "token", or the directory being signed in through. */
+  let method = $state("token");
+  let username = $state("");
+  let password = $state("");
+  const directory = $derived(directories.find((d) => d.id === method));
+
+  onMount(() => {
+    providers()
+      .then((p) => (offered = p))
+      .catch(() => (offered = []));
+
+    // A provider that refused sends the browser back here with the reason.
+    // It is shown once and taken out of the address, so that a reload does
+    // not say it again.
+    const url = new URL(window.location.href);
+    const reason = url.searchParams.get("signin_error");
+    if (reason) {
+      session.refuse(reason);
+      url.searchParams.delete("signin_error");
+      replaceState(url, {});
+    }
+  });
 
   $effect(() => {
     api
@@ -31,8 +62,18 @@
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
+    if (directory) {
+      const opened = await session.openThrough(directory.id, username, password);
+      password = "";
+      if (opened) username = "";
+      return;
+    }
     if (await session.open(token)) token = "";
   }
+
+  const ready = $derived(
+    directory ? username.trim() !== "" && password !== "" : token.trim() !== "",
+  );
 </script>
 
 <main class="flex min-h-screen items-center justify-center px-6 py-12">
@@ -69,16 +110,57 @@
       {/if}
     </div>
 
+    {#if redirected.length > 0}
+      <div class="flex flex-col gap-2">
+        {#each redirected as p (p.id)}
+          <Button
+            type="button"
+            class="h-9 w-full justify-center"
+            onclick={() => window.location.assign(oidcStart(p.id))}
+          >
+            Sign in with {p.name}
+          </Button>
+        {/each}
+      </div>
+    {/if}
+
     <form class="flex flex-col gap-4" onsubmit={submit}>
-      <Field
-        label="API token"
-        type="password"
-        autocomplete="current-password"
-        spellcheck={false}
-        placeholder="weg_…"
-        bind:value={token}
-        hint="Exchanged once for a session cookie a script on this page cannot read. The token itself is never stored in the browser."
-      />
+      {#if directories.length > 0}
+        <div class="flex flex-wrap gap-1.5" role="group" aria-label="Sign in with">
+          {#each [{ id: "token", name: "API token" }, ...directories] as m (m.id)}
+            <Button
+              type="button"
+              aria-pressed={method === m.id}
+              weight={method === m.id ? "primary" : "default"}
+              class="h-7"
+              onclick={() => (method = m.id)}
+            >
+              {m.name}
+            </Button>
+          {/each}
+        </div>
+      {/if}
+
+      {#if directory}
+        <Field label="Username" autocomplete="username" spellcheck={false} bind:value={username} />
+        <Field
+          label="Password"
+          type="password"
+          autocomplete="current-password"
+          bind:value={password}
+          hint="Passed to {directory.name} to check, and kept nowhere."
+        />
+      {:else}
+        <Field
+          label="API token"
+          type="password"
+          autocomplete="current-password"
+          spellcheck={false}
+          placeholder="weg_…"
+          bind:value={token}
+          hint="Exchanged once for a session cookie a script on this page cannot read. The token itself is never stored in the browser."
+        />
+      {/if}
 
       {#if session.refused}
         <p
@@ -93,16 +175,18 @@
       <Button
         weight="primary"
         type="submit"
-        disabled={session.busy || token.trim() === ""}
+        disabled={session.busy || !ready}
         class="h-9 w-full justify-center"
       >
         {session.busy ? "Opening…" : "Sign in"}
       </Button>
     </form>
 
-    <p class="border-t border-line pt-5 text-xs text-ink-mute">
-      No token yet? On the server, <code class="num text-ink">weg token create</code> prints
-      one. It is shown once, when it is created, and never again.
-    </p>
+    {#if !directory}
+      <p class="border-t border-line pt-5 text-xs text-ink-mute">
+        No token yet? On the server, <code class="num text-ink">weg token create</code> prints
+        one. It is shown once, when it is created, and never again.
+      </p>
+    {/if}
   </div>
 </main>
