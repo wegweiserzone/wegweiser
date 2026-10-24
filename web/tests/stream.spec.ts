@@ -18,8 +18,12 @@ test.beforeAll(async ({ server }) => {
  * ask sends one query for an address to the server's own DNS port and waits
  * for the answer. Written out here rather than handed to dig, so that the
  * stream is tested wherever the suite runs, not only where dig is installed.
+ *
+ * forClient, an IPv4 address, makes the query the one a resolver in front
+ * sends on a client's behalf: an OPT record carrying the client subnet option
+ * of RFC 7871 with the whole address in it.
  */
-async function ask(name: string): Promise<void> {
+async function ask(name: string, forClient?: string): Promise<void> {
   const { dns } = started();
   const at = dns.lastIndexOf(":");
   const [host, port] = [dns.slice(0, at), Number(dns.slice(at + 1))];
@@ -28,12 +32,21 @@ async function ask(name: string): Promise<void> {
     .split(".")
     .filter(Boolean)
     .map((label) => Buffer.concat([Buffer.from([label.length]), Buffer.from(label)]));
+  const additional = forClient
+    ? Buffer.from([
+        // The root, type OPT, a 1232-octet payload, no extended flags, and 12
+        // octets of options: code 8, length 8, family 1, source /32, scope 0.
+        0, 0, 41, 0x04, 0xd0, 0, 0, 0, 0, 0, 12, 0, 8, 0, 8, 0, 1, 32, 0,
+        ...forClient.split(".").map(Number),
+      ])
+    : Buffer.alloc(0);
   const query = Buffer.concat([
-    // An identifier, recursion desired, one question.
-    Buffer.from([0x57, 0x47, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0]),
+    // An identifier, recursion desired, one question, and the OPT if there is one.
+    Buffer.from([0x57, 0x47, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, forClient ? 1 : 0]),
     ...labels,
     // The root, then type A in class IN.
     Buffer.from([0, 0, 1, 0, 1]),
+    additional,
   ]);
 
   const socket = createSocket("udp4");
@@ -138,4 +151,25 @@ test("a filter that matches nothing can be cleared from the empty table", async 
     "false",
   );
   await expect(page.getByRole("heading", { name: "Nothing is being asked" })).toBeVisible();
+});
+
+// D50, end to end: a resolver named in the settings asks on a client's behalf,
+// and the stream shows the client, with the resolver beside it.
+test("a query a believed resolver asks for a client shows the client", async ({
+  page,
+  server,
+}) => {
+  await seed(server, "PATCH", "/settings", { resolvers: ["127.0.0.1"] });
+  try {
+    await signIn(page, server);
+    await page.goto(`${server.url}/stream`);
+    await expect(page.getByText("Live", { exact: true })).toBeVisible();
+
+    await ask("www.example.com", "192.168.1.23");
+
+    const from = page.getByRole("cell", { name: /192\.168\.1\.23\s+via 127\.0\.0\.1/ });
+    await expect(from).toBeVisible();
+  } finally {
+    await seed(server, "PATCH", "/settings", { resolvers: [] });
+  }
 });

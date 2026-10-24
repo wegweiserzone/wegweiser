@@ -223,6 +223,15 @@ func queryEvent(ev dns.Event) gen.QueryEvent {
 		out.Client = ev.Client.Addr().String()
 		out.Port = ptr(int(ev.Client.Port()))
 	}
+	// The client a believed resolver asked for (D50): the address alone where
+	// it sent the whole of it, the network where it cut it down.
+	if ev.For.IsValid() {
+		named := ev.For.String()
+		if ev.For.IsSingleIP() {
+			named = ev.For.Addr().String()
+		}
+		out.For = &named
+	}
 	return out
 }
 

@@ -347,7 +347,18 @@
       {#each rows as row (row.at + row.client + row.name + row.type + row.latencyUs)}
         <tr class="border-b border-line-soft">
           <td class="num py-1.5 pr-3 pl-5 text-[12px] text-ink-faint">{clock(row.at)}</td>
-          <td class="num px-3 py-1.5 text-ink-mute">{row.client}</td>
+          {#if row.for}
+            <!-- Behind a believed resolver, whom it asked for (D50). -->
+            <td
+              class="num px-3 py-1.5 whitespace-nowrap text-ink-mute"
+              title="Asked for {row.for} by the resolver at {row.client}, which this server believes"
+            >
+              {row.for}
+              <span class="text-[11px] text-ink-faint">via {row.client}</span>
+            </td>
+          {:else}
+            <td class="num px-3 py-1.5 text-ink-mute">{row.client}</td>
+          {/if}
           <td class="px-3 py-1.5"><Chip>{row.transport}</Chip></td>
           <td class="num max-w-[18ch] truncate px-3 py-1.5 sm:max-w-[34ch]" title={row.name}>
             <!-- What was answered here, asked again on its own page. -->

@@ -77,7 +77,8 @@ func newQueryTailCommand(opts *options, f *clientFlags) *cobra.Command {
 	cmd.Flags().StringArrayVar(&filter.rcodes, "rcode", nil,
 		"watch only these response codes, by mnemonic (repeatable)")
 	cmd.Flags().StringVar(&filter.client, "client", "",
-		"watch only this address or network in CIDR notation")
+		"watch only this address or network in CIDR notation, and the clients in it "+
+			"a believed resolver asks for")
 
 	registerFlagCompletion(cmd, "name", func(
 		c *cobra.Command, _ []string, prefix string,
@@ -244,8 +245,15 @@ func (t *tail) event(ev gen.QueryEvent) error {
 		if ev.Port != nil {
 			client = fmt.Sprintf("%s:%d", ev.Client, *ev.Port)
 		}
+		// Behind a believed resolver the column says whom it asked for, which
+		// is what anybody reading it wants to know, and the resolver it came
+		// through follows the name (D50).
+		via := ""
+		if ev.For != nil {
+			client, via = *ev.For, t.p.Paint(output.ColorDim, "  via "+client)
+		}
 
-		_, err := fmt.Fprintf(w, "%-12s  %-21s  %-3s  %s  %8s  %5d  %-6s  %s\n",
+		_, err := fmt.Fprintf(w, "%-12s  %-21s  %-3s  %s  %8s  %5d  %-6s  %s%s\n",
 			ev.At.Local().Format("15:04:05.000"),
 			client,
 			ev.Transport,
@@ -254,6 +262,7 @@ func (t *tail) event(ev gen.QueryEvent) error {
 			ev.Size,
 			ev.Type,
 			ev.Name,
+			via,
 		)
 		return err
 	})

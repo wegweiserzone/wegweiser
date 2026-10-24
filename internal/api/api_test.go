@@ -2734,3 +2734,32 @@ func TestHistoryOfOneName(t *testing.T) {
 		t.Errorf("newest commit touching www says %q", c)
 	}
 }
+
+// D50: the client a believed resolver asked for is in the event beside the
+// address the query came from, as an address where it was sent whole and as a
+// network where the resolver cut it down.
+func TestQueryEventNamesTheClientAResolverAskedFor(t *testing.T) {
+	t.Parallel()
+
+	from := netip.MustParseAddrPort("127.0.0.1:53000")
+	for _, tc := range []struct {
+		name  string
+		asked netip.Prefix
+		want  string
+	}{
+		{"a whole IPv4 address", netip.MustParsePrefix("192.168.1.23/32"), "192.168.1.23"},
+		{"a whole IPv6 address", netip.MustParsePrefix("2001:db8::23/128"), "2001:db8::23"},
+		{"a network", netip.MustParsePrefix("192.168.1.0/24"), "192.168.1.0/24"},
+		{"nobody", netip.Prefix{}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := queryEvent(dns.Event{Client: from, For: tc.asked})
+			if got.Client != "127.0.0.1" {
+				t.Errorf("client = %q, want the resolver it came from", got.Client)
+			}
+			if have := deref(got.For, ""); have != tc.want {
+				t.Errorf("for = %q, want %q", have, tc.want)
+			}
+		})
+	}
+}

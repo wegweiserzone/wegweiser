@@ -24,14 +24,24 @@ public API is unstable and may change without a deprecation period.
   for is believed, as addresses or prefixes. It starts empty, which believes nobody,
   because the option says whatever its sender wrote into it.
 
+- A query event from one of them carries `for`, the client it asked for: an address, or
+  the network the resolver cut it down to. `client` stays the address the query came
+  from, and the stream's `client` filter matches either.
+
 #### CLI
 
 - `weg settings set --resolvers 127.0.0.1,::1` names them, and `weg settings show` says
   who they are.
 
+- `weg query tail` shows the client a believed resolver asked for where it showed the
+  resolver, with `via` and the resolver after the name, and `--client` finds it.
+
 #### Web interface
 
 - The settings have a panel for them, under *A resolver in front*.
+
+- The query stream shows the client a believed resolver asked for in the *From* column,
+  with the resolver beside it, so that behind Unbound a row no longer reads `127.0.0.1`.
 
 ### Fixed
 

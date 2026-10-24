@@ -1058,6 +1058,15 @@ export interface components {
             client: string;
             /** @description The port it came from. */
             port?: number;
+            /**
+             * @description The client a resolver asked for, where the query came from a
+             *     resolver this server believes and carried the client subnet option
+             *     of RFC 7871: an address where the resolver sent the whole of it, a
+             *     network in CIDR notation where it cut it down. Absent otherwise, and
+             *     for a client that asked not to be named (docs/decisions/ D50).
+             * @example 192.168.1.23
+             */
+            for?: string;
             /** @enum {string} */
             transport: "udp" | "tcp";
             /**
@@ -2007,7 +2016,8 @@ export interface operations {
                 rcode?: string[];
                 /**
                  * @description Watch only this address or network, in CIDR notation. A bare
-                 *     address is taken as a single host.
+                 *     address is taken as a single host. A query a believed resolver asked
+                 *     for a client in it is watched too (docs/decisions/ D50).
                  */
                 client?: string;
             };

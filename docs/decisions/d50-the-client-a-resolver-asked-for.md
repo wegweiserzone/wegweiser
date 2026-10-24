@@ -62,4 +62,6 @@ The page on a resolver in front says how.
 
 ## Where this stands
 
-Not built yet.
+Built as described. The option is handled in `internal/dns/subnet.go`, the list is the
+`resolvers` setting (`weg settings set --resolvers`, and a panel on the settings page), and
+the client is `for` in a query event, shown in `weg query tail` and on the query stream.

@@ -368,8 +368,9 @@ type Filter struct {
 	Types  []zone.RRType
 	Rcodes []int
 
-	// Client selects the exchanges from a network. The zero prefix matches
-	// every address.
+	// Client selects the exchanges from a network, or asked for a client in
+	// it by a resolver this server believes (docs/decisions/ D50). The zero
+	// prefix matches every address.
 	Client netip.Prefix
 }
 
@@ -384,10 +385,21 @@ func (s *Subscription) matches(ev dns.Event) bool {
 	if len(s.filter.Rcodes) > 0 && !contains(s.filter.Rcodes, ev.Rcode) {
 		return false
 	}
-	if s.filter.Client.IsValid() && !s.filter.Client.Contains(ev.Client.Addr()) {
+	if s.filter.Client.IsValid() && !fromNetwork(s.filter.Client, ev) {
 		return false
 	}
 	return true
+}
+
+// fromNetwork reports whether an exchange came from a network, or was asked
+// for a client inside it. A client a resolver named only as a network wider
+// than the one watched is not inside it, so a /24 is not shown to somebody
+// watching one host in it.
+func fromNetwork(network netip.Prefix, ev dns.Event) bool {
+	if network.Contains(ev.Client.Addr()) {
+		return true
+	}
+	return ev.For.IsValid() && ev.For.Bits() >= network.Bits() && network.Contains(ev.For.Addr())
 }
 
 func contains[T comparable](list []T, want T) bool {

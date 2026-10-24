@@ -116,6 +116,33 @@ func TestQueryTail(t *testing.T) {
 	})
 }
 
+// D50: behind a believed resolver the client column says whom it asked for,
+// the resolver follows the name, and watching the client's network finds it.
+func TestQueryTailShowsTheClientAResolverAskedFor(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+
+	asked := exchange("nas.internal.example.", zone.TypeA, 0)
+	asked.For = netip.MustParsePrefix("192.168.1.23/32")
+	feed := []dns.Event{exchange("www.example.com.", zone.TypeA, 0), asked}
+
+	stdout, _ := tailUntil(t, srv, []string{"query", "tail", "--client", "192.168.1.0/24"},
+		feed, "nas.internal.example.")
+
+	line := ""
+	for _, l := range strings.Split(stdout, "\n") {
+		if strings.Contains(l, "nas.internal.example.") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, "192.168.1.23 ") || !strings.HasSuffix(line, "via 192.0.2.50:41234") {
+		t.Errorf("the line is %q, want the client it was asked for, and the resolver after the name", line)
+	}
+	if strings.Contains(stdout, "www.example.com.") {
+		t.Errorf("a query from the resolver for nobody in the network was shown:\n%s", first(stdout))
+	}
+}
+
 // A stream is read by scripts as often as by people, so it is one JSON object
 // per exchange and nothing else on standard output.
 func TestQueryTailJSON(t *testing.T) {

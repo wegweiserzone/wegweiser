@@ -154,6 +154,24 @@ func TestFilters(t *testing.T) {
 		{"another client network does not",
 			stream.Filter{Client: netip.MustParsePrefix("198.51.100.0/24")}, event(), false},
 
+		// D50: a network is watched whether its queries came directly or
+		// through a resolver this server believes about them.
+		{"a client a resolver named matches its network",
+			stream.Filter{Client: netip.MustParsePrefix("198.51.100.0/24")},
+			event(func(e *dns.Event) { e.For = netip.MustParsePrefix("198.51.100.7/32") }), true},
+		{"a client a resolver named as a network matches a wider one",
+			stream.Filter{Client: netip.MustParsePrefix("198.51.0.0/16")},
+			event(func(e *dns.Event) { e.For = netip.MustParsePrefix("198.51.100.0/24") }), true},
+		{"a network a resolver named is not one host inside it",
+			stream.Filter{Client: netip.MustParsePrefix("198.51.100.7/32")},
+			event(func(e *dns.Event) { e.For = netip.MustParsePrefix("198.51.100.0/24") }), false},
+		{"a client a resolver named elsewhere does not match",
+			stream.Filter{Client: netip.MustParsePrefix("203.0.113.0/24")},
+			event(func(e *dns.Event) { e.For = netip.MustParsePrefix("198.51.100.7/32") }), false},
+		{"the resolver itself still matches",
+			stream.Filter{Client: netip.MustParsePrefix("192.0.2.50/32")},
+			event(func(e *dns.Event) { e.For = netip.MustParsePrefix("198.51.100.7/32") }), true},
+
 		{"every part has to match",
 			stream.Filter{
 				Name:  zone.MustParseName("example.com."),
