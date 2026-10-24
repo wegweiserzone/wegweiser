@@ -78,6 +78,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D48** | [A witness is known by its identifier](d48-a-witness-is-known-by-its-identifier.md) |
 | **D49** | [Asking the server what it answers, over the API](d49-asking-the-server-over-the-api.md) |
 | **D50** | [The client a resolver asks for is shown, when the resolver is one this server believes](d50-the-client-a-resolver-asked-for.md) |
+| **D51** | [Accounts come from an identity provider, and a session is signed rather than stored](d51-accounts-come-from-an-identity-provider.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they

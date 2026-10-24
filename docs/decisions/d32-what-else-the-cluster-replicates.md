@@ -2,6 +2,7 @@
 
 - Decided: 2026-08-29
 - Amends: [D24](d24-what-the-cluster-replicates.md)
+- Amended by: [D51](d51-accounts-come-from-an-identity-provider.md)
 
 ## Context
 

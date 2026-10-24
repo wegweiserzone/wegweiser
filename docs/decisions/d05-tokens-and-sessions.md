@@ -1,5 +1,7 @@
 # D5 — Named tokens with scopes; the GUI uses a session cookie
 
+- Amended by: [D51](d51-accounts-come-from-an-identity-provider.md)
+
 **Tokens.** Named API tokens with `read`, `write` and `admin` scopes. One bootstrap `admin`
 token is generated on first start and printed to stdout exactly once. Tokens are 256 bits
 from `crypto/rand`, shown in full only at creation, stored as SHA-256
