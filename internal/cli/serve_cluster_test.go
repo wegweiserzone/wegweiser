@@ -5,11 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,19 +26,45 @@ import (
 // clusterSecret is the secret every member in these tests holds.
 var clusterSecret = []byte("0123456789abcdef0123456789abcdef")
 
+// The ports freeAddr has handed out in this run, so that it never hands out
+// one twice.
+var (
+	freePortsMu sync.Mutex
+	freePorts   = map[int]bool{}
+)
+
 // freeAddr is a loopback address nothing listens on, for a member that has to
 // advertise its port before it binds it.
+//
+// The port comes from below the range a kernel hands out for port 0, which
+// starts at 32768 on Linux and higher elsewhere. Every other server these tests
+// start binds port 0, and a port taken from that range, given back and bound
+// again later, could be handed to one of them in between: that was the
+// "address already in use" a cluster test failed with now and then. Down here
+// only another call to this function competes, and those take turns.
 func freeAddr(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
+	freePortsMu.Lock()
+	defer freePortsMu.Unlock()
+
+	for range 100 {
+		port := 20000 + rand.IntN(12000)
+		if freePorts[port] {
+			continue
+		}
+		l, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err != nil {
+			continue
+		}
+		addr := l.Addr().String()
+		if err := l.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+		freePorts[port] = true
+		return addr
 	}
-	addr := l.Addr().String()
-	if err := l.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-	return addr
+	t.Fatal("no free port below the kernel's own range in 100 tries")
+	return ""
 }
 
 // clusterConfig writes a configuration file with a cluster section, and
