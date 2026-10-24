@@ -41,12 +41,13 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          # The same version as GOLANGCI_LINT_VERSION in the Makefile.
+          version: v2.15.0
           args: --timeout=5m
 
       - name: Formatting
         run: |
-          go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest fmt --diff ./... \
+          go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 fmt --diff ./... \
             || (echo "::error::code is not formatted; run 'make fmt'" && exit 1)
 
       - name: go.mod is tidy

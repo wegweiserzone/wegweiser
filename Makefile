@@ -26,7 +26,10 @@ LDFLAGS := -s -w \
 
 GOBIN         := $(shell go env GOPATH)/bin
 GOLANGCI_LINT := $(GOBIN)/golangci-lint
-GOVULNCHECK   := $(GOBIN)/govulncheck
+# Pinned, here and in .github/workflows/ci.yml: a new release brings new
+# findings, and "latest" let one turn CI red on a change that touched no code.
+GOLANGCI_LINT_VERSION := v2.15.0
+GOVULNCHECK  := $(GOBIN)/govulncheck
 OAPI_CODEGEN  := $(GOBIN)/oapi-codegen
 
 FUZZTIME ?= 30s
@@ -237,7 +240,7 @@ fuzz: ## Run every fuzz target for FUZZTIME (default 30s)
 tools: $(GOLANGCI_LINT) $(GOVULNCHECK) $(OAPI_CODEGEN) ## Install the development tools
 
 $(GOLANGCI_LINT):
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 $(GOVULNCHECK):
 	go install golang.org/x/vuln/cmd/govulncheck@latest
