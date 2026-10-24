@@ -26,11 +26,15 @@ LDFLAGS := -s -w \
 
 GOBIN         := $(shell go env GOPATH)/bin
 GOLANGCI_LINT := $(GOBIN)/golangci-lint
-# Pinned, here and in .github/workflows/ci.yml: a new release brings new
-# findings, and "latest" let one turn CI red on a change that touched no code.
-GOLANGCI_LINT_VERSION := v2.15.0
-GOVULNCHECK  := $(GOBIN)/govulncheck
+GOVULNCHECK   := $(GOBIN)/govulncheck
 OAPI_CODEGEN  := $(GOBIN)/oapi-codegen
+
+# Pinned, because "latest" turned CI red on changes that touched no code. A new
+# golangci-lint brings new findings; a new oapi-codegen writes different code
+# from the same spec, which generate-check then calls stale. The lint version
+# is repeated in .github/workflows/ci.yml.
+GOLANGCI_LINT_VERSION := v2.15.0
+OAPI_CODEGEN_VERSION  := v2.8.0
 
 FUZZTIME ?= 30s
 
@@ -246,4 +250,4 @@ $(GOVULNCHECK):
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 
 $(OAPI_CODEGEN):
-	go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
+	go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
