@@ -4,7 +4,7 @@
    * stands that belongs on every page: the rail's head on a wide screen, the
    * bar across the top on a narrow one.
    */
-  import { standing } from "$lib/standing.svelte";
+  import { standing } from "#lib/standing.svelte.ts";
   import Mark from "./Mark.svelte";
 
   const health = $derived(standing.health);

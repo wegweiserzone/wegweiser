@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { theme } from "$lib/theme.svelte";
+  import { theme } from "#lib/theme.svelte.ts";
 
   type Swatch = { token: string; label: string; on?: string };
 

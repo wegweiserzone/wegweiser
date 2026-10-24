@@ -2,9 +2,9 @@
   /**
    * The session screen.
    */
-  import { api, NetworkError } from "$lib/api";
-  import type { Health } from "$lib/api";
-  import { session } from "$lib/session.svelte";
+  import { api, NetworkError } from "#lib/api/index.ts";
+  import type { Health } from "#lib/api/index.ts";
+  import { session } from "#lib/session.svelte.ts";
   import Button from "./Button.svelte";
   import Chip from "./Chip.svelte";
   import Field from "./Field.svelte";

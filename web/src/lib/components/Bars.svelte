@@ -2,7 +2,7 @@
   /**
    * A handful of named counts, as bars.
    */
-  import type { Reading } from "$lib/metrics";
+  import type { Reading } from "#lib/metrics.ts";
 
   let {
     readings,

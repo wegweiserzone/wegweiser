@@ -6,11 +6,11 @@
  * had lost its majority was visible on the Cluster page alone, and everywhere
  * else a change was offered, filled in, and then refused.
  */
-import { api } from "$lib/api";
-import type { ClusterStatus, Health } from "$lib/api";
-import { verdict } from "$lib/quorum";
-import type { Verdict } from "$lib/quorum";
-import { session } from "$lib/session.svelte";
+import { api } from "#lib/api/index.ts";
+import type { ClusterStatus, Health } from "#lib/api/index.ts";
+import { verdict } from "#lib/quorum.ts";
+import type { Verdict } from "#lib/quorum.ts";
+import { session } from "#lib/session.svelte.ts";
 
 let health = $state<Health | null>(null);
 /** cluster is null on a single server, and before the first answer. */

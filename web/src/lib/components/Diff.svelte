@@ -7,7 +7,7 @@
    * and both carry the full record so either direction can be replayed.
    * Removals come first for the same reason.
    */
-  import type { Event } from "$lib/api";
+  import type { Event } from "#lib/api/index.ts";
 
   let { events }: { events: Event[] } = $props();
 

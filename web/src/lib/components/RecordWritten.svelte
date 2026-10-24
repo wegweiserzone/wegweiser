@@ -9,7 +9,7 @@
    * it is the answer to "what just happened", and hiding it is what makes
    * automation feel like something being done to you.
    */
-  import type { Conflict, MissingZone, Record_ } from "$lib/api";
+  import type { Conflict, MissingZone, Record_ } from "#lib/api/index.ts";
   import Chip from "./Chip.svelte";
 
   let {

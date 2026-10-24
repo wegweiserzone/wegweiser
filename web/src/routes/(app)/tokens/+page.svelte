@@ -7,20 +7,20 @@
    * not have it: what is stored is a SHA-256, so a copy of the database is not
    * a copy of the credentials (docs/decisions/ D5).
    */
-  import { asked } from "$lib/asked";
-  import { api, ApiError, NetworkError } from "$lib/api";
-  import type { Scope, Token } from "$lib/api";
-  import { ago, exact } from "$lib/format";
-  import { session } from "$lib/session.svelte";
-  import Bar from "$lib/components/Bar.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import Dialog from "$lib/components/Dialog.svelte";
-  import Empty from "$lib/components/Empty.svelte";
-  import Field from "$lib/components/Field.svelte";
-  import Notice from "$lib/components/Notice.svelte";
-  import Table from "$lib/components/Table.svelte";
-  import type { Column } from "$lib/components/Table.svelte";
+  import { asked } from "#lib/asked.ts";
+  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import type { Scope, Token } from "#lib/api/index.ts";
+  import { ago, exact } from "#lib/format.ts";
+  import { session } from "#lib/session.svelte.ts";
+  import Bar from "#lib/components/Bar.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import Dialog from "#lib/components/Dialog.svelte";
+  import Empty from "#lib/components/Empty.svelte";
+  import Field from "#lib/components/Field.svelte";
+  import Notice from "#lib/components/Notice.svelte";
+  import Table from "#lib/components/Table.svelte";
+  import type { Column } from "#lib/components/Table.svelte";
 
   const scopes: { value: Scope; what: string }[] = [
     { value: "read", what: "Read zones, records and history." },

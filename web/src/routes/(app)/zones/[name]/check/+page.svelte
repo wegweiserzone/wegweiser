@@ -8,13 +8,13 @@
    * record is not in the same condition as one holding a record nothing can
    * answer.
    */
-  import { api, ApiError, NetworkError } from "$lib/api";
-  import type { Finding } from "$lib/api";
-  import { standing } from "$lib/standing.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import ReadOnly from "$lib/components/ReadOnly.svelte";
-  import Empty from "$lib/components/Empty.svelte";
-  import Notice from "$lib/components/Notice.svelte";
+  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import type { Finding } from "#lib/api/index.ts";
+  import { standing } from "#lib/standing.svelte.ts";
+  import Button from "#lib/components/Button.svelte";
+  import ReadOnly from "#lib/components/ReadOnly.svelte";
+  import Empty from "#lib/components/Empty.svelte";
+  import Notice from "#lib/components/Notice.svelte";
 
   let { data } = $props();
 

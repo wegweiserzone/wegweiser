@@ -5,22 +5,22 @@
   import { untrack } from "svelte";
 
   import { goto } from "$app/navigation";
-  import { asked } from "$lib/asked";
-  import { api, ApiError, NetworkError } from "$lib/api";
-  import type { Zone, ZoneImported } from "$lib/api";
-  import { ago, count, exact, relative } from "$lib/format";
-  import { standing } from "$lib/standing.svelte";
-  import Bar from "$lib/components/Bar.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import ReadOnly from "$lib/components/ReadOnly.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import Dialog from "$lib/components/Dialog.svelte";
-  import Empty from "$lib/components/Empty.svelte";
-  import Field from "$lib/components/Field.svelte";
-  import Notice from "$lib/components/Notice.svelte";
-  import Pager from "$lib/components/Pager.svelte";
-  import Table from "$lib/components/Table.svelte";
-  import type { Column } from "$lib/components/Table.svelte";
+  import { asked } from "#lib/asked.ts";
+  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import type { Zone, ZoneImported } from "#lib/api/index.ts";
+  import { ago, count, exact, relative } from "#lib/format.ts";
+  import { standing } from "#lib/standing.svelte.ts";
+  import Bar from "#lib/components/Bar.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import ReadOnly from "#lib/components/ReadOnly.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import Dialog from "#lib/components/Dialog.svelte";
+  import Empty from "#lib/components/Empty.svelte";
+  import Field from "#lib/components/Field.svelte";
+  import Notice from "#lib/components/Notice.svelte";
+  import Pager from "#lib/components/Pager.svelte";
+  import Table from "#lib/components/Table.svelte";
+  import type { Column } from "#lib/components/Table.svelte";
 
   /**
    * The listing is the server's.

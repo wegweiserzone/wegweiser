@@ -3,14 +3,14 @@
    * Everything the interface shows once there is somebody to show it to.
    */
   import { page } from "$app/state";
-  import { session } from "$lib/session.svelte";
-  import { standing } from "$lib/standing.svelte";
-  import Brand from "$lib/components/Brand.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Mark from "$lib/components/Mark.svelte";
-  import Palette from "$lib/components/Palette.svelte";
-  import Rail from "$lib/components/Rail.svelte";
-  import SignIn from "$lib/components/SignIn.svelte";
+  import { session } from "#lib/session.svelte.ts";
+  import { standing } from "#lib/standing.svelte.ts";
+  import Brand from "#lib/components/Brand.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Mark from "#lib/components/Mark.svelte";
+  import Palette from "#lib/components/Palette.svelte";
+  import Rail from "#lib/components/Rail.svelte";
+  import SignIn from "#lib/components/SignIn.svelte";
 
   let { children } = $props();
 

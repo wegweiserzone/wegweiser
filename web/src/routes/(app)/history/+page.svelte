@@ -6,20 +6,20 @@
 
   import { page } from "$app/state";
   import { replaceState } from "$app/navigation";
-  import { api, ApiError, NetworkError } from "$lib/api";
-  import type { Commit, CommitKind, CommitSource, Conflict, MissingZone, Zone } from "$lib/api";
-  import { ago, exact } from "$lib/format";
-  import { standing } from "$lib/standing.svelte";
-  import Bar from "$lib/components/Bar.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import ReadOnly from "$lib/components/ReadOnly.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import Diff from "$lib/components/Diff.svelte";
-  import Dialog from "$lib/components/Dialog.svelte";
-  import Empty from "$lib/components/Empty.svelte";
-  import Notice from "$lib/components/Notice.svelte";
-  import Pager from "$lib/components/Pager.svelte";
-  import RecordWritten from "$lib/components/RecordWritten.svelte";
+  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import type { Commit, CommitKind, CommitSource, Conflict, MissingZone, Zone } from "#lib/api/index.ts";
+  import { ago, exact } from "#lib/format.ts";
+  import { standing } from "#lib/standing.svelte.ts";
+  import Bar from "#lib/components/Bar.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import ReadOnly from "#lib/components/ReadOnly.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import Diff from "#lib/components/Diff.svelte";
+  import Dialog from "#lib/components/Dialog.svelte";
+  import Empty from "#lib/components/Empty.svelte";
+  import Notice from "#lib/components/Notice.svelte";
+  import Pager from "#lib/components/Pager.svelte";
+  import RecordWritten from "#lib/components/RecordWritten.svelte";
 
   // Typed against the spec rather than as strings, so a kind renamed there is
   // a compile error here instead of a filter that silently matches nothing.

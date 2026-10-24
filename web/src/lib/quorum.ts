@@ -3,7 +3,7 @@
  * what taking a member out would leave of that. The command line says the same
  * things from the same counts (internal/cli/cluster.go).
  */
-import type { ClusterStatus } from "$lib/api";
+import type { ClusterStatus } from "#lib/api/index.ts";
 
 type Member = ClusterStatus["members"][number];
 

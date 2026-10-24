@@ -8,14 +8,14 @@
 
   import { replaceState } from "$app/navigation";
   import { page } from "$app/state";
-  import { api, ApiError, NetworkError } from "$lib/api";
-  import type { AnsweredRecord, Asked } from "$lib/api";
-  import { asText, describe, headline, target, tone } from "$lib/ask";
-  import Bar from "$lib/components/Bar.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Empty from "$lib/components/Empty.svelte";
-  import Notice from "$lib/components/Notice.svelte";
-  import TypeField from "$lib/components/TypeField.svelte";
+  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import type { AnsweredRecord, Asked } from "#lib/api/index.ts";
+  import { asText, describe, headline, target, tone } from "#lib/ask.ts";
+  import Bar from "#lib/components/Bar.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Empty from "#lib/components/Empty.svelte";
+  import Notice from "#lib/components/Notice.svelte";
+  import TypeField from "#lib/components/TypeField.svelte";
 
   let name = $state(page.url.searchParams.get("name") ?? "");
   let type = $state((page.url.searchParams.get("type") ?? "A").toUpperCase());

@@ -8,20 +8,20 @@
    * (docs/decisions/d28-tsig.md). Reading one is still a deliberate act, so that a
    * secret appears when somebody asked for it.
    */
-  import { asked } from "$lib/asked";
-  import { api, ApiError, NetworkError } from "$lib/api";
-  import type { TSIGAlgorithm, TSIGKey } from "$lib/api";
-  import { ago, exact } from "$lib/format";
-  import { session } from "$lib/session.svelte";
-  import Bar from "$lib/components/Bar.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import Dialog from "$lib/components/Dialog.svelte";
-  import Empty from "$lib/components/Empty.svelte";
-  import Field from "$lib/components/Field.svelte";
-  import Notice from "$lib/components/Notice.svelte";
-  import Table from "$lib/components/Table.svelte";
-  import type { Column } from "$lib/components/Table.svelte";
+  import { asked } from "#lib/asked.ts";
+  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import type { TSIGAlgorithm, TSIGKey } from "#lib/api/index.ts";
+  import { ago, exact } from "#lib/format.ts";
+  import { session } from "#lib/session.svelte.ts";
+  import Bar from "#lib/components/Bar.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import Dialog from "#lib/components/Dialog.svelte";
+  import Empty from "#lib/components/Empty.svelte";
+  import Field from "#lib/components/Field.svelte";
+  import Notice from "#lib/components/Notice.svelte";
+  import Table from "#lib/components/Table.svelte";
+  import type { Column } from "#lib/components/Table.svelte";
 
   /**
    * RFC 8945 §6 also makes hmac-sha1 MUST-implement and permits HMAC-MD5. The

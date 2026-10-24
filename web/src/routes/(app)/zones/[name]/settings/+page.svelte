@@ -6,13 +6,13 @@
   import { untrack } from "svelte";
 
   import { invalidateAll } from "$app/navigation";
-  import { api, ApiError } from "$lib/api";
-  import type { Zone } from "$lib/api";
-  import { exact } from "$lib/format";
-  import { standing } from "$lib/standing.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Field from "$lib/components/Field.svelte";
-  import Notice from "$lib/components/Notice.svelte";
+  import { api, ApiError } from "#lib/api/index.ts";
+  import type { Zone } from "#lib/api/index.ts";
+  import { exact } from "#lib/format.ts";
+  import { standing } from "#lib/standing.svelte.ts";
+  import Button from "#lib/components/Button.svelte";
+  import Field from "#lib/components/Field.svelte";
+  import Notice from "#lib/components/Notice.svelte";
 
   let { data } = $props();
 

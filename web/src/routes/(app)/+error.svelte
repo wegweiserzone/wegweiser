@@ -4,8 +4,8 @@
    */
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import Button from "$lib/components/Button.svelte";
-  import Empty from "$lib/components/Empty.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Empty from "#lib/components/Empty.svelte";
 
   const missing = $derived(page.status === 404);
   const title = $derived(

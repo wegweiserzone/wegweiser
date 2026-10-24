@@ -3,21 +3,21 @@
    * What this server is and what it has been doing.
    */
   import { goto } from "$app/navigation";
-  import { api, ApiError, NetworkError } from "$lib/api";
-  import type { Commit, Health } from "$lib/api";
-  import { ago, exact } from "$lib/format";
-  import { read } from "$lib/metrics";
-  import type { Readings } from "$lib/metrics";
-  import { session } from "$lib/session.svelte";
-  import { standing } from "$lib/standing.svelte";
-  import ReadOnly from "$lib/components/ReadOnly.svelte";
-  import Bar from "$lib/components/Bar.svelte";
-  import Bars from "$lib/components/Bars.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import Metric from "$lib/components/Metric.svelte";
-  import Notice from "$lib/components/Notice.svelte";
-  import Sparkline from "$lib/components/Sparkline.svelte";
+  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import type { Commit, Health } from "#lib/api/index.ts";
+  import { ago, exact } from "#lib/format.ts";
+  import { read } from "#lib/metrics.ts";
+  import type { Readings } from "#lib/metrics.ts";
+  import { session } from "#lib/session.svelte.ts";
+  import { standing } from "#lib/standing.svelte.ts";
+  import ReadOnly from "#lib/components/ReadOnly.svelte";
+  import Bar from "#lib/components/Bar.svelte";
+  import Bars from "#lib/components/Bars.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import Metric from "#lib/components/Metric.svelte";
+  import Notice from "#lib/components/Notice.svelte";
+  import Sparkline from "#lib/components/Sparkline.svelte";
 
   /** How often the counters are read again. The rate is the difference. */
   const every = 2000;

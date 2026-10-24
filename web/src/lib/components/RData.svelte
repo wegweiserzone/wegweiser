@@ -2,7 +2,7 @@
   /**
    * A record's data, as the parts it is made of.
    */
-  import { assemble, disassemble, shapeOf } from "$lib/rdata";
+  import { assemble, disassemble, shapeOf } from "#lib/rdata.ts";
   import Field from "./Field.svelte";
 
   let {

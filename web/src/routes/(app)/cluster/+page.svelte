@@ -8,19 +8,19 @@
    * got, that server asks them as it answers
    * (docs/decisions/d47-status-asks-every-member.md).
    */
-  import { api, ApiError, NetworkError } from "$lib/api";
-  import type { ClusterMember, ClusterStatus } from "$lib/api";
-  import { ago, exact } from "$lib/format";
-  import { afterRemoving, answers, verdict, votes } from "$lib/quorum";
-  import { session } from "$lib/session.svelte";
-  import Bar from "$lib/components/Bar.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import Dialog from "$lib/components/Dialog.svelte";
-  import Empty from "$lib/components/Empty.svelte";
-  import Notice from "$lib/components/Notice.svelte";
-  import Table from "$lib/components/Table.svelte";
-  import type { Column } from "$lib/components/Table.svelte";
+  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import type { ClusterMember, ClusterStatus } from "#lib/api/index.ts";
+  import { ago, exact } from "#lib/format.ts";
+  import { afterRemoving, answers, verdict, votes } from "#lib/quorum.ts";
+  import { session } from "#lib/session.svelte.ts";
+  import Bar from "#lib/components/Bar.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import Dialog from "#lib/components/Dialog.svelte";
+  import Empty from "#lib/components/Empty.svelte";
+  import Notice from "#lib/components/Notice.svelte";
+  import Table from "#lib/components/Table.svelte";
+  import type { Column } from "#lib/components/Table.svelte";
 
   type Member = ClusterStatus["members"][number];
 

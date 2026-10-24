@@ -8,7 +8,7 @@
    * mnemonic and anything without one in the TYPE<number> form of RFC 3597,
    * and a control that refused those would be lying about what it can hold.
    */
-  import { everyType, suggestedTypes } from "$lib/records";
+  import { everyType, suggestedTypes } from "#lib/records.ts";
 
   let {
     value = $bindable(""),

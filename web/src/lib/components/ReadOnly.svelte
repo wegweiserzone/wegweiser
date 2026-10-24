@@ -4,7 +4,7 @@
    * session that may only read, or a cluster that takes no writes. A control
    * that quietly disappears teaches the wrong shape of the system.
    */
-  import { standing } from "$lib/standing.svelte";
+  import { standing } from "#lib/standing.svelte.ts";
   import Chip from "./Chip.svelte";
 
   let { class: extra = "" }: { class?: string } = $props();

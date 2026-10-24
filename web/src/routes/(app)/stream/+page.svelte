@@ -9,17 +9,17 @@
    * happening.
    */
   import { page } from "$app/state";
-  import { ApiError } from "$lib/api";
-  import type { QueryEvent, StreamStatus } from "$lib/api";
-  import { everyType } from "$lib/records";
-  import { watchQueries } from "$lib/stream";
-  import Bar from "$lib/components/Bar.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import Empty from "$lib/components/Empty.svelte";
-  import Histogram from "$lib/components/Histogram.svelte";
-  import Notice from "$lib/components/Notice.svelte";
-  import Sparkline from "$lib/components/Sparkline.svelte";
+  import { ApiError } from "#lib/api/index.ts";
+  import type { QueryEvent, StreamStatus } from "#lib/api/index.ts";
+  import { everyType } from "#lib/records.ts";
+  import { watchQueries } from "#lib/stream.ts";
+  import Bar from "#lib/components/Bar.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import Empty from "#lib/components/Empty.svelte";
+  import Histogram from "#lib/components/Histogram.svelte";
+  import Notice from "#lib/components/Notice.svelte";
+  import Sparkline from "#lib/components/Sparkline.svelte";
 
   /** kept is how many exchanges stay on screen. Oldest out, newest in. */
   const kept = 400;

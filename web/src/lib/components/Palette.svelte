@@ -4,11 +4,11 @@
    */
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { api } from "$lib/api";
-  import type { Zone } from "$lib/api";
-  import { session } from "$lib/session.svelte";
-  import { standing } from "$lib/standing.svelte";
-  import { theme } from "$lib/theme.svelte";
+  import { api } from "#lib/api/index.ts";
+  import type { Zone } from "#lib/api/index.ts";
+  import { session } from "#lib/session.svelte.ts";
+  import { standing } from "#lib/standing.svelte.ts";
+  import { theme } from "#lib/theme.svelte.ts";
 
   interface Command {
     group: string;

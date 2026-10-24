@@ -1,7 +1,7 @@
 import { error } from "@sveltejs/kit";
 
-import { api, ApiError, NetworkError } from "$lib/api";
-import { nearest } from "$lib/nearest";
+import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+import { nearest } from "#lib/nearest.ts";
 
 import type { LayoutLoad } from "./$types";
 

@@ -3,8 +3,8 @@
    * The left rail: where you are, where you can go, and who you are.
    */
   import { page } from "$app/state";
-  import { session } from "$lib/session.svelte";
-  import { theme } from "$lib/theme.svelte";
+  import { session } from "#lib/session.svelte.ts";
+  import { theme } from "#lib/theme.svelte.ts";
   import Brand from "./Brand.svelte";
 
   type Item = { href: string; label: string; icon: string };

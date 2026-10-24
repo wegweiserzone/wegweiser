@@ -4,13 +4,13 @@
    * can be doing to it.
    */
   import { page } from "$app/state";
-  import { api, ApiError } from "$lib/api";
-  import type { Commit } from "$lib/api";
-  import { ago, count, exact } from "$lib/format";
-  import Bar from "$lib/components/Bar.svelte";
-  import Button from "$lib/components/Button.svelte";
-  import Chip from "$lib/components/Chip.svelte";
-  import Notice from "$lib/components/Notice.svelte";
+  import { api, ApiError } from "#lib/api/index.ts";
+  import type { Commit } from "#lib/api/index.ts";
+  import { ago, count, exact } from "#lib/format.ts";
+  import Bar from "#lib/components/Bar.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Chip from "#lib/components/Chip.svelte";
+  import Notice from "#lib/components/Notice.svelte";
 
   let { data, children } = $props();
 

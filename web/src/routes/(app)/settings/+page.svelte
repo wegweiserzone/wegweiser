@@ -9,13 +9,13 @@
    * is a tool rather than a setting, and it lives under Secondaries, where
    * `weg secondary config` puts it too.
    */
-  import { api, ApiError } from "$lib/api";
-  import type { ReverseConflictPolicy, Settings } from "$lib/api";
-  import { standing } from "$lib/standing.svelte";
-  import Bar from "$lib/components/Bar.svelte";
-  import ListSetting from "$lib/components/ListSetting.svelte";
-  import Notice from "$lib/components/Notice.svelte";
-  import Panel from "$lib/components/Panel.svelte";
+  import { api, ApiError } from "#lib/api/index.ts";
+  import type { ReverseConflictPolicy, Settings } from "#lib/api/index.ts";
+  import { standing } from "#lib/standing.svelte.ts";
+  import Bar from "#lib/components/Bar.svelte";
+  import ListSetting from "#lib/components/ListSetting.svelte";
+  import Notice from "#lib/components/Notice.svelte";
+  import Panel from "#lib/components/Panel.svelte";
 
   let settings = $state<Settings | null>(null);
   let failed = $state<string | null>(null);

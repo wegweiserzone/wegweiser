@@ -1,7 +1,7 @@
 /**
  * What an answer of the server is, in words (D49).
  */
-import type { AnsweredRecord, Asked } from "$lib/api";
+import type { AnsweredRecord, Asked } from "#lib/api/index.ts";
 
 /** headline names the kind of answer, the way the page leads with it. */
 export const headline: Record<Asked["outcome"], string> = {

@@ -5,8 +5,8 @@
    * by (app)/[...missing].
    */
   import { page } from "$app/state";
-  import Button from "$lib/components/Button.svelte";
-  import Mark from "$lib/components/Mark.svelte";
+  import Button from "#lib/components/Button.svelte";
+  import Mark from "#lib/components/Mark.svelte";
 
   const missing = $derived(page.status === 404);
 </script>
