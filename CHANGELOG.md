@@ -15,7 +15,13 @@ public API is unstable and may change without a deprecation period.
 - `/identity-providers` holds the OpenID Connect providers and LDAP directories people are
   to sign in through, and which of their groups is given which scope. Managing them needs
   the `admin` scope, and a client secret or bind password is written and never read back.
-  Signing in through one is not built yet.
+- A person signs in through an OpenID Connect provider by being sent to
+  `/auth/oidc/{providerId}/start`, with the authorization code flow and PKCE, and holds
+  the strongest scope their groups map to. A person in no mapped group is refused.
+  Switching the provider off or removing it ends the sessions opened through it, and a
+  commit names the person and the provider. `/auth/providers` tells the sign-in page,
+  without a credential, which providers are switched on. Signing in through a directory,
+  and the sign-in page offering either, are not built yet.
 
 #### CLI
 

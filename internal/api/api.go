@@ -183,6 +183,9 @@ type Server struct {
 
 	limiter *authLimiter
 
+	// oidc holds what each OpenID Connect provider's discovery said.
+	oidc oidcClients
+
 	// ui is the embedded web interface, or nil when it is switched off.
 	ui http.Handler
 

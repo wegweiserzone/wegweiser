@@ -90,5 +90,7 @@ Sessions are built as described, for the token sessions that exist: sealed in
 `internal/api/session.go` under the `session_keys` setting, rotated with the cookie secret's
 loop, and ended through the `ended_sessions` setting, which a member that does not lead hands
 to the leader. Providers and their group mappings are held in the `identity_providers`
-setting and managed through `/identity-providers`. Signing in through a provider and ending
-every session of one person are not built.
+setting and managed through `/identity-providers`. Signing in through an OpenID Connect
+provider is built in `internal/api/oidc.go`, the flow sealed in a cookie of its own under the
+session key. Signing in through a directory and ending every session of one person are not
+built.

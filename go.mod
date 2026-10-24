@@ -3,8 +3,10 @@ module github.com/wegweiserzone/wegweiser
 go 1.26.5
 
 require (
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/getkin/kin-openapi v0.151.0
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/raft v1.8.0
 	github.com/hashicorp/raft-boltdb/v2 v2.4.2
@@ -17,6 +19,7 @@ require (
 	github.com/prometheus/common v0.72.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sys v0.49.0
 	modernc.org/sqlite v1.60.1
 	sigs.k8s.io/yaml v1.6.0

@@ -526,6 +526,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the providers a person may sign in through
+         * @description What the sign-in page offers beside the token: the providers that are
+         *     switched on, by name and kind, and nothing else about them.
+         *     Unauthenticated, because it is asked before anybody has.
+         */
+        get: operations["listSignInProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/{providerId}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of an OpenID Connect provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Send the browser to an OpenID Connect provider to sign in
+         * @description A navigation, not a call: the browser is sent to the provider with
+         *     the authorization code flow and PKCE, and comes back to the callback
+         *     below. What the callback needs to check the answer is sealed in a
+         *     cookie that lasts ten minutes, so that any member can take the
+         *     callback and none has to remember anything.
+         *
+         *     The callback the provider is told to use is the one of its redirect
+         *     URIs on the address the browser asked this one at. A failure sends the
+         *     browser back to the sign-in page, with `signin_error` saying what
+         *     went wrong.
+         */
+        get: operations["startOIDCSignIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Take a person back from an OpenID Connect provider
+         * @description Where a provider sends the browser. The code is exchanged, the ID token
+         *     verified against the provider's keys and the nonce the start sealed,
+         *     and the person's groups mapped to a scope. The browser is then sent to
+         *     the interface with a session, or to the sign-in page with
+         *     `signin_error` saying why not. A person in no mapped group is refused,
+         *     however well they signed in.
+         *
+         *     Signing in writes nothing, so it works while the cluster takes no
+         *     writes (docs/decisions/d51-accounts-come-from-an-identity-provider.md).
+         */
+        get: operations["finishOIDCSignIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings": {
         parameters: {
             query?: never;
@@ -1727,6 +1809,12 @@ export interface components {
             /** @description The shared secret, base64, as every implementation writes it. */
             secret: string;
         };
+        /** @description A provider as the sign-in page offers it. */
+        SignInProvider: {
+            id: string;
+            name: string;
+            kind: components["schemas"]["IdentityProviderKind"];
+        };
         /**
          * @description The protocol a provider is spoken to in: OpenID Connect by the
          *     authorization code flow with PKCE, or a directory a person binds to as
@@ -2805,6 +2893,73 @@ export interface operations {
         responses: {
             /** @description The session is over. */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listSignInProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The providers that are switched on. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInProvider"][];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    startOIDCSignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of an OpenID Connect provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the provider, or back to the sign-in page. */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    finishOIDCSignIn: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+                error_description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the interface, or back to the sign-in page. */
+            302: {
                 headers: {
                     [name: string]: unknown;
                 };

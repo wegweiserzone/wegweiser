@@ -44,6 +44,9 @@ const (
 // cluster's session key, so every member that holds the key opens it, and a
 // restart or a failover ends nothing
 // (docs/decisions/d51-accounts-come-from-an-identity-provider.md).
+//
+// It is opened with a token or by a person signing in through a provider, and
+// carries the one or the other.
 type session struct {
 	// ID names the session, so that it can be ended before its time. It is
 	// minted when the session opens and means nothing on its own.
@@ -52,7 +55,17 @@ type session struct {
 	// Token is the SHA-256 of the token the session was opened with. The token
 	// is looked up by it on every request, so that revoking the token ends its
 	// sessions everywhere and a session never holds more than the token does.
-	Token []byte `json:"tok"`
+	Token []byte `json:"tok,omitempty"`
+
+	// Provider is the identity provider a person signed in through, and
+	// Subject who they are there. The provider is looked up on every request,
+	// so that removing or disabling it ends its sessions. Name is what they
+	// are called in a commit, and Scope what their groups mapped to when they
+	// signed in, which holds until the session ends (D51).
+	Provider string `json:"idp,omitempty"`
+	Subject  string `json:"sub,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Scope    Scope  `json:"scope,omitempty"`
 
 	// Expires is when the session ends.
 	Expires time.Time `json:"exp"`
@@ -62,6 +75,13 @@ type session struct {
 	csrf string
 }
 
+// sound reports whether the session carries exactly one way in.
+func (sess *session) sound() bool {
+	byToken := len(sess.Token) == sha256.Size
+	byPerson := sess.Provider != "" && sess.Subject != "" && rank(sess.Scope) > 0
+	return sess.ID != "" && byToken != byPerson
+}
+
 // The labels the session key is stretched under, one per use, so that the
 // key sealing a cookie is never also the one a CSRF value is computed with.
 const (
@@ -69,12 +89,34 @@ const (
 	csrfLabel = "wegweiser session csrf"
 )
 
-// sealSession writes a session into the value its cookie carries: AES-256-GCM
-// under the current key, with the nonce in front.
+// sealSession writes a session into the value its cookie carries.
 func sealSession(key apply.SessionKey, sess *session) (string, error) {
-	plain, err := json.Marshal(sess)
+	return seal(key, sessionCookie, sess)
+}
+
+// openSession reads a cookie back, under the current key or the one before
+// it. A value that opens under neither, or that has run out, is no session.
+func openSession(keys apply.SessionKeys, value string, now time.Time) *session {
+	var sess session
+	key, ok := unseal(keys, sessionCookie, value, &sess)
+	if !ok || !sess.sound() || !now.Before(sess.Expires) {
+		return nil
+	}
+	csrf, err := csrfFor(key, sess.ID)
 	if err != nil {
-		return "", fmt.Errorf("api: encode the session: %w", err)
+		return nil
+	}
+	sess.csrf = csrf
+	return &sess
+}
+
+// seal writes v into a cookie's value: AES-256-GCM under key, with the nonce
+// in front and the cookie's name as additional data, so that one cookie's
+// value cannot be passed off as another's.
+func seal(key apply.SessionKey, cookie string, v any) (string, error) {
+	plain, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("api: encode the %s cookie: %w", cookie, err)
 	}
 	aead, err := sealerFor(key)
 	if err != nil {
@@ -82,18 +124,17 @@ func sealSession(key apply.SessionKey, sess *session) (string, error) {
 	}
 	nonce := make([]byte, aead.NonceSize(), aead.NonceSize()+len(plain)+aead.Overhead())
 	if _, rerr := rand.Read(nonce); rerr != nil {
-		return "", fmt.Errorf("api: generate a session nonce: %w", rerr)
+		return "", fmt.Errorf("api: generate a cookie nonce: %w", rerr)
 	}
-	sealed := aead.Seal(nonce, nonce, plain, []byte(sessionCookie))
+	sealed := aead.Seal(nonce, nonce, plain, []byte(cookie))
 	return base64.RawURLEncoding.EncodeToString(sealed), nil
 }
 
-// openSession reads a cookie back, under the current key or the one before
-// it. A value that opens under neither, or that has run out, is no session.
-func openSession(keys apply.SessionKeys, value string, now time.Time) *session {
+// unseal reads a value seal wrote into v, and reports which key opened it.
+func unseal(keys apply.SessionKeys, cookie, value string, v any) (apply.SessionKey, bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
-		return nil
+		return apply.SessionKey{}, false
 	}
 	for _, key := range []apply.SessionKey{keys.Current, keys.Previous} {
 		if key.IsZero() {
@@ -104,25 +145,16 @@ func openSession(keys apply.SessionKeys, value string, now time.Time) *session {
 			continue
 		}
 		nonce, sealed := raw[:aead.NonceSize()], raw[aead.NonceSize():]
-		plain, oerr := aead.Open(nil, nonce, sealed, []byte(sessionCookie))
+		plain, oerr := aead.Open(nil, nonce, sealed, []byte(cookie))
 		if oerr != nil {
 			continue
 		}
-		var sess session
-		if uerr := json.Unmarshal(plain, &sess); uerr != nil {
-			return nil
+		if json.Unmarshal(plain, v) != nil {
+			return apply.SessionKey{}, false
 		}
-		if sess.ID == "" || len(sess.Token) != sha256.Size || !now.Before(sess.Expires) {
-			return nil
-		}
-		csrf, cerr := csrfFor(key, sess.ID)
-		if cerr != nil {
-			return nil
-		}
-		sess.csrf = csrf
-		return &sess
+		return key, true
 	}
-	return nil
+	return apply.SessionKey{}, false
 }
 
 // sealerFor is the AEAD a session key seals with.
@@ -313,28 +345,7 @@ type sessionOpened struct {
 }
 
 func (r *sessionOpened) VisitCreateSessionResponse(w http.ResponseWriter) error {
-	http.SetCookie(w, &http.Cookie{
-		Name:  sessionCookie,
-		Value: r.value,
-		// Scoped to the API: it is the only thing that reads it, and a cookie
-		// sent where it is not needed is a cookie in more logs than necessary.
-		Path:     basePath,
-		Expires:  r.sess.Expires,
-		HttpOnly: true,
-		Secure:   r.secure,
-		SameSite: http.SameSiteStrictMode,
-	})
-	http.SetCookie(w, &http.Cookie{
-		Name:  csrfCookie,
-		Value: r.sess.csrf,
-		// Readable by the page, and at the root, because the interface is
-		// served from there and has to put this value in a header.
-		Path:     "/",
-		Expires:  r.sess.Expires,
-		HttpOnly: false,
-		Secure:   r.secure,
-		SameSite: http.SameSiteStrictMode,
-	})
+	setSessionCookies(w, r.value, r.sess, r.secure)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -342,6 +353,33 @@ func (r *sessionOpened) VisitCreateSessionResponse(w http.ResponseWriter) error 
 		Name:      r.sub.name,
 		Scopes:    scopesToAPI(r.sub.scopes),
 		ExpiresAt: ptr(r.sess.Expires),
+	})
+}
+
+// setSessionCookies writes the two cookies a session is: the credential,
+// which the page may not read, and the CSRF value, which it must.
+func setSessionCookies(w http.ResponseWriter, value string, sess *session, secure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:  sessionCookie,
+		Value: value,
+		// Scoped to the API: it is the only thing that reads it, and a cookie
+		// sent where it is not needed is a cookie in more logs than necessary.
+		Path:     basePath,
+		Expires:  sess.Expires,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:  csrfCookie,
+		Value: sess.csrf,
+		// Readable by the page, and at the root, because the interface is
+		// served from there and has to put this value in a header.
+		Path:     "/",
+		Expires:  sess.Expires,
+		HttpOnly: false,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 

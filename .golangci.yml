@@ -178,8 +178,11 @@ linters:
       # readable, or the page cannot put its value in a header; and Secure
       # follows the connection, because a Secure cookie is never sent back over
       # plain HTTP — internal/api/session.go refuses to open a session over an
-      # untrustworthy transport instead of downgrading silently.
-      - path: internal/api/session\.go
+      # untrustworthy transport instead of downgrading silently. The cookie an
+      # OpenID Connect sign-in is carried in follows the connection the same
+      # way, and is Lax rather than Strict because the provider's redirect
+      # back is a cross-site navigation (D51).
+      - path: internal/api/(session|oidc)\.go
         linters:
           - gosec
         text: G124

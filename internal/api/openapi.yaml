@@ -49,9 +49,10 @@ tags:
       becomes an administrator.
   - name: auth
     description: |
-      How a browser authenticates. It posts a token once and works from a
-      cookie afterwards, so that no script running in the page can read the
-      credential (docs/decisions/ D5).
+      How a browser authenticates. It posts a token once, or a person signs in
+      through an identity provider, and works from a cookie afterwards, so
+      that no script running in the page can read the credential
+      (docs/decisions/ D5, docs/decisions/d51-accounts-come-from-an-identity-provider.md).
   - name: settings
     description: |
       What this server does when nobody has said otherwise. A zone may override
@@ -736,6 +737,80 @@ paths:
       responses:
         "204":
           description: The session is over.
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/providers:
+    get:
+      operationId: listSignInProviders
+      tags: [auth]
+      summary: List the providers a person may sign in through
+      description: |
+        What the sign-in page offers beside the token: the providers that are
+        switched on, by name and kind, and nothing else about them.
+        Unauthenticated, because it is asked before anybody has.
+      security: []
+      responses:
+        "200":
+          description: The providers that are switched on.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SignInProvider" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/oidc/{providerId}/start:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        description: The ULID of an OpenID Connect provider.
+        schema: { type: string }
+    get:
+      operationId: startOIDCSignIn
+      tags: [auth]
+      summary: Send the browser to an OpenID Connect provider to sign in
+      description: |
+        A navigation, not a call: the browser is sent to the provider with
+        the authorization code flow and PKCE, and comes back to the callback
+        below. What the callback needs to check the answer is sealed in a
+        cookie that lasts ten minutes, so that any member can take the
+        callback and none has to remember anything.
+
+        The callback the provider is told to use is the one of its redirect
+        URIs on the address the browser asked this one at. A failure sends the
+        browser back to the sign-in page, with `signin_error` saying what
+        went wrong.
+      security: []
+      responses:
+        "302":
+          description: To the provider, or back to the sign-in page.
+        default: { $ref: "#/components/responses/Problem" }
+
+  /auth/oidc/callback:
+    get:
+      operationId: finishOIDCSignIn
+      tags: [auth]
+      summary: Take a person back from an OpenID Connect provider
+      description: |
+        Where a provider sends the browser. The code is exchanged, the ID token
+        verified against the provider's keys and the nonce the start sealed,
+        and the person's groups mapped to a scope. The browser is then sent to
+        the interface with a session, or to the sign-in page with
+        `signin_error` saying why not. A person in no mapped group is refused,
+        however well they signed in.
+
+        Signing in writes nothing, so it works while the cluster takes no
+        writes (docs/decisions/d51-accounts-come-from-an-identity-provider.md).
+      security: []
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+        - { name: error_description, in: query, schema: { type: string } }
+      responses:
+        "302":
+          description: To the interface, or back to the sign-in page.
         default: { $ref: "#/components/responses/Problem" }
 
   /settings:
@@ -2337,6 +2412,15 @@ components:
         secret:
           type: string
           description: The shared secret, base64, as every implementation writes it.
+
+    SignInProvider:
+      type: object
+      description: A provider as the sign-in page offers it.
+      required: [id, name, kind]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/IdentityProviderKind" }
 
     IdentityProviderKind:
       type: string

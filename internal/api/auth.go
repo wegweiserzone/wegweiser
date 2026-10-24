@@ -129,6 +129,10 @@ type facts struct {
 	// is what a commit's source records. It is the caller's word, like any
 	// User-Agent, and decides nothing but that label.
 	weg bool
+	// host is the address the browser asked at. It picks which of a
+	// provider's registered redirect URIs a sign-in returns to, and nothing
+	// outside that list, so a forged one sends a code nowhere new.
+	host string
 }
 
 // withFacts records what the handlers below cannot work out for themselves.
@@ -138,8 +142,15 @@ func withFacts(next http.Handler) http.Handler {
 			from:   sourceAddress(r),
 			secure: r.TLS != nil,
 			weg:    strings.HasPrefix(r.UserAgent(), "weg/"),
+			host:   r.Host,
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), factsKey{}, f)))
+		ctx := context.WithValue(r.Context(), factsKey{}, f)
+		// The sign-in under way, for the callback, which as a strict handler
+		// is handed no cookies of its own.
+		if c, err := r.Cookie(flowCookie); err == nil {
+			ctx = context.WithValue(ctx, flowKey{}, c.Value)
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -150,6 +161,15 @@ func sourceOf(ctx context.Context) string {
 		return ""
 	}
 	return f.from
+}
+
+// hostOf returns the address the request was made to.
+func hostOf(ctx context.Context) string {
+	f, ok := ctx.Value(factsKey{}).(facts)
+	if !ok {
+		return ""
+	}
+	return f.host
 }
 
 // fromWeg reports whether the request came from the weg command.
@@ -298,12 +318,20 @@ func (s *Server) authenticator(next http.Handler) http.Handler {
 	})
 }
 
-// unauthenticated reports whether a route may be reached without a credential.
+// unauthenticated reports whether a route may be reached without a credential:
+// the health check, and the ways a browser comes to have one.
 func (s *Server) unauthenticated(r *http.Request) bool {
-	if strings.HasSuffix(r.URL.Path, healthPath) {
+	switch {
+	case strings.HasSuffix(r.URL.Path, healthPath):
+		return true
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, sessionPath):
+		return true
+	case r.Method == http.MethodGet && r.URL.Path == basePath+signInProvidersPath:
+		return true
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, basePath+oidcPath+"/"):
 		return true
 	}
-	return r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, sessionPath)
+	return false
 }
 
 // presented reports whether the request carried a credential at all.
@@ -367,8 +395,9 @@ func (s *Server) credential(r *http.Request) (context.Context, *subject, error) 
 func (s *Server) openedSession(ctx context.Context, value string) (*session, *subject, error) {
 	now := s.now()
 	var (
-		sess *session
-		tok  *store.Token
+		sess   *session
+		tok    *store.Token
+		person *subject
 	)
 	err := s.store.View(ctx, func(r store.Reader) error {
 		keys, kerr := apply.StoredSessionKeys(ctx, r)
@@ -388,6 +417,11 @@ func (s *Server) openedSession(ctx context.Context, value string) (*session, *su
 				return ErrTokenInvalid
 			}
 		}
+		if sess.Provider != "" {
+			var perr error
+			person, perr = personOf(ctx, r, sess)
+			return perr
+		}
 		var terr error
 		tok, terr = r.TokenByHash(ctx, sess.Token)
 		return terr
@@ -398,11 +432,41 @@ func (s *Server) openedSession(ctx context.Context, value string) (*session, *su
 	if err != nil {
 		return nil, nil, err
 	}
+	if person != nil {
+		return sess, person, nil
+	}
 	sub, err := s.tokenSubject(tok, sess.Token)
 	if err != nil {
 		return nil, nil, err
 	}
 	return sess, sub, nil
+}
+
+// personOf is the caller a session opened through an identity provider is
+// for. The provider has to be there still and switched on: removing it, or
+// switching it off, is how its sessions are ended at once (D51).
+func personOf(ctx context.Context, r store.Reader, sess *session) (*subject, error) {
+	providers, err := apply.StoredIdentityProviders(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		p := &providers[i]
+		if p.ID != sess.Provider {
+			continue
+		}
+		if !p.Enabled {
+			return nil, ErrTokenInvalid
+		}
+		return &subject{name: personName(sess.Name, p.Name), scopes: []Scope{sess.Scope}}, nil
+	}
+	return nil, ErrTokenInvalid
+}
+
+// personName is what a person is called in a commit: their name, and the
+// provider that vouched for it, since two providers may each have an alice.
+func personName(name, provider string) string {
+	return name + " (" + provider + ")"
 }
 
 // notAllowed reports a caller whose token does not reach this far.
