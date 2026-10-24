@@ -33,6 +33,7 @@ type sinks struct {
 	keys      dns.Keyring
 	targets   []dns.NotifyTarget
 	cookies   dns.CookieSecrets
+	resolvers []netip.Prefix
 	handed    int
 }
 
@@ -42,6 +43,7 @@ func (s *sinks) SetTargets(t []dns.NotifyTarget) {
 	s.hand(func() { s.targets = t })
 }
 func (s *sinks) SetCookieSecrets(c dns.CookieSecrets) { s.hand(func() { s.cookies = c }) }
+func (s *sinks) SetResolvers(r []netip.Prefix)        { s.hand(func() { s.resolvers = r }) }
 
 func (s *sinks) hand(set func()) {
 	s.mu.Lock()
@@ -85,7 +87,7 @@ func newFixture(t *testing.T) *fixture {
 	f := &fixture{store: st, snaps: &snapshots{}, sinks: &sinks{}}
 	f.pub, err = publish.New(publish.Config{
 		Store: st, Snapshots: f.snaps,
-		Transfers: f.sinks, Keyring: f.sinks, Notify: f.sinks, Cookies: f.sinks,
+		Transfers: f.sinks, Keyring: f.sinks, Notify: f.sinks, Cookies: f.sinks, Resolvers: f.sinks,
 		OnError: func(err error) { t.Errorf("the publisher reported a fault: %v", err) },
 	})
 	if err != nil {
@@ -165,8 +167,9 @@ func TestLoadCopiesEverythingTheStoreHolds(t *testing.T) {
 		{Addr: netip.MustParseAddrPort("198.51.100.53:53")},
 	}))
 	cookies := must(apply.CookieSecretsChange(secrets))
+	resolvers := must(apply.ResolversChange([]netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}))
 	f.update(t, func(tx store.Tx) error {
-		for _, c := range []apply.SettingChange{allow, notify, cookies} {
+		for _, c := range []apply.SettingChange{allow, notify, cookies, resolvers} {
 			if perr := tx.PutSetting(t.Context(), c.Key, c.Value); perr != nil {
 				return perr
 			}
@@ -193,6 +196,9 @@ func TestLoadCopiesEverythingTheStoreHolds(t *testing.T) {
 	}
 	if f.sinks.cookies.Current != dns.CookieSecret(secrets.Current) {
 		t.Error("the cookie secret in force is not the one the store holds")
+	}
+	if len(f.sinks.resolvers) != 1 || f.sinks.resolvers[0] != netip.MustParsePrefix("127.0.0.1/32") {
+		t.Errorf("the query path believes %v, want 127.0.0.1/32", f.sinks.resolvers)
 	}
 }
 
@@ -240,6 +246,24 @@ func TestASettingReachesTheCopyItIsFor(t *testing.T) {
 		defer f.sinks.mu.Unlock()
 		if len(f.sinks.targets) != 2 {
 			t.Errorf("the notify list holds %v, want both secondaries", f.sinks.targets)
+		}
+	})
+
+	t.Run("whose word on a client is believed", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t)
+		f.load(t)
+
+		must := settings(t)
+		change := must(apply.ResolversChange([]netip.Prefix{netip.MustParsePrefix("::1/128")}))
+		if err := f.applier.SetSettings(t.Context(), []apply.SettingChange{change}); err != nil {
+			t.Fatalf("SetSettings: %v", err)
+		}
+
+		f.sinks.mu.Lock()
+		defer f.sinks.mu.Unlock()
+		if len(f.sinks.resolvers) != 1 || f.sinks.resolvers[0] != netip.MustParsePrefix("::1/128") {
+			t.Errorf("the query path believes %v, want ::1/128", f.sinks.resolvers)
 		}
 	})
 

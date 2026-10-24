@@ -2353,6 +2353,72 @@ func TestTransferListReachesTheQueryPath(t *testing.T) {
 	})
 }
 
+// recordingResolvers is a data plane that remembers whom it was last told to
+// believe.
+type recordingResolvers struct {
+	mu   sync.Mutex
+	last []netip.Prefix
+}
+
+func (r *recordingResolvers) SetResolvers(p []netip.Prefix) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.last = p
+}
+
+func (r *recordingResolvers) believed() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return apply.ResolversText(r.last)
+}
+
+// D50: the resolvers whose word on a client is believed are a setting, start
+// at nobody, and reach the query path without a restart.
+func TestResolverListReachesTheQueryPath(t *testing.T) {
+	t.Parallel()
+
+	sink := &recordingResolvers{}
+	h := startHarness(t, func(c *publish.Config) { c.Resolvers = sink })
+
+	var got gen.Settings
+	h.decode(h.do(http.MethodGet, "/settings", nil), http.StatusOK, &got)
+	if len(got.Resolvers) != 0 || len(sink.believed()) != 0 {
+		t.Errorf("a fresh server believes %v (the query path %v), want nobody",
+			got.Resolvers, sink.believed())
+	}
+
+	var after gen.Settings
+	h.decode(h.do(http.MethodPatch, "/settings", gen.UpdateSettings{
+		Resolvers: &[]string{"127.0.0.1", "::1"},
+	}), http.StatusOK, &after)
+	want := []string{"127.0.0.1/32", "::1/128"}
+	if !slices.Equal(after.Resolvers, want) {
+		t.Errorf("the list came back as %v, want %v", after.Resolvers, want)
+	}
+	if !slices.Equal(sink.believed(), want) {
+		t.Errorf("the query path believes %v, want %v", sink.believed(), want)
+	}
+
+	t.Run("something that is not an address is refused", func(t *testing.T) {
+		resp := h.do(http.MethodPatch, "/settings",
+			map[string]any{"resolvers": []string{"resolver.example.com."}})
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Errorf("status = %d, want 422", resp.StatusCode)
+		}
+	})
+
+	t.Run("the list can be taken away again", func(t *testing.T) {
+		var empty gen.Settings
+		h.decode(h.do(http.MethodPatch, "/settings", gen.UpdateSettings{
+			Resolvers: &[]string{},
+		}), http.StatusOK, &empty)
+		if len(empty.Resolvers) != 0 || len(sink.believed()) != 0 {
+			t.Errorf("the list is %v (the query path %v), want it emptied",
+				empty.Resolvers, sink.believed())
+		}
+	})
+}
+
 // TestSettingsChangeTheWritePath is the half that matters: the endpoint is
 // worth nothing unless the policy it stores is the one a write actually runs
 // under. Under last-wins the second name takes the address over, which under

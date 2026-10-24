@@ -129,13 +129,8 @@ func TransferAllowChange(allow TransferAllow) (SettingChange, error) {
 // ParseTransferAllow turns what a client sent into addresses and key names.
 //
 // An entry beginning with "key:" names a TSIG key, which grants a transfer from
-// any address at all; that is what a key is for. Everything else is an address.
-//
-// A bare address is the single-host prefix it means, so that an operator naming
-// one secondary does not have to write /32 to be understood. A prefix with host
-// bits set is refused rather than masked: 192.0.2.7/24 is either a typo for the
-// host or for the network, and guessing which would sometimes hand a zone to a
-// network nobody meant to name.
+// any address at all; that is what a key is for. Everything else is an address,
+// read as [prefixEntry] reads one.
 func ParseTransferAllow(in []string) (TransferAllow, error) {
 	var out TransferAllow
 	for _, s := range in {
@@ -152,24 +147,42 @@ func ParseTransferAllow(in []string) (TransferAllow, error) {
 			out.Keys = append(out.Keys, name)
 			continue
 		}
-		if addr, err := netip.ParseAddr(s); err == nil {
-			out.Prefixes = append(out.Prefixes, netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen()))
-			continue
-		}
-		p, err := netip.ParsePrefix(s)
+		p, ok, err := prefixEntry(s)
 		if err != nil {
+			return TransferAllow{}, err
+		}
+		if !ok {
 			return TransferAllow{}, fmt.Errorf(
 				"%w: %q is not an address, a CIDR prefix, or a key named as key:<name>",
 				zone.ErrInvalid, s)
 		}
-		if p.Masked() != p {
-			return TransferAllow{}, fmt.Errorf(
-				"%w: %q has bits set below its prefix length; write %s for the network or %s for the host",
-				zone.ErrInvalid, s, p.Masked(), netip.PrefixFrom(p.Addr(), p.Addr().BitLen()))
-		}
 		out.Prefixes = append(out.Prefixes, p)
 	}
 	return out, nil
+}
+
+// prefixEntry reads one entry of a list of addresses, and reports false for
+// text that is neither an address nor a prefix.
+//
+// A bare address is the single-host prefix it means, so that an operator naming
+// one machine does not have to write /32 to be understood. A prefix with host
+// bits set is refused rather than masked: 192.0.2.7/24 is either a typo for the
+// host or for the network, and guessing which would sometimes name a network
+// nobody meant to.
+func prefixEntry(s string) (netip.Prefix, bool, error) {
+	if addr, err := netip.ParseAddr(s); err == nil {
+		return netip.PrefixFrom(addr.Unmap(), addr.Unmap().BitLen()), true, nil
+	}
+	// Text that does not parse is not a refusal here: the caller knows what
+	// else an entry may be, and says what was expected.
+	p, err := netip.ParsePrefix(s)
+	isPrefix := err == nil
+	if isPrefix && p.Masked() != p {
+		return netip.Prefix{}, false, fmt.Errorf(
+			"%w: %q has bits set below its prefix length; write %s for the network or %s for the host",
+			zone.ErrInvalid, s, p.Masked(), netip.PrefixFrom(p.Addr(), p.Addr().BitLen()))
+	}
+	return p, isPrefix, nil
 }
 
 // TransferAllowText renders the list the way a client sends it, addresses
@@ -300,6 +313,72 @@ func NotifyTargetsText(targets []NotifyTarget) []string {
 			continue
 		}
 		out[i] = where + " " + keyPrefix + t.Key.String()
+	}
+	return out
+}
+
+// ResolverSetting is the key the list of resolvers whose word on a client is
+// believed is stored under. Empty means nobody, which is where a server starts
+// (docs/decisions/d50-the-client-a-resolver-asked-for.md).
+const ResolverSetting = "resolvers"
+
+// StoredResolvers returns the resolvers a query may name its client through.
+func StoredResolvers(ctx context.Context, r store.Reader) ([]netip.Prefix, error) {
+	raw, err := r.Setting(ctx, ResolverSetting)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var text []string
+	if uerr := json.Unmarshal(raw, &text); uerr != nil {
+		return nil, fmt.Errorf("apply: the stored resolver list is not readable: %w", uerr)
+	}
+	return ParseResolvers(text)
+}
+
+// ResolversChange is the change that records whose word on a client is
+// believed.
+func ResolversChange(resolvers []netip.Prefix) (SettingChange, error) {
+	raw, err := json.Marshal(ResolversText(resolvers))
+	if err != nil {
+		return SettingChange{}, fmt.Errorf("apply: encode the resolver list: %w", err)
+	}
+	return SettingChange{Key: ResolverSetting, Value: raw}, nil
+}
+
+// ParseResolvers turns what a client sent into the addresses a resolver may
+// ask from, read as [prefixEntry] reads them.
+//
+// There are no keys here, unlike the transfer list. What the option claims is
+// believed or not by where the query came from, because that is the one thing
+// about it the claimant did not write.
+func ParseResolvers(in []string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		p, ok, err := prefixEntry(s)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("%w: %q is not an address or a CIDR prefix", zone.ErrInvalid, s)
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// ResolversText renders the list the way a client sends it.
+func ResolversText(resolvers []netip.Prefix) []string {
+	out := make([]string, len(resolvers))
+	for i, p := range resolvers {
+		out[i] = p.String()
 	}
 	return out
 }

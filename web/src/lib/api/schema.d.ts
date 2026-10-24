@@ -985,12 +985,14 @@ export interface components {
             reverseConflictPolicy: components["schemas"]["ReverseConflictPolicy"];
             transferAllow: components["schemas"]["TransferAllow"];
             notifyTargets: components["schemas"]["NotifyTargets"];
+            resolvers: components["schemas"]["Resolvers"];
         };
         /** @description A field that is absent is left as it is. */
         UpdateSettings: {
             reverseConflictPolicy?: components["schemas"]["ReverseConflictPolicy"];
             transferAllow?: components["schemas"]["TransferAllow"];
             notifyTargets?: components["schemas"]["NotifyTargets"];
+            resolvers?: components["schemas"]["Resolvers"];
         };
         /**
          * @description Who is told when a zone changes, as addresses with an optional port.
@@ -1011,6 +1013,17 @@ export interface components {
          *     stored as the single-host prefix it means.
          */
         TransferAllow: string[];
+        /**
+         * @description The resolvers in front of this server whose word on a client is
+         *     believed, as addresses or CIDR prefixes. A query from one of them that
+         *     carries the client subnet option of RFC 7871 is shown in the query
+         *     stream with the client it names; one from anywhere else is shown by its
+         *     own address, because the option is whatever its sender wrote. An empty
+         *     list believes nobody, which is where a server starts. A bare address is
+         *     stored as the single-host prefix it means. Nothing about an answer
+         *     depends on this (docs/decisions/ D50).
+         */
+        Resolvers: string[];
         Health: {
             /** @enum {string} */
             status: "serving" | "starting";

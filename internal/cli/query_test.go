@@ -35,8 +35,8 @@ func tailUntil(
 			cancel()
 			t.Fatalf("waited for %q; stdout:\n%s\nstderr:\n%s", want, stdout.String(), stderr.String())
 		}
-		for _, ev := range feed {
-			srv.stream.Observe(ev)
+		for i := range feed {
+			srv.stream.Observe(feed[i])
 		}
 		time.Sleep(5 * time.Millisecond)
 	}

@@ -144,6 +144,111 @@ func TestTransferAllowRoundTripsThroughTheStore(t *testing.T) {
 	}
 }
 
+// D50: the resolvers whose word on a client is believed are read as the
+// transfer list reads an address, and take no keys.
+func TestParseResolvers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+		bad  string
+	}{
+		{name: "nothing at all", in: nil, want: []string{}},
+		{name: "blank entries are dropped", in: []string{"", "  "}, want: []string{}},
+		{
+			// The usual case: Unbound on the same machine.
+			name: "a bare address is the host it means",
+			in:   []string{"127.0.0.1", "::1"},
+			want: []string{"127.0.0.1/32", "::1/128"},
+		},
+		{name: "a network is a network", in: []string{"10.0.0.0/8"}, want: []string{"10.0.0.0/8"}},
+		{
+			name: "a prefix with host bits set is refused, and says what was meant",
+			in:   []string{"192.0.2.7/24"},
+			bad:  "192.0.2.0/24",
+		},
+		{
+			// What the option claims is judged by where it came from, which a
+			// key would not say anything about.
+			name: "a key is not a resolver",
+			in:   []string{"key:resolver.example.com."},
+			bad:  "not an address or a CIDR prefix",
+		},
+		{name: "a name is not an address", in: []string{"resolver.example.com."}, bad: "not an address"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := apply.ParseResolvers(tt.in)
+			if tt.bad != "" {
+				if err == nil {
+					t.Fatalf("%v was accepted as %v", tt.in, got)
+				}
+				if !strings.Contains(err.Error(), tt.bad) {
+					t.Errorf("error is %q, want it to mention %q", err, tt.bad)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseResolvers(%v): %v", tt.in, err)
+			}
+			if text := apply.ResolversText(got); !slices.Equal(text, tt.want) {
+				t.Errorf("got %v, want %v", text, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolversRoundTripThroughTheStore(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t)
+	read := func() []string {
+		t.Helper()
+		var got []string
+		if err := f.s.View(t.Context(), func(r store.Reader) error {
+			list, verr := apply.StoredResolvers(t.Context(), r)
+			got = apply.ResolversText(list)
+			return verr
+		}); err != nil {
+			t.Fatalf("StoredResolvers: %v", err)
+		}
+		return got
+	}
+
+	// Nothing set believes nobody, which is where a server starts (D50).
+	if got := read(); len(got) != 0 {
+		t.Fatalf("a fresh server believes %v", got)
+	}
+
+	want := []string{"127.0.0.1/32", "::1/128"}
+	list, err := apply.ParseResolvers(want)
+	if err != nil {
+		t.Fatalf("ParseResolvers: %v", err)
+	}
+	change, cerr := apply.ResolversChange(list)
+	if cerr != nil {
+		t.Fatalf("ResolversChange: %v", cerr)
+	}
+	setSetting(t, f, change)
+	if got := read(); !slices.Equal(got, want) {
+		t.Errorf("read back %v, want %v", got, want)
+	}
+
+	empty, eerr := apply.ResolversChange(nil)
+	if eerr != nil {
+		t.Fatalf("ResolversChange: %v", eerr)
+	}
+	setSetting(t, f, empty)
+	if got := read(); len(got) != 0 {
+		t.Errorf("after clearing it, %v are still believed", got)
+	}
+}
+
 func TestParseNotifyTargets(t *testing.T) {
 	t.Parallel()
 

@@ -26,6 +26,7 @@ type serverSettings struct {
 	ReverseConflictPolicy string   `json:"reverseConflictPolicy"`
 	TransferAllow         []string `json:"transferAllow"`
 	NotifyTargets         []string `json:"notifyTargets"`
+	Resolvers             []string `json:"resolvers"`
 }
 
 func newSettingsCommand(opts *options) *cobra.Command {
@@ -54,8 +55,9 @@ func newSettingsShowCommand(opts *options, f *clientFlags) *cobra.Command {
 		Use:   "show",
 		Short: "Print the settings in force",
 		Long: "Print the server-wide settings in force: what happens when an address\n" +
-			"already answers with another name, who may transfer a zone, and who is\n" +
-			"told when one changes.",
+			"already answers with another name, who may transfer a zone, who is told\n" +
+			"when one changes, and which resolvers in front are believed about the\n" +
+			"client they ask for.",
 		Args:    usageArgs(cobra.NoArgs),
 		Example: "  weg settings show\n  weg settings show --output json",
 
@@ -84,9 +86,10 @@ func runSettingsShow(ctx context.Context, opts *options, f *clientFlags) error {
 
 func newSettingsSetCommand(opts *options, f *clientFlags) *cobra.Command {
 	var (
-		policy string
-		allow  []string
-		notify []string
+		policy    string
+		allow     []string
+		notify    []string
+		resolvers []string
 	)
 
 	cmd := &cobra.Command{
@@ -101,16 +104,18 @@ func newSettingsSetCommand(opts *options, f *clientFlags) *cobra.Command {
 			"  weg settings set --transfer-allow 192.0.2.0/24,2001:db8::/32\n" +
 			"  weg settings set --transfer-allow \"\"   # nobody, which is where a server starts\n" +
 			"  weg settings set --notify 192.0.2.53,198.51.100.53\n" +
-			"  weg settings set --notify \"192.0.2.53 key:secondary.example.com.\"",
+			"  weg settings set --notify \"192.0.2.53 key:secondary.example.com.\"\n" +
+			"  weg settings set --resolvers 127.0.0.1,::1   # Unbound on this machine",
 
 		RunE: func(c *cobra.Command, _ []string) error {
 			// A pointer says "the caller named this", which is what the API
 			// means by a field being present. An empty transfer list is a
 			// value, not an omission.
 			var (
-				setPolicy *string
-				setAllow  *[]string
-				setNotify *[]string
+				setPolicy    *string
+				setAllow     *[]string
+				setNotify    *[]string
+				setResolvers *[]string
 			)
 			if c.Flags().Changed("reverse-conflict-policy") {
 				setPolicy = &policy
@@ -121,10 +126,13 @@ func newSettingsSetCommand(opts *options, f *clientFlags) *cobra.Command {
 			if c.Flags().Changed("notify") {
 				setNotify = &notify
 			}
-			if setPolicy == nil && setAllow == nil && setNotify == nil {
+			if c.Flags().Changed("resolvers") {
+				setResolvers = &resolvers
+			}
+			if setPolicy == nil && setAllow == nil && setNotify == nil && setResolvers == nil {
 				return errors.New("nothing to change: name a setting, or see `weg settings show`")
 			}
-			return runSettingsSet(c.Context(), opts, f, setPolicy, setAllow, setNotify)
+			return runSettingsSet(c.Context(), opts, f, setPolicy, setAllow, setNotify, setResolvers)
 		},
 	}
 	cmd.Flags().StringVar(&policy, "reverse-conflict-policy", "",
@@ -137,12 +145,15 @@ func newSettingsSetCommand(opts *options, f *clientFlags) *cobra.Command {
 	cmd.Flags().StringSliceVar(&notify, "notify", nil,
 		"who is told when a zone changes, as `addresses` with an optional port and "+
 			"an optional key:NAME after each; empty is nobody")
+	cmd.Flags().StringSliceVar(&resolvers, "resolvers", nil,
+		"the resolvers in front whose word on the client they ask for is believed, "+
+			"as `addresses` or CIDR prefixes; empty is nobody")
 	return cmd
 }
 
 func runSettingsSet(
 	ctx context.Context, opts *options, f *clientFlags,
-	policy *string, allow *[]string, notify *[]string,
+	policy *string, allow *[]string, notify *[]string, resolvers *[]string,
 ) error {
 	var body gen.UpdateSettingsJSONRequestBody
 
@@ -173,6 +184,15 @@ func runSettingsSet(
 		}
 		text := apply.NotifyTargetsText(parsed)
 		body.NotifyTargets = &text
+	}
+
+	if resolvers != nil {
+		parsed, perr := apply.ParseResolvers(*resolvers)
+		if perr != nil {
+			return perr
+		}
+		text := apply.ResolversText(parsed)
+		body.Resolvers = &text
 	}
 
 	client, err := f.client()
@@ -207,6 +227,10 @@ func printSettings(opts *options, s gen.Settings) error {
 		ReverseConflictPolicy: string(s.ReverseConflictPolicy),
 		TransferAllow:         s.TransferAllow,
 		NotifyTargets:         s.NotifyTargets,
+		Resolvers:             s.Resolvers,
+	}
+	if got.Resolvers == nil {
+		got.Resolvers = []string{}
 	}
 	if got.TransferAllow == nil {
 		got.TransferAllow = []string{}
@@ -231,7 +255,14 @@ func printSettings(opts *options, s gen.Settings) error {
 		if len(got.NotifyTargets) > 0 {
 			told = strings.Join(got.NotifyTargets, ", ")
 		}
-		_, werr := fmt.Fprintf(w, "a change is announced to %s\n", told)
+		if _, werr := fmt.Fprintf(w, "a change is announced to %s\n", told); werr != nil {
+			return werr
+		}
+		named := p.Paint(output.ColorYellow, "nobody")
+		if len(got.Resolvers) > 0 {
+			named = strings.Join(got.Resolvers, ", ")
+		}
+		_, werr := fmt.Fprintf(w, "a client is named by     %s\n", named)
 		return werr
 	})
 }

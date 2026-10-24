@@ -282,6 +282,7 @@ func runServe(ctx context.Context, opts *options, cfg *config.Config, join joinF
 		Keyring:   keyPublishers{server: srv, notifier: notifier},
 		Notify:    notifyPublishers{notifier: notifier, prober: prober},
 		Cookies:   srv,
+		Resolvers: srv,
 		OnError:   report,
 	})
 	if err != nil {

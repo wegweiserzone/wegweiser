@@ -25,6 +25,8 @@
   let savingAllow = $state(false);
   let notify = $state("");
   let savingNotify = $state(false);
+  let resolvers = $state("");
+  let savingResolvers = $state(false);
 
   const writable = $derived(standing.writes.allowed);
 
@@ -37,6 +39,7 @@
       settings = await api.get("/settings");
       allow = settings.transferAllow.join(", ");
       notify = settings.notifyTargets.join(", ");
+      resolvers = settings.resolvers.join(", ");
       failed = null;
     } catch (err) {
       failed = err instanceof ApiError ? (err.detail ?? err.title) : "The settings could not be read.";
@@ -89,6 +92,20 @@
       refused = err instanceof ApiError ? (err.detail ?? err.title) : "The change was not saved.";
     } finally {
       savingNotify = false;
+    }
+  }
+
+  async function saveResolvers() {
+    if (!writable) return;
+    savingResolvers = true;
+    refused = null;
+    try {
+      settings = await api.patch("/settings", { body: { resolvers: split(resolvers) } });
+      resolvers = settings.resolvers.join(", ");
+    } catch (err) {
+      refused = err instanceof ApiError ? (err.detail ?? err.title) : "The change was not saved.";
+    } finally {
+      savingResolvers = false;
     }
   }
 
@@ -255,6 +272,37 @@
             disabled={!writable}
             saving={savingNotify}
             onsave={saveNotify}
+          />
+        {/if}
+      </Panel>
+    </div>
+
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-3">
+        <h2 class="sign text-[11px] text-ink-mute">A resolver in front</h2>
+        <span class="h-px flex-1 bg-line"></span>
+      </div>
+
+      <Panel heading="Whose word on a client is believed">
+        {#snippet blurb()}
+          Behind a resolver every query comes from the resolver. One that sends the client
+          subnet option of RFC 7871 says which client it is asking for, and the query stream
+          shows that client, but only for a resolver named here: anybody can write anything
+          into the option. Nothing about an answer depends on it. Addresses or CIDR prefixes,
+          separated by commas; Unbound on this machine is 127.0.0.1.
+        {/snippet}
+
+        {#if settings}
+          <ListSetting
+            label="Resolvers"
+            placeholder="127.0.0.1, ::1"
+            bind:value={resolvers}
+            stored={settings.resolvers}
+            reads="A client is named by"
+            empty="nobody"
+            disabled={!writable}
+            saving={savingResolvers}
+            onsave={saveResolvers}
           />
         {/if}
       </Panel>

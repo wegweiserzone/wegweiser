@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"sync"
 
 	"github.com/wegweiserzone/wegweiser/internal/apply"
@@ -45,6 +46,13 @@ type NotifyList interface {
 	SetTargets([]dns.NotifyTarget)
 }
 
+// ResolverList holds the resolvers whose word on a client is believed
+// (docs/decisions/d50-the-client-a-resolver-asked-for.md). A *dns.Server is
+// one.
+type ResolverList interface {
+	SetResolvers([]netip.Prefix)
+}
+
 // CookieSecrets holds what the server computes its cookies under. A
 // *dns.Server is one.
 type CookieSecrets interface {
@@ -62,6 +70,7 @@ type Config struct {
 	Keyring   Keyring
 	Notify    NotifyList
 	Cookies   CookieSecrets
+	Resolvers ResolverList
 
 	// OnError hears about a copy that could not be rebuilt after a batch. The
 	// batch is committed by then and stays so; the copy answers from before
@@ -110,7 +119,7 @@ func (p *Publisher) Load(ctx context.Context) error {
 	}
 	p.cfg.Snapshots.SetSnapshot(snap)
 
-	return errors.Join(p.keys(ctx), p.transfers(ctx), p.notify(ctx), p.cookies(ctx))
+	return errors.Join(p.keys(ctx), p.transfers(ctx), p.notify(ctx), p.cookies(ctx), p.resolvers(ctx))
 }
 
 // Applied copies what one batch changed. It is the applier's hook
@@ -136,6 +145,8 @@ func (p *Publisher) Applied(ctx context.Context, a apply.Applied) {
 			p.report(p.notify(ctx))
 		case apply.CookieSecretSetting:
 			p.report(p.cookies(ctx))
+		case apply.ResolverSetting:
+			p.report(p.resolvers(ctx))
 		default:
 			// Read while a change is planned, and copied nowhere.
 		}
@@ -221,6 +232,21 @@ func (p *Publisher) transfers(ctx context.Context) error {
 		return fmt.Errorf("read who may transfer: %w", err)
 	}
 	p.cfg.Transfers.SetTransfers(dns.Allow{Prefixes: allow.Prefixes, Keys: allow.Keys})
+	return nil
+}
+
+// resolvers copies whose word on a client is believed.
+func (p *Publisher) resolvers(ctx context.Context) error {
+	if p.cfg.Resolvers == nil {
+		return nil
+	}
+	list, err := read(ctx, p.cfg.Store, func(r store.Reader) ([]netip.Prefix, error) {
+		return apply.StoredResolvers(ctx, r)
+	})
+	if err != nil {
+		return fmt.Errorf("read which resolvers are believed: %w", err)
+	}
+	p.cfg.Resolvers.SetResolvers(list)
 	return nil
 }
 

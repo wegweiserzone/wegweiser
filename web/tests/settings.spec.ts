@@ -167,3 +167,30 @@ test("a transfer key is created, revealed and withdrawn", async ({ page, server 
   await expect(row.getByText("Withdrawn")).toBeVisible();
   await expect(row.getByRole("button", { name: "Show secret" })).toBeHidden();
 });
+
+// D50: behind a resolver every query comes from the resolver, and only one
+// named here is believed about the client it asks for.
+test("the resolvers believed about a client start at nobody and can be named", async ({
+  page,
+  server,
+}) => {
+  await signIn(page, server);
+  await page.goto(`${server.url}/settings`);
+
+  const section = page.locator("section").filter({
+    has: page.getByRole("heading", { name: "Whose word on a client is believed" }),
+  });
+  await expect(section.getByText("nobody", { exact: true })).toBeVisible();
+
+  await section.getByLabel("Resolvers").fill("127.0.0.1, ::1");
+  await section.getByRole("button", { name: "Save" }).click();
+  await expect(section.getByText("127.0.0.1/32")).toBeVisible();
+  await expect(section.getByText("::1/128")).toBeVisible();
+
+  await page.reload();
+  await expect(section.getByText("127.0.0.1/32")).toBeVisible();
+
+  await section.getByLabel("Resolvers").fill("");
+  await section.getByRole("button", { name: "Save" }).click();
+  await expect(section.getByText("nobody", { exact: true })).toBeVisible();
+});

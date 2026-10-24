@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
 	"github.com/wegweiserzone/wegweiser/internal/apply"
@@ -10,9 +11,10 @@ import (
 
 // settings is what a client is told, and what the server holds after a change.
 type settings struct {
-	policy apply.Policy
-	allow  apply.TransferAllow
-	notify []apply.NotifyTarget
+	policy    apply.Policy
+	allow     apply.TransferAllow
+	notify    []apply.NotifyTarget
+	resolvers []netip.Prefix
 }
 
 // GetSettings reports the defaults a zone that says nothing inherits.
@@ -76,7 +78,11 @@ func (s *Server) settings(ctx context.Context, r store.Reader) (settings, error)
 	if err != nil {
 		return settings{}, err
 	}
-	return settings{policy: pol, allow: allow, notify: notify}, nil
+	resolvers, err := apply.StoredResolvers(ctx, r)
+	if err != nil {
+		return settings{}, err
+	}
+	return settings{policy: pol, allow: allow, notify: notify, resolvers: resolvers}, nil
 }
 
 // settingsToAPI renders the settings in force.
@@ -87,6 +93,7 @@ func settingsToAPI(cur settings) gen.Settings {
 		// transfers" from "this server did not say".
 		TransferAllow: apply.TransferAllowText(cur.allow),
 		NotifyTargets: apply.NotifyTargetsText(cur.notify),
+		Resolvers:     apply.ResolversText(cur.resolvers),
 	}
 }
 
@@ -122,6 +129,17 @@ func settingChanges(body *gen.UpdateSettings) ([]apply.SettingChange, error) {
 			return nil, err
 		}
 		c, cerr := apply.TransferAllowChange(allow)
+		if cerr != nil {
+			return nil, cerr
+		}
+		out = append(out, c)
+	}
+	if body.Resolvers != nil {
+		resolvers, err := apply.ParseResolvers(*body.Resolvers)
+		if err != nil {
+			return nil, err
+		}
+		c, cerr := apply.ResolversChange(resolvers)
 		if cerr != nil {
 			return nil, cerr
 		}

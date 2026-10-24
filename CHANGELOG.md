@@ -18,6 +18,21 @@ public API is unstable and may change without a deprecation period.
   so a resolver keeps one cache for all of them. An option that cannot be read is answered
   FORMERR.
 
+#### API
+
+- The settings carry `resolvers`: the resolvers in front whose word on the client they ask
+  for is believed, as addresses or prefixes. It starts empty, which believes nobody,
+  because the option says whatever its sender wrote into it.
+
+#### CLI
+
+- `weg settings set --resolvers 127.0.0.1,::1` names them, and `weg settings show` says
+  who they are.
+
+#### Web interface
+
+- The settings have a panel for them, under *A resolver in front*.
+
 ### Fixed
 
 #### CLI
