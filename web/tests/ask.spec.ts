@@ -12,6 +12,7 @@ test.beforeAll(async ({ server }) => {
   for (const record of [
     { name: "www.ask.example.", type: "A", data: "192.0.2.10" },
     { name: "web.ask.example.", type: "CNAME", data: "www.ask.example." },
+    { name: "old.ask.example.", type: "CNAME", data: "gone.ask.example." },
   ]) {
     await seed(server, "POST", `/zones/${zone.id}/records`, record);
   }
@@ -45,6 +46,18 @@ test("an alias can be followed to what it points at", async ({ page, server }) =
   await page.getByRole("button", { name: "Ask about www.ask.example.", exact: true }).click();
   await expect(page.getByText("Answered", { exact: true })).toBeVisible();
   await expect(page).toHaveURL(/name=www\.ask\.example\.&type=A$/);
+});
+
+test("an alias to a name that does not exist is an alias, not a missing name", async ({
+  page,
+  server,
+}) => {
+  await signIn(page, server);
+  await page.goto(`${server.url}/ask?name=old.ask.example&type=A`);
+
+  await expect(page.getByText("An alias", { exact: true })).toBeVisible();
+  await expect(page.getByText(/the name it leads to does not exist/)).toBeVisible();
+  await expect(page.getByText(/^NXDOMAIN, authoritative, from/)).toBeVisible();
 });
 
 test("a name no zone here covers is refused, with the reason", async ({ page, server }) => {

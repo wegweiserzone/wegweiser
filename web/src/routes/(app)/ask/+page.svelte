@@ -155,7 +155,7 @@
       <section class="px-5" aria-label="The answer">
         <p
           class="font-cond text-[24px] leading-none font-bold tracking-[0.06em] uppercase
-                 {ink[tone[asked.outcome]]}"
+                 {ink[tone(asked)]}"
         >
           {headline[asked.outcome]}
         </p>
@@ -257,7 +257,7 @@
       >
         <span class="num min-w-0 flex-1 truncate">{r.name}</span>
         <span class="num text-ink-faint">{r.type}</span>
-        <span class="num text-[11px] {ink[tone[r.outcome]]}">{r.rcode}</span>
+        <span class="num text-[11px] {ink[tone(r)]}">{r.rcode}</span>
       </button>
     {:else}
       <p class="text-[12px] text-ink-faint">Nothing yet in this tab.</p>

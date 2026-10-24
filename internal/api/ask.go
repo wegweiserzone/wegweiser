@@ -51,18 +51,25 @@ func (s *Server) Ask(_ context.Context, req gen.AskRequestObject) (gen.AskRespon
 
 // outcomeOf names the kind of answer, by the response code, the AA bit and
 // the sections, as RFC 1034 §4.3.2 and RFC 2308 tell them apart.
+//
+// An alias is named before the response code is read. A CNAME whose target
+// does not exist is answered NXDOMAIN, because the code speaks about the end
+// of the chain (RFC 6604 §2), but the name asked about exists, and calling
+// the answer "no such name" would hide the CNAME that is the actual finding.
+// ANY is answered with the CNAME itself (RFC 8482), so it is not an alias.
 func outcomeOf(a *dns.Answer, asked zone.RRType) gen.AskedOutcome {
 	switch {
 	case a.Rcode == wire.RcodeRefused:
 		return gen.AskedOutcomeRefused
 	case a.Rcode == wire.RcodeNotImplemented:
 		return gen.AskedOutcomeNotImplemented
+	case len(a.Answer) > 0 && a.Answer[0].Header().Rrtype == wire.TypeCNAME &&
+		asked != zone.TypeCNAME && asked != zone.TypeANY:
+		return gen.AskedOutcomeAlias
 	case a.Rcode == wire.RcodeNameError:
 		return gen.AskedOutcomeNxdomain
 	case a.Rcode != wire.RcodeSuccess:
 		return gen.AskedOutcomeFailed
-	case len(a.Answer) > 0 && a.Answer[0].Header().Rrtype == wire.TypeCNAME && asked != zone.TypeCNAME:
-		return gen.AskedOutcomeAlias
 	case len(a.Answer) > 0:
 		return gen.AskedOutcomeAnswer
 	case !a.Authoritative:

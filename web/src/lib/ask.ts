@@ -17,18 +17,25 @@ export const headline: Record<Asked["outcome"], string> = {
 
 /**
  * tone is how loudly to say it. An answer, an alias, no data and a referral
- * are the server doing what it should; the rest is what somebody came to find.
+ * are the server doing what it should; the rest is what somebody came to find,
+ * and so is an alias that leads to a name that does not exist.
  */
-export const tone: Record<Asked["outcome"], "neutral" | "warn" | "crit"> = {
-  answer: "neutral",
-  alias: "neutral",
-  nodata: "neutral",
-  referral: "neutral",
-  nxdomain: "warn",
-  refused: "warn",
-  notImplemented: "warn",
-  failed: "crit",
-};
+export function tone(a: Pick<Asked, "outcome" | "rcode">): "neutral" | "warn" | "crit" {
+  switch (a.outcome) {
+    case "answer":
+    case "nodata":
+    case "referral":
+      return "neutral";
+    case "alias":
+      return a.rcode === "NOERROR" ? "neutral" : "warn";
+    case "nxdomain":
+    case "refused":
+    case "notImplemented":
+      return "warn";
+    case "failed":
+      return "crit";
+  }
+}
 
 /** describe says what the answer holds, once the headline has said what kind it is. */
 export function describe(a: Asked): string {
@@ -36,7 +43,9 @@ export function describe(a: Asked): string {
   const records = `${n} record${n === 1 ? "" : "s"}`;
   const what: Record<Asked["outcome"], string> = {
     answer: records,
-    alias: `${records}, starting with the CNAME the question did not ask for`,
+    alias:
+      `${records}, starting with the CNAME the question did not ask for` +
+      (a.rcode === "NXDOMAIN" ? ", and the name it leads to does not exist" : ""),
     nodata: `${a.name} exists and has no ${a.type} record`,
     nxdomain: "",
     referral: "The name is delegated, and the name servers below answer for it",

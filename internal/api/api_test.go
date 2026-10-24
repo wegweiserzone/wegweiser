@@ -2566,6 +2566,7 @@ func TestAskSaysWhatTheServerAnswers(t *testing.T) {
 	for _, rec := range []gen.CreateRecord{
 		{Name: "www.example.com.", Type: "A", Data: "192.0.2.10"},
 		{Name: "web.example.com.", Type: "CNAME", Data: "www.example.com."},
+		{Name: "old.example.com.", Type: "CNAME", Data: "gone.example.com."},
 		{Name: "sub.example.com.", Type: "NS", Data: "ns1.elsewhere.example."},
 	} {
 		h.createRecord(z.Id, rec)
@@ -2585,6 +2586,10 @@ func TestAskSaysWhatTheServerAnswers(t *testing.T) {
 	}{
 		{"name=www.example.com", gen.AskedOutcomeAnswer, "NOERROR", "www.example.com. A 192.0.2.10"},
 		{"name=web.example.com.&type=A", gen.AskedOutcomeAlias, "NOERROR", "web.example.com. CNAME www.example.com."},
+		// The name exists; the one it leads to does not, and the code says so
+		// for the end of the chain (RFC 6604).
+		{"name=old.example.com.", gen.AskedOutcomeAlias, "NXDOMAIN", "old.example.com. CNAME gone.example.com."},
+		{"name=web.example.com.&type=ANY", gen.AskedOutcomeAnswer, "NOERROR", "web.example.com. CNAME www.example.com."},
 		{"name=www.example.com.&type=MX", gen.AskedOutcomeNodata, "NOERROR", ""},
 		{"name=nope.example.com.", gen.AskedOutcomeNxdomain, "NXDOMAIN", ""},
 		{"name=host.sub.example.com.", gen.AskedOutcomeReferral, "NOERROR", ""},

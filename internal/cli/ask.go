@@ -103,7 +103,11 @@ func verdictOfAsk(p *output.Printer, a *gen.Asked) string {
 		code = p.Paint(output.ColorYellow, code)
 	case gen.AskedOutcomeFailed:
 		code = p.Paint(output.ColorRed, code)
-	case gen.AskedOutcomeAnswer, gen.AskedOutcomeAlias, gen.AskedOutcomeNodata, gen.AskedOutcomeReferral:
+	case gen.AskedOutcomeAlias:
+		if a.Rcode != "NOERROR" {
+			code = p.Paint(output.ColorYellow, code)
+		}
+	case gen.AskedOutcomeAnswer, gen.AskedOutcomeNodata, gen.AskedOutcomeReferral:
 	}
 	if a.Zone != nil {
 		code += " from " + *a.Zone
@@ -116,6 +120,9 @@ func verdictOfAsk(p *output.Printer, a *gen.Asked) string {
 		what = fmt.Sprintf("%d %s", n, plural(n, "record"))
 	case gen.AskedOutcomeAlias:
 		what = fmt.Sprintf("an alias, %d %s starting with the CNAME", n, plural(n, "record"))
+		if a.Rcode == "NXDOMAIN" {
+			what += ", and the name it leads to does not exist"
+		}
 	case gen.AskedOutcomeNodata:
 		what = fmt.Sprintf("%s exists and has no %s record", a.Name, a.Type)
 	case gen.AskedOutcomeNxdomain:
