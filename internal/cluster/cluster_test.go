@@ -3,6 +3,9 @@ package cluster
 import (
 	"fmt"
 	"testing"
+	"time"
+
+	"github.com/hashicorp/raft"
 )
 
 // The tests here run whole members over real sockets, and are about what a
@@ -74,6 +77,58 @@ func TestTheClusterOutlivesItsLeader(t *testing.T) {
 	propose(t, next, "two.example.")
 	holds(t, b, 2)
 	holds(t, c, 2)
+}
+
+// handedOver is how soon after its leader stops another member has to lead.
+// Without a hand-over nobody stands for election before a heartbeat timeout
+// has passed, so half of one tells the two apart.
+var handedOver = raft.DefaultConfig().HeartbeatTimeout / 2
+
+// leadsAtOnce is the one of members leading within handedOver, and fails the
+// test when none of them does.
+func leadsAtOnce(t *testing.T, members ...*member) *member {
+	t.Helper()
+	deadline := time.Now().Add(handedOver)
+	for time.Now().Before(deadline) {
+		for _, m := range members {
+			if m.node.IsLeader() {
+				return m
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("nobody leads %v after the leader stopped", handedOver)
+	return nil
+}
+
+// A leader that stops hands leadership on, so writes are taken again without
+// waiting for the others to notice it has gone.
+func TestALeaderThatStopsHandsLeadershipOn(t *testing.T) {
+	t.Parallel()
+	a, b, c := threeVoters(t)
+
+	a.stop(t)
+	propose(t, leadsAtOnce(t, b, c), "two.example.")
+}
+
+// D48: a witness would only hand leadership on again, so it is passed over.
+func TestALeaderThatStopsPassesOverAWitness(t *testing.T) {
+	t.Parallel()
+	a := startAlone(t, "a")
+	b, w := startMember(t, "b"), startMember(t, WitnessPrefix+"w")
+	for _, m := range []*member{b, w} {
+		if err := a.node.AddVoter(m.id, m.addr); err != nil {
+			t.Fatalf("AddVoter %s: %v", m.id, err)
+		}
+	}
+	propose(t, a, "one.example.")
+	holds(t, b, 1)
+	holds(t, w, 1)
+
+	a.stop(t)
+	if got := leadsAtOnce(t, b, w); got != b {
+		t.Errorf("%s leads, want b: a witness hands leadership on again", got.id)
+	}
 }
 
 // A member added after the log it would need is compacted away starts from a

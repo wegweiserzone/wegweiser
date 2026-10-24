@@ -16,6 +16,14 @@ public API is unstable and may change without a deprecation period.
   collector's `process_start_time_seconds`, it is there under the shipped systemd unit too,
   which hides the boot time that one is worked out from.
 
+### Changed
+
+#### Cluster
+
+- A member that leads hands leadership to another before it stops, so a write is taken
+  again at once rather than refused until the others notice it has gone. A witness is
+  passed over, since it would only hand leadership on again.
+
 ### Fixed
 
 #### Web interface

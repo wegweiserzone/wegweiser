@@ -105,6 +105,7 @@ type Node struct {
 	id      raft.ServerID
 	addr    raft.ServerAddress
 	report  func(error)
+	log     *slog.Logger
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -213,7 +214,7 @@ func Start(cfg NodeConfig) (_ *Node, err error) {
 	n := &Node{
 		raft: r, logs: logs, trans: trans, machine: machine, joins: cfg.Mux.Listener(StreamJoin),
 		id: conf.LocalID, addr: raft.ServerAddress(cfg.Advertise), report: report, tr: cfg.Transport,
-		ctx: ctx, cancel: cancel,
+		log: logger, ctx: ctx, cancel: cancel,
 	}
 	n.wg.Add(2)
 	go n.watch(leaving)
@@ -583,12 +584,57 @@ func (n *Node) Leader() (id, addr string) {
 // Close stops taking part in the cluster. The query path is not touched: a
 // member that stops is one that stops voting, not one that stops answering.
 func (n *Node) Close() error {
-	// First, so that an entry being retried gives up now rather than after a
-	// minute, and so that the watch stops waiting for a stall.
+	n.handOver()
+	// First after that, so that an entry being retried gives up now rather
+	// than after a minute, and so that the watch stops waiting for a stall.
 	n.cancel()
 	err := errors.Join(n.raft.Shutdown().Error(), n.joins.Close())
 	n.wg.Wait()
 	return errors.Join(err, n.trans.Close(), n.logs.Close())
+}
+
+// handOver gives leadership to another voter before a leader stops. Without
+// it the others go on waiting for heartbeats until they notice it is gone,
+// and every write is refused until one of them has been elected.
+//
+// A witness is passed over, because it would only hand leadership on again
+// (docs/decisions/d48-a-witness-is-known-by-its-identifier.md). Raft picks
+// the voter furthest along when no witness could be picked instead.
+//
+// A hand-over that fails is logged rather than reported: it fails when the
+// others are gone already, which is how a whole cluster is shut down, and the
+// member stops either way. Raft gives up on it after an election timeout.
+func (n *Node) handOver() {
+	if !n.IsLeader() {
+		return
+	}
+	f := n.raft.GetConfiguration()
+	if f.Error() != nil {
+		return
+	}
+	var to *raft.Server
+	witnesses := false
+	for _, srv := range f.Configuration().Servers {
+		switch {
+		case srv.Suffrage != raft.Voter || srv.ID == n.id:
+		case IsWitness(string(srv.ID)):
+			witnesses = true
+		case to == nil:
+			to = &srv
+		}
+	}
+	var handed raft.Future
+	switch {
+	case to == nil:
+		return
+	case witnesses:
+		handed = n.raft.LeadershipTransferToServer(to.ID, to.Address)
+	default:
+		handed = n.raft.LeadershipTransfer()
+	}
+	if err := handed.Error(); err != nil {
+		n.log.Warn("stopping without handing leadership on", "reason", err.Error())
+	}
 }
 
 // raftStream is the cluster port's Raft streams, as the stream layer Raft's
