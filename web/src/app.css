@@ -8,6 +8,14 @@
  * happens to say. Nothing in there is markup. */
 @source not "./lib/api/schema.d.ts";
 
+/* The same goes for the files beside the interface that are not part of it:
+ * the build's configuration and the browser tests. A comment there about a
+ * "container image" put `.container` in the stylesheet once. */
+@source not "../vite.config.ts";
+@source not "../svelte.config.js";
+@source not "../playwright.config.ts";
+@source not "../tests";
+
 /* ─── Signal ──────────────────────────────────────────────────────────────
  *
  * The design system. Colour, type and motion are defined once here and used
