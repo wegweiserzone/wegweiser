@@ -387,6 +387,14 @@ func setSessionCookies(w http.ResponseWriter, value string, sess *session, secur
 type sessionClosed struct{ secure bool }
 
 func (r *sessionClosed) VisitDeleteSessionResponse(w http.ResponseWriter) error {
+	clearSessionCookies(w, r.secure)
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// clearSessionCookies tells the browser to drop both cookies a session is, on
+// the paths and with the attributes they were set with.
+func clearSessionCookies(w http.ResponseWriter, secure bool) {
 	for _, c := range []struct {
 		name string
 		path string
@@ -401,12 +409,10 @@ func (r *sessionClosed) VisitDeleteSessionResponse(w http.ResponseWriter) error 
 			Path:     c.path,
 			MaxAge:   -1,
 			HttpOnly: c.only,
-			Secure:   r.secure,
+			Secure:   secure,
 			SameSite: http.SameSiteStrictMode,
 		})
 	}
-	w.WriteHeader(http.StatusNoContent)
-	return nil
 }
 
 // scopesToAPI renders the scopes a caller holds.

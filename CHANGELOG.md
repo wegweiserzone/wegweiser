@@ -82,6 +82,9 @@ public API is unstable and may change without a deprecation period.
   the sessions opened with it.
 - The overview shows the uptime again on a server run by the shipped systemd unit. It
   showed a dash there, because the start time it read was never exported.
+- Reloading the interface with a session cookie from before a restart, or one that has run
+  out, no longer locks the browser out of signing in. The server forgets such a cookie
+  instead of counting it as a rejected token.
 
 #### CLI
 

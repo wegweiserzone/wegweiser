@@ -2289,6 +2289,41 @@ func TestUnauthenticatedReadsDoNotSpendTheLimiter(t *testing.T) {
 	}
 }
 
+// A browser still holding a cookie from before a restart, or one that ran
+// out, is not guessing: it does not lock itself out by being reloaded, and it
+// is told to drop the cookie.
+func TestAStaleSessionCookieDoesNotSpendTheLimiter(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+
+	for i := range authBurst * 3 {
+		resp := h.do(http.MethodGet, "/auth/session", nil, func(r *http.Request) {
+			r.Header.Del("Authorization")
+			r.AddCookie(&http.Cookie{Name: sessionCookie, Value: "sealed-under-a-key-nobody-holds"})
+		})
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("load %d: status %d, want 401", i, resp.StatusCode)
+		}
+		if i == 0 {
+			cleared := false
+			for _, c := range resp.Cookies() {
+				if c.Name == sessionCookie && c.MaxAge < 0 {
+					cleared = true
+				}
+			}
+			if !cleared {
+				t.Error("the stale cookie was not cleared")
+			}
+		}
+	}
+
+	resp := h.do(http.MethodPost, "/auth/session", map[string]string{"token": h.token},
+		func(r *http.Request) { r.Header.Del("Authorization") })
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("signing in afterwards: status %d, want 201", resp.StatusCode)
+	}
+}
+
 // A token that is actually wrong still costs, which is what the limiter is for.
 func TestRejectedTokensStillSpendTheLimiter(t *testing.T) {
 	t.Parallel()

@@ -303,7 +303,17 @@ func (s *Server) authenticator(next http.Handler) http.Handler {
 				writeProblem(w, r, err)
 				return
 			}
-			s.limiter.spend(from, s.now())
+			// Only a token counts against the address, because only a token
+			// can be guessed. A session cookie that does not open is sealed
+			// under a key this server no longer holds, has run out, or was
+			// ended; nobody guesses one, and counting it locked a browser out
+			// of its own server after a restart, on nothing but reloads. It is
+			// cleared instead, so that the browser stops sending it.
+			if _, byToken := bearer(r); byToken {
+				s.limiter.spend(from, s.now())
+			} else {
+				clearSessionCookies(w, secureOf(r.Context()))
+			}
 			w.Header().Set("WWW-Authenticate", `Bearer realm="wegweiser"`)
 			writeProblem(w, r, unauthorized(missingOrInvalid(r)))
 			return
