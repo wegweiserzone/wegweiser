@@ -72,4 +72,6 @@ instead of opening it and listens on a port fixed in advance.
 
 ## Where this stands
 
-Not built.
+The server's half is built: `/auth/oidc/{providerId}/start` takes the port and the key, and
+the callback in `internal/api/oidc.go` seals the session to it through
+`internal/api/handoff`. `weg login` and `weg logout` are not built.

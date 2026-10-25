@@ -24,6 +24,9 @@ public API is unstable and may change without a deprecation period.
 - A person signs in through an LDAP directory with `POST /auth/ldap/{providerId}`, which
   finds their entry, binds as it with their password over TLS and forgets the password.
   A wrong password and a name nobody has are answered alike.
+- `/auth/oidc/{providerId}/start` takes `loopback` and `key`, which `weg login` sends. The
+  callback then sets no cookies in the browser and sends it to that port of 127.0.0.1
+  instead, with the session sealed to the key, or with the reason there is none.
 
 #### Web interface
 

@@ -6,9 +6,11 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/api/handoff"
 	"github.com/wegweiserzone/wegweiser/internal/apply"
 	"github.com/wegweiserzone/wegweiser/internal/store"
 )
@@ -55,6 +58,11 @@ type oidcFlow struct {
 	Verifier    string    `json:"verifier"`
 	RedirectURI string    `json:"redirect_uri"`
 	Expires     time.Time `json:"exp"`
+
+	// Loopback and Key are where `weg login` waits for the session and the
+	// key it is sealed to, for a sign-in the CLI started (D52).
+	Loopback int    `json:"loopback,omitempty"`
+	Key      string `json:"key,omitempty"`
 }
 
 // ListSignInProviders names the providers that are switched on.
@@ -81,8 +89,12 @@ func (s *Server) StartOIDCSignIn(
 	ctx context.Context, req gen.StartOIDCSignInRequestObject,
 ) (gen.StartOIDCSignInResponseObject, error) {
 	secure := secureOf(ctx)
+	back, rerr := returnFor(req.Params.Loopback, req.Params.Key)
 	fail := func(err error) (gen.StartOIDCSignInResponseObject, error) {
-		return &signInRedirect{to: signInFailed(err), secure: secure}, nil
+		return &signInRedirect{to: back.failed(err), secure: secure}, nil
+	}
+	if rerr != nil {
+		return fail(rerr)
 	}
 	if err := checkTransport(secure, sourceOf(ctx)); err != nil {
 		return fail(err)
@@ -112,6 +124,7 @@ func (s *Server) StartOIDCSignIn(
 	flow := oidcFlow{
 		Provider: p.ID, State: state, Nonce: nonce, Verifier: oauth2.GenerateVerifier(),
 		RedirectURI: redirect, Expires: s.now().Add(flowLifetime).UTC(),
+		Loopback: back.port, Key: back.key,
 	}
 	sealed, err := seal(keys.Current, flowCookie, &flow)
 	if err != nil {
@@ -127,12 +140,28 @@ func (s *Server) FinishOIDCSignIn(
 	ctx context.Context, req gen.FinishOIDCSignInRequestObject,
 ) (gen.FinishOIDCSignInResponseObject, error) {
 	from, secure := sourceOf(ctx), secureOf(ctx)
+	keys, kerr := s.sessionKeys(ctx)
+	// Opened before anything can fail, because it says where a failure is
+	// reported: on the sign-in page, or to the `weg login` waiting for it.
+	// One that has run out still says so.
+	var (
+		flow *oidcFlow
+		back signInReturn
+	)
+	if kerr == nil {
+		if flow = openFlow(keys, flowOf(ctx)); flow != nil {
+			back = signInReturn{port: flow.Loopback, key: flow.Key}
+		}
+	}
 	fail := func(err error) (gen.FinishOIDCSignInResponseObject, error) {
 		s.limiter.spend(from, s.now())
-		return &signInRedirect{to: signInFailed(err), clearFlow: true, secure: secure}, nil
+		return &signInRedirect{to: back.failed(err), clearFlow: true, secure: secure}, nil
 	}
 	if !s.limiter.allow(from, s.now()) {
-		return &signInRedirect{to: signInFailed(tooManyAttempts()), clearFlow: true, secure: secure}, nil
+		return &signInRedirect{to: back.failed(tooManyAttempts()), clearFlow: true, secure: secure}, nil
+	}
+	if kerr != nil {
+		return fail(kerr)
 	}
 	if err := checkTransport(secure, from); err != nil {
 		return fail(err)
@@ -141,7 +170,7 @@ func (s *Server) FinishOIDCSignIn(
 		return fail(fmt.Errorf("the provider refused the sign-in: %s %s", *e, valueOr(req.Params.ErrorDescription)))
 	}
 
-	sess, keys, err := s.finishOIDC(ctx, valueOr(req.Params.Code), valueOr(req.Params.State), flowOf(ctx))
+	sess, err := s.finishOIDC(ctx, valueOr(req.Params.Code), valueOr(req.Params.State), flow)
 	if err != nil {
 		return fail(err)
 	}
@@ -152,32 +181,44 @@ func (s *Server) FinishOIDCSignIn(
 	if sess.csrf, err = csrfFor(keys.Current, sess.ID); err != nil {
 		return nil, err
 	}
+	if back.cli() {
+		sealed, serr := handoff.Seal(back.key, &handoff.Session{Value: value, CSRF: sess.csrf, Expires: sess.Expires})
+		if serr != nil {
+			return nil, serr
+		}
+		return &signInRedirect{to: back.loopback(url.Values{"session": {sealed}}), clearFlow: true, secure: secure}, nil
+	}
 	return &signInRedirect{to: "/", session: value, sess: sess, clearFlow: true, secure: secure}, nil
+}
+
+// openFlow reads the sealed flow the browser brought back, or nil when it
+// brought none this server sealed.
+func openFlow(keys apply.SessionKeys, sealed string) *oidcFlow {
+	var flow oidcFlow
+	if _, ok := unseal(keys, flowCookie, sealed, &flow); !ok {
+		return nil
+	}
+	return &flow
 }
 
 // finishOIDC checks the provider's answer against the flow the start sealed,
 // and opens a session for the person it names.
-func (s *Server) finishOIDC(ctx context.Context, code, state, sealedFlow string) (*session, apply.SessionKeys, error) {
+func (s *Server) finishOIDC(ctx context.Context, code, state string, flow *oidcFlow) (*session, error) {
 	now := s.now()
-	keys, err := s.sessionKeys(ctx)
-	if err != nil {
-		return nil, keys, err
-	}
-	var flow oidcFlow
-	if _, ok := unseal(keys, flowCookie, sealedFlow, &flow); !ok || !now.Before(flow.Expires) {
-		return nil, keys, errors.New("the sign-in took too long, or was not started in this browser; try again")
+	if flow == nil || !now.Before(flow.Expires) {
+		return nil, errors.New("the sign-in took too long, or was not started in this browser; try again")
 	}
 	if code == "" || state == "" || state != flow.State {
-		return nil, keys, errors.New("the provider's answer is not the one this sign-in asked for; try again")
+		return nil, errors.New("the provider's answer is not the one this sign-in asked for; try again")
 	}
 
 	p, _, err := s.oidcProvider(ctx, flow.Provider)
 	if err != nil {
-		return nil, keys, err
+		return nil, err
 	}
 	client, err := s.oidc.client(ctx, p)
 	if err != nil {
-		return nil, keys, err
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(oidc.ClientContext(ctx, client.http), discoveryTimeout)
 	defer cancel()
@@ -185,23 +226,23 @@ func (s *Server) finishOIDC(ctx context.Context, code, state, sealedFlow string)
 	cfg := client.config(p, flow.RedirectURI)
 	tok, err := cfg.Exchange(ctx, code, oauth2.VerifierOption(flow.Verifier))
 	if err != nil {
-		return nil, keys, fmt.Errorf("%s did not exchange the code: %w", p.Name, err)
+		return nil, fmt.Errorf("%s did not exchange the code: %w", p.Name, err)
 	}
 	raw, ok := tok.Extra("id_token").(string)
 	if !ok {
-		return nil, keys, fmt.Errorf("%s answered without an ID token", p.Name)
+		return nil, fmt.Errorf("%s answered without an ID token", p.Name)
 	}
 	idt, err := client.provider.Verifier(&oidc.Config{ClientID: p.OIDC.ClientID}).Verify(ctx, raw)
 	if err != nil {
-		return nil, keys, fmt.Errorf("the ID token from %s does not verify: %w", p.Name, err)
+		return nil, fmt.Errorf("the ID token from %s does not verify: %w", p.Name, err)
 	}
 	if idt.Nonce != flow.Nonce {
-		return nil, keys, fmt.Errorf("the ID token from %s was not issued for this sign-in", p.Name)
+		return nil, fmt.Errorf("the ID token from %s was not issued for this sign-in", p.Name)
 	}
 
 	var claims map[string]any
 	if cerr := idt.Claims(&claims); cerr != nil {
-		return nil, keys, fmt.Errorf("the ID token from %s is not readable: %w", p.Name, cerr)
+		return nil, fmt.Errorf("the ID token from %s is not readable: %w", p.Name, cerr)
 	}
 	// Some providers keep the groups out of the ID token and give them only
 	// to whoever asks for the user info, Keycloak among them unless told
@@ -225,17 +266,17 @@ func (s *Server) finishOIDC(ctx context.Context, code, state, sealedFlow string)
 	}
 	scope, ok := scopeOf(p, stringsOf(claims[p.OIDC.GroupsClaim]))
 	if !ok {
-		return nil, keys, fmt.Errorf("%s signed %s in, and none of their groups is given a scope here", p.Name, name)
+		return nil, fmt.Errorf("%s signed %s in, and none of their groups is given a scope here", p.Name, name)
 	}
 
 	id, err := randomSecret()
 	if err != nil {
-		return nil, keys, err
+		return nil, err
 	}
 	return &session{
 		ID: id, Provider: p.ID, Subject: idt.Subject, Name: name, Scope: scope,
 		Expires: now.Add(apply.SessionLifetime).UTC(),
-	}, keys, nil
+	}, nil
 }
 
 // oidcProvider returns the OpenID Connect provider by this identifier, if it
@@ -339,12 +380,61 @@ func valueOr(p *string) string {
 
 // signInFailed is the sign-in page, saying what went wrong.
 func signInFailed(err error) string {
-	detail := err.Error()
+	return "/?" + url.Values{signInError: {failureDetail(err)}}.Encode()
+}
+
+// failureDetail is what a person is told about a sign-in that failed.
+func failureDetail(err error) string {
 	var problem *apiError
 	if errors.As(err, &problem) {
-		detail = problem.detail
+		return problem.detail
 	}
-	return "/?" + url.Values{signInError: {detail}}.Encode()
+	return err.Error()
+}
+
+// signInReturn is where a sign-in ends: the interface, or the port of
+// 127.0.0.1 that `weg login` waits on, with the key it wants the session
+// sealed to (D52).
+type signInReturn struct {
+	port int
+	key  string
+}
+
+// returnFor reads where a sign-in is to end from what its start was given.
+func returnFor(port *int, key *string) (signInReturn, error) {
+	if port == nil {
+		return signInReturn{}, nil
+	}
+	if *port < 1 || *port > 65535 {
+		return signInReturn{}, fmt.Errorf("%d is not a port weg login could be listening on", *port)
+	}
+	back := signInReturn{port: *port, key: valueOr(key)}
+	if !handoff.ValidPublic(back.key) {
+		return back, errors.New("the key weg login sent is not one a session can be sealed to")
+	}
+	return back, nil
+}
+
+// cli reports whether `weg login` started the sign-in.
+func (b signInReturn) cli() bool { return b.port != 0 }
+
+// failed is where the browser is sent when the sign-in fails.
+func (b signInReturn) failed(err error) string {
+	if b.cli() {
+		return b.loopback(url.Values{"error": {failureDetail(err)}})
+	}
+	return signInFailed(err)
+}
+
+// loopback is the address `weg login` waits on. It is built from the port and
+// nothing else, so that no sign-in can be made to send a browser anywhere but
+// the machine it runs on.
+func (b signInReturn) loopback(q url.Values) string {
+	u := url.URL{
+		Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(b.port)),
+		Path: "/", RawQuery: q.Encode(),
+	}
+	return u.String()
 }
 
 // oidcClients holds what a provider's discovery document says, so that it is

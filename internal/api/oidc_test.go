@@ -19,6 +19,7 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/wegweiserzone/wegweiser/internal/api/gen"
+	"github.com/wegweiserzone/wegweiser/internal/api/handoff"
 )
 
 // testIDP is an OpenID Connect provider small enough to read: discovery, its
@@ -184,6 +185,15 @@ func (b *browser) get(target string) *http.Response {
 // it with the claims given, returning where the browser ended up.
 func signInThroughOIDC(t *testing.T, h *harness, idp *testIDP, claims map[string]any) (*browser, *url.URL, gen.IdentityProvider) {
 	t.Helper()
+	p := addOIDCProvider(t, h, idp)
+	b := newBrowser(t)
+	landed := b.signIn(idp, h.http.URL+basePath+oidcPath+"/"+p.Id+"/start", claims)
+	return b, landed, p
+}
+
+// addOIDCProvider adds idp as a provider, with a redirect URI on the harness.
+func addOIDCProvider(t *testing.T, h *harness, idp *testIDP) gen.IdentityProvider {
+	t.Helper()
 	certPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: idp.srv.Certificate().Raw}))
 	var p gen.IdentityProvider
 	h.decode(h.do(http.MethodPost, "/identity-providers", gen.IdentityProviderInput{
@@ -194,9 +204,15 @@ func signInThroughOIDC(t *testing.T, h *harness, idp *testIDP, claims map[string
 			RedirectUris: []string{"https://elsewhere.example/api/v1/auth/oidc/callback", h.http.URL + basePath + oidcCallbackPath},
 		},
 	}), http.StatusCreated, &p)
+	return p
+}
 
-	b := newBrowser(t)
-	start := b.get(h.http.URL + basePath + oidcPath + "/" + p.Id + "/start")
+// signIn goes from the start to the end of a sign-in, with the person the
+// claims describe, and returns where the callback sent the browser.
+func (b *browser) signIn(idp *testIDP, startURL string, claims map[string]any) *url.URL {
+	t := b.t
+	t.Helper()
+	start := b.get(startURL)
 	if start.StatusCode != http.StatusFound || b.jar[flowCookie] == nil {
 		t.Fatalf("the start answered %d with cookies %v, want a redirect carrying the flow", start.StatusCode, b.jar)
 	}
@@ -212,7 +228,7 @@ func signInThroughOIDC(t *testing.T, h *harness, idp *testIDP, claims map[string
 	if b.jar[flowCookie] != nil {
 		t.Error("the flow cookie outlived the callback")
 	}
-	return b, landed, p
+	return landed
 }
 
 func (b *browser) session(h *harness) (int, gen.Session) {
@@ -292,6 +308,94 @@ func TestASignInThroughOpenIDConnectIsRefused(t *testing.T) {
 		got := newBrowser(t).get(h.http.URL + basePath + oidcPath + "/01ARZ3NDEKTSV4RRFFQ69G5FAV/start")
 		if to := got.Header.Get("Location"); got.StatusCode != http.StatusFound || !strings.Contains(to, signInError) {
 			t.Errorf("answered %d to %s, want the sign-in page saying why", got.StatusCode, to)
+		}
+	})
+}
+
+// D52: a sign-in weg login started ends at its loopback port, with the
+// session sealed to its key, and the browser holds nothing.
+func TestWegLoginSignsInThroughOpenIDConnect(t *testing.T) {
+	t.Parallel()
+
+	start := func(h *harness, p gen.IdentityProvider, key string) string {
+		return h.http.URL + basePath + oidcPath + "/" + p.Id + "/start?" +
+			url.Values{"loopback": {"45678"}, "key": {key}}.Encode()
+	}
+	atLoopback := func(t *testing.T, landed *url.URL) {
+		t.Helper()
+		if landed.Scheme != "http" || landed.Host != "127.0.0.1:45678" || landed.Path != "/" {
+			t.Fatalf("the browser was sent to %s, want weg login's loopback", landed)
+		}
+	}
+
+	t.Run("the session reaches the CLI", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		idp := newTestIDP(t)
+		p := addOIDCProvider(t, h, idp)
+		key, err := handoff.NewKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		b := newBrowser(t)
+		landed := b.signIn(idp, start(h, p, key.Public()), map[string]any{
+			"preferred_username": "alice", "groups": []string{"dns-ops"},
+		})
+		atLoopback(t, landed)
+		if b.jar[sessionCookie] != nil || b.jar[csrfCookie] != nil {
+			t.Error("the browser was given the session the CLI asked for")
+		}
+		got, err := key.Open(landed.Query().Get("session"))
+		if err != nil {
+			t.Fatalf("the session does not open under the CLI's key: %v", err)
+		}
+
+		// It is the session a browser would have held, CSRF value and all.
+		cli := &browser{t: t, jar: map[string]*http.Cookie{sessionCookie: {Name: sessionCookie, Value: got.Value}}}
+		if status, who := cli.session(h); status != http.StatusOK || who.Name != "alice (Test IDP)" ||
+			who.ExpiresAt == nil || !who.ExpiresAt.Equal(got.Expires) {
+			t.Errorf("session = %d %+v, want alice until %s", status, who, got.Expires)
+		}
+		resp := h.do(http.MethodDelete, sessionPath, nil, func(r *http.Request) {
+			r.Header.Del("Authorization")
+			r.AddCookie(&http.Cookie{Name: sessionCookie, Value: got.Value})
+			r.Header.Set(csrfHeader, got.CSRF)
+		})
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("signing out with the CSRF value answered %d, want 204", resp.StatusCode)
+		}
+	})
+
+	t.Run("a refusal reaches the CLI", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		idp := newTestIDP(t)
+		key, err := handoff.NewKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		landed := newBrowser(t).signIn(idp, start(h, addOIDCProvider(t, h, idp), key.Public()), map[string]any{
+			"preferred_username": "mallory", "groups": []string{"staff"},
+		})
+		atLoopback(t, landed)
+		if msg := landed.Query().Get("error"); !strings.Contains(msg, "none of their groups") || landed.Query().Has("session") {
+			t.Errorf("landed at %s, want the reason and no session", landed)
+		}
+	})
+
+	t.Run("a key that is not one is refused at the start", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		p := addOIDCProvider(t, h, newTestIDP(t))
+		got := newBrowser(t).get(start(h, p, "AAAA"))
+		landed, err := url.Parse(got.Header.Get("Location"))
+		if err != nil || got.StatusCode != http.StatusFound {
+			t.Fatalf("answered %d to %s, want a redirect", got.StatusCode, got.Header.Get("Location"))
+		}
+		atLoopback(t, landed)
+		if landed.Query().Get("error") == "" {
+			t.Errorf("landed at %s, want the reason", landed)
 		}
 	})
 }

@@ -606,6 +606,12 @@ export interface paths {
          *     URIs on the address the browser asked this one at. A failure sends the
          *     browser back to the sign-in page, with `signin_error` saying what
          *     went wrong.
+         *
+         *     `weg login` starts here too, with `loopback` and `key`. The callback
+         *     then sets no cookies: it sends the browser on to
+         *     `http://127.0.0.1:{loopback}/` with `session`, the session and its
+         *     CSRF value sealed to `key`, or with `error` saying why not
+         *     (docs/decisions/d52-weg-login-holds-a-session.md).
          */
         get: operations["startOIDCSignIn"];
         put?: never;
@@ -629,8 +635,9 @@ export interface paths {
          *     verified against the provider's keys and the nonce the start sealed,
          *     and the person's groups mapped to a scope. The browser is then sent to
          *     the interface with a session, or to the sign-in page with
-         *     `signin_error` saying why not. A person in no mapped group is refused,
-         *     however well they signed in.
+         *     `signin_error` saying why not. A sign-in `weg login` started goes back
+         *     to it instead, as the start describes. A person in no mapped group is
+         *     refused, however well they signed in.
          *
          *     Signing in writes nothing, so it works while the cluster takes no
          *     writes (docs/decisions/d51-accounts-come-from-an-identity-provider.md).
@@ -2999,7 +3006,18 @@ export interface operations {
     };
     startOIDCSignIn: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description The port of 127.0.0.1 that `weg login` listens on for the end of
+                 *     the sign-in.
+                 */
+                loopback?: number;
+                /**
+                 * @description The X25519 public key the session is sealed to by HPKE (RFC 9180),
+                 *     base64url without padding. Needed with `loopback`.
+                 */
+                key?: string;
+            };
             header?: never;
             path: {
                 /** @description The ULID of an OpenID Connect provider. */
@@ -3009,7 +3027,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description To the provider, or back to the sign-in page. */
+            /** @description To the provider, or back to the sign-in page or to `weg login`. */
             302: {
                 headers: {
                     [name: string]: unknown;
@@ -3033,7 +3051,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description To the interface, or back to the sign-in page. */
+            /** @description To the interface or `weg login`, or back to the sign-in page. */
             302: {
                 headers: {
                     [name: string]: unknown;
