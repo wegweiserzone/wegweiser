@@ -884,24 +884,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/identity-providers/{providerId}/check": {
+    "/identity-providers/check": {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                /** @description The ULID of a provider. */
-                providerId: string;
-            };
+            path?: never;
             cookie?: never;
         };
         get?: never;
         put?: never;
         /**
          * Try what a sign-in through a provider needs, short of a person signing in
-         * @description The provider as it is saved, switched on or not, is tried from the
-         *     member asked, and each step says what it found or what is wrong. The
-         *     steps stop at the first that fails, because the ones after it would
-         *     fail for the same reason.
+         * @description A provider is tried from the member asked, and each step says what it
+         *     found or what is wrong. The steps stop at the first that fails, because
+         *     the ones after it would fail for the same reason.
+         *
+         *     What is tried is the provider by `id` as it is saved, switched on or
+         *     not, or `provider`, a draft as it would be sent to be saved, so that it
+         *     can be tried first. Given both, the draft is tried with the secrets of
+         *     the saved one wherever it leaves them out, as saving it would. A
+         *     draft's name is not looked at.
          *
          *     An OpenID Connect provider is asked for its discovery document, which
          *     has to name it as the issuer configured and offer what a sign-in uses.
@@ -2049,7 +2051,11 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        /** @description Which provider to try, by `id`, as a draft, or both. One of the two is needed. */
         IdentityProviderCheckRequest: {
+            /** @description The ULID of a saved provider. */
+            id?: string;
+            provider?: components["schemas"]["IdentityProviderInput"];
             /**
              * @description For a directory: somebody to look up as a sign-in would, without
              *     their password. Refused for an OpenID Connect provider, which says
@@ -3466,13 +3472,10 @@ export interface operations {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                /** @description The ULID of a provider. */
-                providerId: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": components["schemas"]["IdentityProviderCheckRequest"];
             };

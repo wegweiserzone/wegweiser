@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -211,6 +212,42 @@ type idpFlags struct {
 	startTLS                            bool
 	userBase, userFilter, nameAttribute string
 	groups, groupBase, groupFilter      string
+
+	// dryRun checks the provider as it would be saved and saves nothing,
+	// looking up username in a directory when one is given.
+	dryRun   bool
+	username string
+}
+
+func (fl *idpFlags) registerDryRun(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&fl.dryRun, "dry-run", false,
+		"check the provider as it would be saved, and save nothing")
+	cmd.Flags().StringVar(&fl.username, "username", "",
+		"with --dry-run, for a directory: somebody to look up as a sign-in would")
+}
+
+// tryDraft checks a provider as it would be saved, over the saved one by pid
+// when there is one, and saves nothing.
+func (fl *idpFlags) tryDraft(
+	ctx context.Context, opts *options, client *gen.ClientWithResponses, pid string, in gen.IdentityProviderInput,
+) error {
+	body := gen.IdentityProviderCheckRequest{Provider: &in}
+	if pid != "" {
+		body.Id = &pid
+	}
+	if fl.username != "" {
+		body.Username = &fl.username
+	}
+	return checkIDP(ctx, opts, client, in.Name, body)
+}
+
+// refuseStrayUsername says that --username means nothing without --dry-run,
+// rather than ignoring it.
+func (fl *idpFlags) refuseStrayUsername() error {
+	if fl.username != "" && !fl.dryRun {
+		return usageError{errors.New("--username looks somebody up in a check, so it goes with --dry-run")}
+	}
+	return nil
 }
 
 func (fl *idpFlags) registerCommon(cmd *cobra.Command) {
@@ -374,12 +411,18 @@ func newIDPAddCommand(opts *options, f *clientFlags, kind gen.IdentityProviderKi
 			} else {
 				in.Ldap = &gen.LDAPSettings{}
 			}
+			if err := fl.refuseStrayUsername(); err != nil {
+				return err
+			}
 			if err := fl.apply(c, opts, &in); err != nil {
 				return err
 			}
 			client, err := f.client()
 			if err != nil {
 				return err
+			}
+			if fl.dryRun {
+				return fl.tryDraft(c.Context(), opts, client, "", in)
 			}
 			resp, err := client.CreateIdentityProviderWithResponse(c.Context(), in)
 			if err != nil {
@@ -392,6 +435,7 @@ func newIDPAddCommand(opts *options, f *clientFlags, kind gen.IdentityProviderKi
 		},
 	}
 	fl.registerCommon(cmd)
+	fl.registerDryRun(cmd)
 	if kind == gen.IdentityProviderKindOidc {
 		cmd.Short = "Add an OpenID Connect provider"
 		cmd.Long = "Add an OpenID Connect provider, such as Authentik, Keycloak or Entra ID.\n\n" +
@@ -443,9 +487,13 @@ func newIDPSetCommand(opts *options, f *clientFlags) *cobra.Command {
 			"kept; a bind password only while the bind DN stays the same.",
 		Args: usageArgs(cobra.ExactArgs(1)),
 		Example: "  weg idp set Authentik --map dns-admins=admin --map dns-ops=write\n" +
+			"  weg idp set FreeIPA --user-filter '(cn={username})' --dry-run --username alice\n" +
 			"  weg idp set FreeIPA --disabled",
 		ValidArgsFunction: completeIDPs(f),
 		RunE: func(c *cobra.Command, args []string) error {
+			if err := fl.refuseStrayUsername(); err != nil {
+				return err
+			}
 			client, err := f.client()
 			if err != nil {
 				return err
@@ -458,6 +506,9 @@ func newIDPSetCommand(opts *options, f *clientFlags) *cobra.Command {
 			if aerr := fl.apply(c, opts, &in); aerr != nil {
 				return aerr
 			}
+			if fl.dryRun {
+				return fl.tryDraft(c.Context(), opts, client, p.Id, in)
+			}
 			resp, err := client.UpdateIdentityProviderWithResponse(c.Context(), p.Id, in)
 			if err != nil {
 				return err
@@ -469,6 +520,7 @@ func newIDPSetCommand(opts *options, f *clientFlags) *cobra.Command {
 		},
 	}
 	fl.registerCommon(cmd)
+	fl.registerDryRun(cmd)
 	cmd.Flags().BoolVar(&fl.enabled, "enabled", false, "offer it to sign in through again")
 	cmd.MarkFlagsMutuallyExclusive("enabled", "disabled")
 	fl.registerOIDC(cmd)

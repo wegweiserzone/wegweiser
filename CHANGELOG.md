@@ -27,23 +27,26 @@ public API is unstable and may change without a deprecation period.
 - `/auth/oidc/{providerId}/start` takes `loopback` and `key`, which `weg login` sends. The
   callback then sets no cookies in the browser and sends it to that port of 127.0.0.1
   instead, with the session sealed to the key, or with the reason there is none.
-- `POST /identity-providers/{providerId}/check` tries what a sign-in through a provider
-  needs, short of somebody signing in, and says at each step what it found or what is
-  wrong: an OpenID Connect provider's discovery document, a directory's connection, bind
-  and bases. Given a username, a directory also says who that is, which groups they are in
-  and the scope those give them, without a password.
+- `POST /identity-providers/check` tries what a sign-in through a provider needs, short of
+  somebody signing in, for a saved provider by its id or for a draft before it is saved,
+  and says at each step what it found or what is wrong: an OpenID Connect provider's
+  discovery document, a directory's connection, bind and bases. Given a username, a
+  directory also says who that is, which groups they are in and the scope those give them,
+  without a password.
 
 #### Web interface
 
 - The sign-in page offers the identity providers that are switched on: a button for each
   OpenID Connect provider, and a directory's name and password beside the token. When a
   provider refuses somebody, the page says why.
-- *Providers* adds, changes, switches off and removes the identity providers. Who each lets
-  in is set per scope, admin, write and read, as the groups given each, and a provider that
-  lets nobody in says so. A secret is typed in and never shown again, and the redirect URI
-  for the address the page is served from is offered with one click.
-- A provider's page checks it, and for a directory looks somebody up, listing what was
-  tried and what came of it.
+- *Providers* adds, changes, switches off and removes the identity providers, each from
+  its row in the list as well as from its page. Who each lets in is set per scope, admin,
+  write and read, as the groups given each, and a provider that lets nobody in says so. A
+  secret is typed in and never shown again, and the redirect URI for the address the page
+  is served from is offered with one click.
+- A provider's page checks it as its fields stand, saved or not, in a column beside the
+  form, and says when the fields have changed since. Looking somebody up in a directory
+  lists their groups, and a click gives one a scope.
 
 #### CLI
 
@@ -56,7 +59,8 @@ public API is unstable and may change without a deprecation period.
   file only its owner can read, and every command after it uses it unless `--token` or
   `$WEG_TOKEN` names a token. `weg logout` ends it.
 - `weg idp check NAME` runs that check and shows each step, and `--username` looks
-  somebody up in a directory.
+  somebody up in a directory. `weg idp add` and `weg idp set` take `--dry-run`, which
+  checks the provider as it would be saved and saves nothing.
 
 #### Observation
 

@@ -28,7 +28,8 @@
   import Field from "#lib/components/Field.svelte";
   import ListEditor from "#lib/components/ListEditor.svelte";
   import Notice from "#lib/components/Notice.svelte";
-  import Panel from "#lib/components/Panel.svelte";
+  import Row from "#lib/components/Row.svelte";
+  import Section from "#lib/components/Section.svelte";
 
   type Kind = "oidc" | "ldap";
 
@@ -211,6 +212,8 @@
 
   /** The last check of the provider as it is saved, and whom it looked up. */
   let checked = $state<IdentityProviderCheck | null>(null);
+  /** The fields as they stood when checked was tried. */
+  let checkedDraft = $state("");
   let checking = $state(false);
   let lookup = $state("");
 
@@ -279,8 +282,6 @@
           body: toInput(draft),
         });
         draft = toDraft(stored);
-        // A check describes what was saved before; it says nothing about this.
-        checked = null;
         said = "Saved. A session already open keeps the scope it was given until it ends.";
       }
     } catch (err) {
@@ -292,23 +293,91 @@
   }
 
   async function check() {
-    if (!stored) return;
     checking = true;
     refused = null;
-    checked = null;
     try {
       const username = draft.kind === "ldap" ? lookup.trim() : "";
-      checked = await api.post("/identity-providers/{providerId}/check", {
-        path: { providerId: stored.id },
-        body: username ? { username } : {},
+      const tried = connection(draft);
+      checked = await api.post("/identity-providers/check", {
+        body: {
+          id: stored?.id,
+          provider: toInput(draft),
+          ...(username ? { username } : {}),
+        },
       });
+      checkedDraft = tried;
+      document.getElementById("check")?.scrollIntoView({ block: "nearest" });
     } catch (err) {
+      checked = null;
       refused =
         err instanceof ApiError ? (err.detail ?? err.title) : "The provider could not be checked.";
     } finally {
       checking = false;
     }
   }
+
+  /**
+   * connection is the draft less its mappings: what a check tries. Giving a
+   * group a scope changes who gets in, which the check's person shows live,
+   * and leaves what the check found standing.
+   */
+  const connection = (d: Draft) => JSON.stringify({ ...d, groups: null });
+
+  /** The connection has changed since the check on screen, so it describes something else. */
+  const stale = $derived(checked !== null && checkedDraft !== connection(draft));
+
+  /**
+   * shortName is a group by the value of its first RDN, which is what a
+   * mapping usually names it by and what the server compares too (D51).
+   */
+  function shortName(dn: string): string {
+    const first = dn.split(",")[0] ?? dn;
+    const at = first.indexOf("=");
+    return at >= 0 ? first.slice(at + 1) : dn;
+  }
+
+  /** mappedTo is the scope a group is given here, by its DN or its short name. */
+  function mappedTo(dn: string): Scope | null {
+    const names = [dn.toLowerCase(), shortName(dn).toLowerCase()];
+    for (const { scope } of scopes) {
+      if (draft.groups[scope].some((g) => names.includes(g.toLowerCase()))) return scope;
+    }
+    return null;
+  }
+
+  /** assign gives a group the scope, or takes it away when it already has it. */
+  function assign(dn: string, scope: Scope) {
+    const had = mappedTo(dn);
+    const names = [dn.toLowerCase(), shortName(dn).toLowerCase()];
+    for (const { scope: s } of scopes) {
+      draft.groups[s] = draft.groups[s].filter((g) => !names.includes(g.toLowerCase()));
+    }
+    if (had !== scope) draft.groups[scope] = [...draft.groups[scope], shortName(dn)];
+  }
+
+  /**
+   * shownSteps is what the check tried, less its last step when it found
+   * somebody: that step is the scope their groups gave them when the check ran,
+   * and the person below says the same thing for the mappings as they stand
+   * now, which a click may have changed since.
+   */
+  const shownSteps = $derived(
+    checked ? (checked.person ? checked.steps.slice(0, -1) : checked.steps) : [],
+  );
+
+  /** wouldHold is the scope the person looked up gets with the mappings as they stand. */
+  const wouldHold = $derived.by(() => {
+    const groups = checked?.person?.groups ?? [];
+    for (const { scope } of scopes) {
+      if (groups.some((g) => mappedTo(g) === scope)) return scope;
+    }
+    return null;
+  });
+
+  /** works is the verdict: nothing the check tried failed, and whoever it found gets in. */
+  const works = $derived(
+    !shownSteps.some((s) => s.status === "failed") && (!checked?.person || wouldHold !== null),
+  );
 
   const stepTone = (s: CheckStep) =>
     s.status === "ok" ? "ok" : s.status === "failed" ? "crit" : "warn";
@@ -335,6 +404,8 @@
   const areaClass =
     "num w-full rounded-sm border border-line bg-surface px-3 py-2 text-[12px] text-ink " +
     "transition-colors outline-none placeholder:text-ink-faint focus:border-signal";
+  /** The grid the connection's fields share, as many to a row as the panel holds. */
+  const fieldsClass = "grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-4";
 </script>
 
 <svelte:head>
@@ -347,7 +418,15 @@
 >
   {#snippet actions()}
     <Button weight="quiet" onclick={() => goto("/providers")}>Back</Button>
-    {#if allowed && (creating || stored)}
+    {#if allowed && !loading && !trouble}
+      {#if stored}
+        <Button
+          onclick={() => ((removing = true), (refused = null))}
+          class="text-crit hover:border-crit hover:bg-crit-lo"
+        >
+          Remove
+        </Button>
+      {/if}
       <Button weight="primary" type="submit" form="provider" disabled={saving || !dirty}>
         {saving ? "Saving…" : creating ? "Add provider" : "Save"}
       </Button>
@@ -355,16 +434,16 @@
   {/snippet}
 </Bar>
 
-<div class="flex flex-1 flex-col overflow-auto">
+<div class="min-h-0 flex-1 overflow-auto">
   {#if !allowed}
-    <div class="px-5 pt-4">
+    <div class="px-5 py-6 sm:px-8">
       <Notice tone="warn" title="This session may not manage providers">
         A provider decides who may sign in and with what, so seeing or changing one needs the
         admin scope.
       </Notice>
     </div>
   {:else if trouble}
-    <div class="px-5 pt-4">
+    <div class="px-5 py-6 sm:px-8">
       <Notice tone="crit" title="The provider could not be read">
         {trouble}
         {#snippet actions()}
@@ -373,396 +452,431 @@
       </Notice>
     </div>
   {:else if loading}
-    <p class="px-5 pt-6 text-[13px] text-ink-faint">Reading the provider…</p>
+    <p class="px-5 py-6 text-[13px] text-ink-faint sm:px-8">Reading the provider…</p>
   {:else}
-    <form id="provider" class="flex flex-col gap-6 px-5 py-6" onsubmit={save}>
-      {#if refused}
-        <div class="max-w-3xl">
-          <Notice tone="crit" title="That did not work">{refused}</Notice>
-        </div>
-      {/if}
-      {#if said}
-        <div class="max-w-3xl">
-          <Notice tone="signal" title="Done">{said}</Notice>
-        </div>
-      {/if}
+    <!-- The form on the left, and beside it the check, which stays in view
+         while the form scrolls so that a change and what it does are seen
+         together. -->
+    <div class="grid gap-x-10 gap-y-8 px-5 py-6 sm:px-8 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <form id="provider" class="flex min-w-0 flex-col gap-12" onsubmit={save}>
+        {#if refused || said}
+          <div class="flex flex-col gap-3">
+            {#if refused}
+              <Notice tone="crit" title="That did not work">{refused}</Notice>
+            {/if}
+            {#if said}
+              <Notice tone="signal" title="Done">{said}</Notice>
+            {/if}
+          </div>
+        {/if}
 
-      {#if creating}
-        <div class="flex gap-1.5" role="radiogroup" aria-label="Kind">
-          {#each kinds as k (k)}
-            <button
-              type="button"
-              role="radio"
-              aria-checked={draft.kind === k}
-              onclick={() => (draft.kind = k)}
-              class="sign h-8 cursor-pointer rounded-sm border px-3 text-[13px] transition-colors
-                     {draft.kind === k
-                ? 'border-signal bg-signal-lo text-signal'
-                : 'border-line bg-surface text-ink-mute hover:bg-raised'}"
-            >
-              {k === "oidc" ? "OpenID Connect" : "LDAP directory"}
-            </button>
-          {/each}
-        </div>
-      {/if}
-
-      {#if stored}
-        <Panel heading="Check it">
+        <Section heading={draft.kind === "oidc" ? "The provider" : "The directory"}>
           {#snippet blurb()}
-            Tries what a sign-in needs, from this member and short of somebody signing in. It
-            checks the provider as it is saved.
+            {#if draft.kind === "oidc"}
+              Signing in uses the authorization code flow with PKCE. Register this server with
+              the provider as a confidential client, then copy what it says here.
+            {:else}
+              A person's entry is found with the filter, and their password checked by binding
+              as it, over LDAPS or StartTLS. The password is passed on and forgotten.
+            {/if}
           {/snippet}
 
-          <div class="flex flex-wrap items-end gap-3">
-            {#if draft.kind === "ldap"}
+          {#if creating}
+            <Row title="Kind">
+              {#snippet about()}
+                Which protocol this server speaks to it. It stays the kind it is made as.
+              {/snippet}
+              <div class="flex gap-1.5" role="radiogroup" aria-label="Kind">
+                {#each kinds as k (k)}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={draft.kind === k}
+                    onclick={() => (draft.kind = k)}
+                    class="sign h-8 cursor-pointer rounded-sm border px-3 text-[13px] transition-colors
+                           {draft.kind === k
+                      ? 'border-signal bg-signal-lo text-signal'
+                      : 'border-line bg-surface text-ink-mute hover:bg-raised'}"
+                  >
+                    {k === "oidc" ? "OpenID Connect" : "LDAP directory"}
+                  </button>
+                {/each}
+              </div>
+            </Row>
+          {/if}
+
+          <Row title="Name">
+            {#snippet about()}
+              What the sign-in page offers it as.
+            {/snippet}
+            <div class="flex flex-wrap items-end gap-x-6 gap-y-3">
               <div class="min-w-56 flex-1">
                 <Field
-                  label="Look somebody up"
-                  bind:value={lookup}
-                  placeholder="alice"
+                  label="Name"
+                  bind:value={draft.name}
+                  placeholder={draft.kind === "oidc" ? "Authentik" : "FreeIPA"}
                   autocomplete="off"
-                  spellcheck={false}
-                  hint="Optional. Who they are, their groups and their scope, without a password."
-                  onkeydown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void check();
-                    }
-                  }}
                 />
               </div>
-            {/if}
-            <Button type="button" onclick={check} disabled={checking || dirty}>
-              {checking ? "Checking…" : "Check"}
-            </Button>
-            {#if dirty}
-              <span class="pb-2 text-xs text-ink-faint">Save first: the check tries what is saved.</span>
-            {/if}
-          </div>
+              <label class="flex h-9 items-center gap-2 text-[13px] text-ink-mute">
+                <input type="checkbox" bind:checked={draft.enabled} class="size-3.5 accent-signal" />
+                Offered on the sign-in page
+              </label>
+            </div>
+          </Row>
 
-          {#if checked}
-            <p class="text-[13px] {checked.ok ? 'text-ok' : 'text-crit'}" role="status">
-              {checked.ok
-                ? "It works as far as can be told from here."
-                : "It does not work as it stands."}
-            </p>
-            <ol class="flex flex-col gap-2.5" aria-label="What was tried">
-              {#each checked.steps as step, i (i)}
-                <li class="flex items-start gap-3">
-                  <span class="w-16 shrink-0 pt-px"><Chip tone={stepTone(step)}>{stepWord(step)}</Chip></span>
-                  <span class="flex min-w-0 flex-col gap-0.5">
-                    <span class="text-[13px] text-ink">{step.step}</span>
-                    <span class="text-[12px] break-words text-ink-mute">{step.detail}</span>
+          {#if draft.kind === "oidc"}
+            <Row title="Issuer">
+              {#snippet about()}
+                The discovery document is read from below it.
+              {/snippet}
+              <Field
+                label="Issuer"
+                bind:value={draft.oidc.issuer}
+                placeholder="https://auth.example.com/application/o/wegweiser/"
+                spellcheck={false}
+                autocomplete="off"
+              />
+            </Row>
+
+            <Row title="Client">
+              {#snippet about()}
+                What the provider registered this server as. The secret is never shown again once
+                saved.
+              {/snippet}
+              <div class={fieldsClass}>
+                <Field
+                  label="Client ID"
+                  bind:value={draft.oidc.clientId}
+                  spellcheck={false}
+                  autocomplete="off"
+                />
+                <Field
+                  label="Client secret"
+                  type="password"
+                  bind:value={draft.oidc.clientSecret}
+                  autocomplete="new-password"
+                  placeholder={creating ? "" : "kept; type a new one to replace it"}
+                />
+              </div>
+            </Row>
+
+            <Row title="Redirect URIs">
+              {#snippet about()}
+                Where the provider sends a person back. One for each address a member is reached
+                by, each registered with the provider too.
+              {/snippet}
+              <ListEditor
+                label="Redirect URIs"
+                bind:items={draft.oidc.redirectUris}
+                placeholder="https://ns1.example.com/api/v1/auth/oidc/callback"
+                empty="None yet. A sign-in returns only to one of these."
+              />
+              {#if !callbackListed}
+                <p class="flex flex-wrap items-center gap-x-2 text-xs text-ink-mute">
+                  <span>
+                    A sign-in started on this page returns to
+                    <span class="num break-all text-ink">{callback}</span>, which is not listed.
                   </span>
-                </li>
-              {/each}
-            </ol>
-            {#if checked.person}
-              <div class="flex flex-col gap-1.5 rounded-sm border border-line bg-raised px-3 py-2.5">
+                  <Button
+                    type="button"
+                    weight="quiet"
+                    onclick={() => (draft.oidc.redirectUris = [...draft.oidc.redirectUris, callback])}
+                  >
+                    Add it
+                  </Button>
+                </p>
+              {/if}
+            </Row>
+
+            <Row title="Claims">
+              {#snippet about()}
+                What is asked for at sign-in, where a person's groups are read from, and what a
+                commit calls them.
+              {/snippet}
+              <div class={fieldsClass}>
+                <Field label="Scopes" bind:value={draft.oidc.scopes} spellcheck={false} />
+                <Field label="Groups claim" bind:value={draft.oidc.groupsClaim} spellcheck={false} />
+                <Field label="Name claim" bind:value={draft.oidc.nameClaim} spellcheck={false} />
+              </div>
+            </Row>
+          {:else}
+            <Row title="Address">
+              {#snippet about()}
+                ldaps://, or ldap:// with StartTLS. A password never crosses the network in the
+                clear.
+              {/snippet}
+              <div class="flex flex-wrap items-end gap-x-6 gap-y-3">
+                <div class="min-w-56 flex-1">
+                  <Field
+                    label="URL"
+                    bind:value={draft.ldap.url}
+                    placeholder="ldaps://ipa.example.com"
+                    spellcheck={false}
+                    autocomplete="off"
+                  />
+                </div>
+                <label class="flex h-9 items-center gap-2 text-[13px] text-ink-mute">
+                  <input type="checkbox" bind:checked={draft.ldap.startTls} class="size-3.5 accent-signal" />
+                  StartTLS on ldap://
+                </label>
+              </div>
+            </Row>
+
+            <Row title="Searching as">
+              {#snippet about()}
+                Who searches for a person's entry. Left empty, the search is anonymous. The
+                password is never shown again once saved.
+              {/snippet}
+              <div class={fieldsClass}>
+                <Field
+                  label="Bind DN"
+                  bind:value={draft.ldap.bindDn}
+                  placeholder="uid=wegweiser,cn=sysaccounts,cn=etc,dc=example,dc=com"
+                  spellcheck={false}
+                  autocomplete="off"
+                />
+                <Field
+                  label="Bind password"
+                  type="password"
+                  bind:value={draft.ldap.bindPassword}
+                  autocomplete="new-password"
+                  placeholder={creating ? "" : "kept; type a new one to replace it"}
+                />
+              </div>
+            </Row>
+
+            <Row title="Finding a person">
+              {#snippet about()}
+                Where people are, the filter that finds one, with {"{username}"} replaced and
+                escaped, and the attribute a commit calls them by.
+              {/snippet}
+              <div class={fieldsClass}>
+                <Field
+                  label="User base"
+                  bind:value={draft.ldap.userBase}
+                  placeholder="cn=users,cn=accounts,dc=example,dc=com"
+                  spellcheck={false}
+                />
+                <Field
+                  label="User filter"
+                  bind:value={draft.ldap.userFilter}
+                  spellcheck={false}
+                  hint={"Active Directory: (sAMAccountName={username})"}
+                />
+                <Field label="Name attribute" bind:value={draft.ldap.nameAttribute} spellcheck={false} />
+              </div>
+            </Row>
+
+            <Row title="Their groups">
+              {#snippet about()}
+                Where the directory says which groups a person is in.
+              {/snippet}
+              <fieldset class="grid gap-2 sm:grid-cols-2">
+                <legend class="sr-only">Groups are read from</legend>
+                {#each groupSources as choice (choice.value)}
+                  <label
+                    class="flex cursor-pointer items-start gap-2.5 rounded-sm border px-3 py-2
+                           transition-colors {draft.ldap.groups === choice.value
+                      ? 'border-signal bg-signal-lo'
+                      : 'border-line bg-surface hover:bg-raised'}"
+                  >
+                    <input
+                      type="radio"
+                      name="groups"
+                      value={choice.value}
+                      bind:group={draft.ldap.groups}
+                      class="mt-1 accent-[var(--signal)]"
+                    />
+                    <span class="flex flex-col gap-0.5">
+                      <span class="text-[13px] {draft.ldap.groups === choice.value ? 'text-signal' : ''}">
+                        {choice.label}
+                      </span>
+                      <span class="text-[12px] text-ink-mute">{choice.what}</span>
+                    </span>
+                  </label>
+                {/each}
+              </fieldset>
+              {#if draft.ldap.groups === "search"}
+                <div class={fieldsClass}>
+                  <Field
+                    label="Group base"
+                    bind:value={draft.ldap.groupBase}
+                    placeholder="cn=groups,cn=accounts,dc=example,dc=com"
+                    spellcheck={false}
+                  />
+                  <Field
+                    label="Group filter"
+                    bind:value={draft.ldap.groupFilter}
+                    spellcheck={false}
+                    hint={"{dn} is their entry. Nested AD groups: (member:1.2.840.113556.1.4.1941:={dn})"}
+                  />
+                </div>
+              {/if}
+            </Row>
+          {/if}
+        </Section>
+
+        <Section heading="Who it lets in">
+          {#snippet blurb()}
+            A person holds the strongest scope any of their groups is given here. A person in none
+            of these groups is refused, however well they signed in.
+            {#if draft.kind === "oidc"}
+              A group is a value of the {draft.oidc.groupsClaim || "groups"} claim, as the provider
+              sends it.
+            {:else}
+              A group is its DN, or the value of its first RDN. Looking somebody up in the check
+              lists theirs, to give a scope with one click.
+            {/if}
+          {/snippet}
+
+          {#if nobody}
+            <div class="pt-4">
+              <Notice tone="warn" title="Nobody can sign in through it yet">
+                Give at least one group a scope. Until then every sign-in through this provider is
+                refused.
+              </Notice>
+            </div>
+          {/if}
+
+          {#each scopes as { scope, what } (scope)}
+            <Row title={scope}>
+              {#snippet about()}
+                {what}
+              {/snippet}
+              <ListEditor
+                label="Groups given {scope}"
+                bind:items={draft.groups[scope]}
+                placeholder={draft.kind === "oidc" ? `dns-${scope}` : `dns-${scope}, or its DN`}
+                empty="No group is given {scope}."
+              />
+            </Row>
+          {/each}
+        </Section>
+
+        <Section heading="Trust">
+          <Row title="CA certificate">
+            {#snippet about()}
+              For a provider whose certificate an internal CA signed, as FreeIPA's is. Empty
+              trusts what this machine trusts.
+            {/snippet}
+            <textarea
+              bind:value={draft.caCertificate}
+              aria-label="CA certificate"
+              rows="6"
+              spellcheck={false}
+              placeholder="-----BEGIN CERTIFICATE-----"
+              class={areaClass}
+            ></textarea>
+          </Row>
+        </Section>
+      </form>
+
+      <aside id="check" class="flex flex-col gap-4 xl:sticky xl:top-6 xl:self-start" aria-label="Check it">
+        <div class="flex items-center justify-between gap-3 border-b border-line pb-2.5">
+          <h2 class="font-cond text-[15px] font-bold tracking-[0.08em] uppercase">Check it</h2>
+          <Button onclick={check} disabled={checking}>{checking ? "Checking…" : "Check"}</Button>
+        </div>
+        <p class="text-[12px] text-ink-mute">
+          Tries the fields as they stand, saved or not, from this member and short of somebody
+          signing in. Nothing is saved by it.
+        </p>
+
+        {#if draft.kind === "ldap"}
+          <Field
+            label="Look somebody up"
+            bind:value={lookup}
+            placeholder="alice"
+            autocomplete="off"
+            spellcheck={false}
+            hint="Optional. Who they are and which groups they are in, without a password."
+            onkeydown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void check();
+              }
+            }}
+          />
+        {/if}
+
+        {#if checked}
+          <p class="text-[13px] {works ? 'text-ok' : 'text-crit'}" role="status">
+            {works ? "It works as far as can be told from here." : "It does not work as it stands."}
+          </p>
+          {#if stale}
+            <p class="text-xs text-warn">The fields have changed since. Check again to try them.</p>
+          {/if}
+          <ol class="flex flex-col gap-2.5" aria-label="What was tried">
+            {#each shownSteps as step, i (i)}
+              <li class="flex items-start gap-3">
+                <span class="w-16 shrink-0 pt-px"><Chip tone={stepTone(step)}>{stepWord(step)}</Chip></span>
+                <span class="flex min-w-0 flex-col gap-0.5">
+                  <span class="text-[13px] text-ink">{step.step}</span>
+                  <span class="text-[12px] break-words text-ink-mute">{step.detail}</span>
+                </span>
+              </li>
+            {/each}
+          </ol>
+
+          {#if checked.person}
+            {@const person = checked.person}
+            <div class="flex flex-col gap-3 rounded-sm border border-line bg-surface p-3">
+              <div class="flex flex-col gap-0.5">
                 <p class="flex flex-wrap items-center gap-2 text-[13px]">
-                  <span class="text-ink">{checked.person.name}</span>
-                  {#if checked.person.scope}
-                    <Chip tone="signal">{checked.person.scope}</Chip>
+                  <span class="text-ink">{person.name}</span>
+                  {#if wouldHold}
+                    <Chip tone="signal">{wouldHold}</Chip>
                   {:else}
-                    <Chip tone="crit">no scope</Chip>
+                    <Chip tone="crit">refused</Chip>
                   {/if}
                 </p>
-                <p class="num text-[12px] break-all text-ink-mute">{checked.person.dn}</p>
-                {#if checked.person.groups.length > 0}
-                  <ul class="num flex flex-col text-[12px] text-ink-mute" aria-label="Their groups">
-                    {#each checked.person.groups as group (group)}
-                      <li class="break-all">{group}</li>
-                    {/each}
-                  </ul>
-                {:else}
-                  <p class="text-[12px] text-ink-faint">In no group.</p>
-                {/if}
+                <p class="num text-[11px] break-all text-ink-faint">{person.dn}</p>
               </div>
-            {/if}
-          {/if}
-        </Panel>
-      {/if}
-
-      <Panel heading="Who it lets in">
-        {#snippet blurb()}
-          A person holds the strongest scope any of their groups is given here. A person in none
-          of these groups is refused, however well they signed in.
-        {/snippet}
-
-        {#if nobody}
-          <Notice tone="warn" title="Nobody can sign in through it yet">
-            Give at least one group a scope. Until then every sign-in through this provider is
-            refused.
-          </Notice>
-        {/if}
-
-        {#each scopes as { scope, what } (scope)}
-          <div class="flex flex-col gap-2 border-b border-line pb-4 last:border-b-0 last:pb-0">
-            <div class="flex flex-wrap items-baseline gap-2">
-              <Chip tone={scope === "admin" ? "signal" : scope === "write" ? "info" : "neutral"}>
-                {scope}
-              </Chip>
-              <span class="text-[12px] text-ink-mute">{what}</span>
+              {#if person.groups.length > 0}
+                <ul class="flex flex-col divide-y divide-line-soft" aria-label="Their groups">
+                  {#each person.groups as group (group)}
+                    <li class="flex items-center justify-between gap-2 py-1.5">
+                      <span class="num min-w-0 truncate text-[12px] text-ink" title={group}>
+                        {shortName(group)}
+                      </span>
+                      <span class="flex shrink-0 gap-1" role="group" aria-label="Scope for {shortName(group)}">
+                        {#each scopes as { scope } (scope)}
+                          <button
+                            type="button"
+                            aria-pressed={mappedTo(group) === scope}
+                            onclick={() => assign(group, scope)}
+                            class="sign h-6 cursor-pointer rounded-xs border px-1.5 text-[10px] transition-colors
+                                   {mappedTo(group) === scope
+                              ? 'border-signal bg-signal-lo text-signal'
+                              : 'border-line text-ink-faint hover:border-ink-faint hover:text-ink'}"
+                          >
+                            {scope}
+                          </button>
+                        {/each}
+                      </span>
+                    </li>
+                  {/each}
+                </ul>
+                <p class="text-[11px] text-ink-faint">
+                  A click gives the group that scope here, and another takes it away. Save to keep it.
+                </p>
+              {:else}
+                <p class="text-[12px] text-ink-faint">In no group, so a sign-in is refused.</p>
+              {/if}
             </div>
-            <ListEditor
-              label="Groups given {scope}"
-              bind:items={draft.groups[scope]}
-              placeholder={draft.kind === "oidc" ? `dns-${scope}` : `cn=dns-${scope},cn=groups,…`}
-              empty="No group is given {scope}."
-            />
-          </div>
-        {/each}
-
-        <p class="text-[12px] text-ink-faint">
-          {#if draft.kind === "oidc"}
-            A group is a value of the {draft.oidc.groupsClaim || "groups"} claim, as the provider
-            sends it.
-          {:else}
-            A group is its DN, or the value of its first RDN: <span class="num">dns-admin</span>
-            matches <span class="num">cn=dns-admin,cn=groups,…</span>.
           {/if}
-          Case does not matter.
-        </p>
-      </Panel>
-
-      <Panel heading={draft.kind === "oidc" ? "The provider" : "The directory"}>
-        {#snippet blurb()}
-          {#if draft.kind === "oidc"}
-            Signing in uses the authorization code flow with PKCE. Register this server with the
-            provider as a confidential client, then copy what it says here.
-          {:else}
-            A person's entry is found with the filter, and their password checked by binding as
-            it, over LDAPS or StartTLS. The password is passed on and forgotten.
-          {/if}
-        {/snippet}
-
-        <div class="grid gap-4 sm:grid-cols-2">
-          <Field
-            label="Name"
-            bind:value={draft.name}
-            placeholder={draft.kind === "oidc" ? "Authentik" : "FreeIPA"}
-            autocomplete="off"
-            hint="What the sign-in page offers it as."
-          />
-          <label class="flex items-center gap-2 self-center text-[13px] text-ink-mute sm:pt-4">
-            <input type="checkbox" bind:checked={draft.enabled} class="size-3.5 accent-signal" />
-            Offered on the sign-in page
-          </label>
-        </div>
-
-        {#if draft.kind === "oidc"}
-          <Field
-            label="Issuer"
-            bind:value={draft.oidc.issuer}
-            placeholder="https://auth.example.com/application/o/wegweiser/"
-            spellcheck={false}
-            autocomplete="off"
-            hint="The discovery document is read from below it."
-          />
-          <div class="grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Client ID"
-              bind:value={draft.oidc.clientId}
-              spellcheck={false}
-              autocomplete="off"
-            />
-            <Field
-              label="Client secret"
-              type="password"
-              bind:value={draft.oidc.clientSecret}
-              autocomplete="new-password"
-              placeholder={creating ? "" : "kept; type a new one to replace it"}
-              hint="Never shown again once saved."
-            />
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <span class="sign text-[11px] text-ink-faint">Redirect URIs</span>
-            <ListEditor
-              label="Redirect URIs"
-              bind:items={draft.oidc.redirectUris}
-              placeholder="https://ns1.example.com/api/v1/auth/oidc/callback"
-              empty="None yet. A sign-in returns only to one of these."
-            />
-            {#if !callbackListed}
-              <p class="flex flex-wrap items-center gap-x-2 text-xs text-ink-mute">
-                <span>
-                  A sign-in started on this page returns to
-                  <span class="num break-all text-ink">{callback}</span>, which is not listed.
-                </span>
-                <Button
-                  type="button"
-                  weight="quiet"
-                  onclick={() => (draft.oidc.redirectUris = [...draft.oidc.redirectUris, callback])}
-                >
-                  Add it
-                </Button>
-              </p>
-            {/if}
-            <p class="text-xs text-ink-mute">
-              One for each address a member is reached by, each registered with the provider too.
-            </p>
-          </div>
-
-          <div class="grid gap-4 sm:grid-cols-3">
-            <Field
-              label="Scopes"
-              bind:value={draft.oidc.scopes}
-              spellcheck={false}
-              hint="Asked for at sign-in. openid is always among them."
-            />
-            <Field
-              label="Groups claim"
-              bind:value={draft.oidc.groupsClaim}
-              spellcheck={false}
-              hint="Where a person's groups are read from."
-            />
-            <Field
-              label="Name claim"
-              bind:value={draft.oidc.nameClaim}
-              spellcheck={false}
-              hint="What a commit calls them."
-            />
-          </div>
         {:else}
-          <div class="grid gap-4 sm:grid-cols-[2fr_1fr]">
-            <Field
-              label="URL"
-              bind:value={draft.ldap.url}
-              placeholder="ldaps://ipa.example.com"
-              spellcheck={false}
-              autocomplete="off"
-              hint="ldaps://, or ldap:// with StartTLS. Never in the clear."
-            />
-            <label class="flex items-center gap-2 self-center text-[13px] text-ink-mute sm:pt-1">
-              <input type="checkbox" bind:checked={draft.ldap.startTls} class="size-3.5 accent-signal" />
-              StartTLS on ldap://
-            </label>
-          </div>
-          <div class="grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Bind DN"
-              bind:value={draft.ldap.bindDn}
-              placeholder="uid=wegweiser,cn=sysaccounts,cn=etc,dc=example,dc=com"
-              spellcheck={false}
-              autocomplete="off"
-              hint="Who searches for a person's entry. Empty searches anonymously."
-            />
-            <Field
-              label="Bind password"
-              type="password"
-              bind:value={draft.ldap.bindPassword}
-              autocomplete="new-password"
-              placeholder={creating ? "" : "kept; type a new one to replace it"}
-              hint="Never shown again once saved."
-            />
-            <Field
-              label="User base"
-              bind:value={draft.ldap.userBase}
-              placeholder="cn=users,cn=accounts,dc=example,dc=com"
-              spellcheck={false}
-            />
-            <Field
-              label="User filter"
-              bind:value={draft.ldap.userFilter}
-              spellcheck={false}
-              hint={"{username} is replaced, escaped. Active Directory: (sAMAccountName={username})"}
-            />
-            <Field
-              label="Name attribute"
-              bind:value={draft.ldap.nameAttribute}
-              spellcheck={false}
-              hint="What a commit calls them."
-            />
-          </div>
-
-          <fieldset class="flex flex-col gap-2">
-            <legend class="sign mb-1 text-[11px] text-ink-faint">Groups are read from</legend>
-            {#each groupSources as choice (choice.value)}
-              <label
-                class="flex cursor-pointer items-start gap-2.5 rounded-sm border px-3 py-2
-                       transition-colors {draft.ldap.groups === choice.value
-                  ? 'border-signal bg-signal-lo'
-                  : 'border-line bg-surface hover:bg-raised'}"
-              >
-                <input
-                  type="radio"
-                  name="groups"
-                  value={choice.value}
-                  bind:group={draft.ldap.groups}
-                  class="mt-1 accent-[var(--signal)]"
-                />
-                <span class="flex flex-col gap-0.5">
-                  <span class="text-[13px] {draft.ldap.groups === choice.value ? 'text-signal' : ''}">
-                    {choice.label}
-                  </span>
-                  <span class="text-[12px] text-ink-mute">{choice.what}</span>
-                </span>
-              </label>
-            {/each}
-          </fieldset>
-
-          {#if draft.ldap.groups === "search"}
-            <div class="grid gap-4 sm:grid-cols-2">
-              <Field
-                label="Group base"
-                bind:value={draft.ldap.groupBase}
-                placeholder="cn=groups,cn=accounts,dc=example,dc=com"
-                spellcheck={false}
-              />
-              <Field
-                label="Group filter"
-                bind:value={draft.ldap.groupFilter}
-                spellcheck={false}
-                hint={"{dn} is their entry. Nested AD groups: (member:1.2.840.113556.1.4.1941:={dn})"}
-              />
-            </div>
-          {/if}
+          <p class="text-xs text-ink-faint">Nothing tried yet.</p>
         {/if}
-      </Panel>
-
-      <Panel heading="Trust">
-        {#snippet blurb()}
-          For a provider whose certificate an internal CA signed, as FreeIPA's is. Empty trusts
-          what this machine trusts.
-        {/snippet}
-        <label class="flex flex-col gap-1.5">
-          <span class="sign text-[11px] text-ink-faint">CA certificate</span>
-          <textarea
-            bind:value={draft.caCertificate}
-            rows="5"
-            spellcheck={false}
-            placeholder="-----BEGIN CERTIFICATE-----"
-            class={areaClass}
-          ></textarea>
-        </label>
-      </Panel>
-
-      {#if stored}
-        <Panel heading="Remove it">
-          {#snippet blurb()}
-            Every session opened through it ends at once, on every member. Switching it off
-            above does the same and keeps the settings.
-          {/snippet}
-          <div>
-            <Button
-              type="button"
-              onclick={() => ((removing = true), (refused = null))}
-              class="border-crit text-crit hover:border-crit hover:bg-crit-lo"
-            >
-              Remove {stored.name}
-            </Button>
-          </div>
-        </Panel>
-      {/if}
-    </form>
+      </aside>
+    </div>
   {/if}
 </div>
 
 <Dialog open={removing} onclose={() => (removing = false)} title="Remove {stored?.name ?? ''}">
   <p class="text-[13px] text-ink-mute">
-    Nobody signs in through it any more, and everybody who did is signed out. The commits they
-    made keep their names.
+    Nobody signs in through it any more, and everybody who did is signed out at once, on every
+    member. The commits they made keep their names. Switching it off instead keeps the settings.
   </p>
   {#if refused}
     <p

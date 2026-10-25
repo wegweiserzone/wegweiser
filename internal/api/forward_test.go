@@ -253,7 +253,7 @@ func TestEveryRouteIsSortedForForwarding(t *testing.T) {
 		"POST /auth/ldap/{providerId}": true, // signing in writes nothing (D51)
 		"POST /cluster/init":           true, // this node, and no other, starts a cluster (D44)
 		// Writes nothing, and is about whether the member asked reaches the provider.
-		"POST /identity-providers/{providerId}/check": true,
+		"POST /identity-providers/check": true,
 	}
 
 	spec, err := gen.GetSpec()

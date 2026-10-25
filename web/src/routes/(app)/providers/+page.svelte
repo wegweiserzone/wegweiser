@@ -14,6 +14,7 @@
   import Bar from "#lib/components/Bar.svelte";
   import Button from "#lib/components/Button.svelte";
   import Chip from "#lib/components/Chip.svelte";
+  import Dialog from "#lib/components/Dialog.svelte";
   import Empty from "#lib/components/Empty.svelte";
   import Notice from "#lib/components/Notice.svelte";
   import Table from "#lib/components/Table.svelte";
@@ -29,7 +30,29 @@
     { label: "Address", narrow: false },
     { label: "Lets in", width: "15rem" },
     { label: "State", width: "8rem" },
+    { label: "", width: "9rem" },
   ];
+
+  /** The provider the removal dialog is about. */
+  let removing = $state<IdentityProvider | null>(null);
+  let working = $state(false);
+  let refused = $state<string | null>(null);
+
+  async function remove() {
+    if (!removing) return;
+    working = true;
+    refused = null;
+    try {
+      await api.delete("/identity-providers/{providerId}", { path: { providerId: removing.id } });
+      removing = null;
+      await load();
+    } catch (err) {
+      refused =
+        err instanceof ApiError ? (err.detail ?? err.title) : "The provider was not removed.";
+    } finally {
+      working = false;
+    }
+  }
 
   const allowed = $derived(session.can("admin"));
 
@@ -143,6 +166,25 @@
             <Chip>Off</Chip>
           {/if}
         </td>
+        <td class="py-1 pr-5 pl-3 text-right">
+          <span class="flex items-center justify-end gap-1">
+            <a
+              href="/providers/{p.id}"
+              aria-label="Edit {p.name}"
+              class="sign inline-flex h-7 items-center rounded-sm px-2.5 text-[12px] text-ink-mute
+                     transition-colors hover:bg-raised hover:text-ink">Edit</a
+            >
+            <button
+              type="button"
+              onclick={() => ((removing = p), (refused = null))}
+              aria-label="Remove {p.name}"
+              class="sign inline-flex h-7 cursor-pointer items-center rounded-sm px-2.5 text-[12px]
+                     text-ink-mute transition-colors hover:bg-crit-lo hover:text-crit"
+            >
+              Remove
+            </button>
+          </span>
+        </td>
       {/snippet}
 
       {#snippet empty()}
@@ -165,3 +207,30 @@
     </Table>
   {/if}
 </div>
+
+<Dialog open={removing !== null} onclose={() => (removing = null)} title="Remove {removing?.name ?? ''}">
+  <p class="text-[13px] text-ink-mute">
+    Nobody signs in through it any more, and everybody who did is signed out at once, on every
+    member. The commits they made keep their names. Switching it off instead keeps the settings.
+  </p>
+  {#if refused}
+    <p
+      class="rounded-sm border border-line border-l-2 border-l-crit bg-raised px-3 py-2
+             text-[13px] text-ink-mute"
+      role="alert"
+    >
+      {refused}
+    </p>
+  {/if}
+  {#snippet actions()}
+    <Button weight="quiet" onclick={() => (removing = null)}>Cancel</Button>
+    <Button
+      weight="primary"
+      onclick={remove}
+      disabled={working}
+      class="border-crit bg-crit text-ground hover:border-crit hover:bg-crit"
+    >
+      {working ? "Removing…" : "Remove it"}
+    </Button>
+  {/snippet}
+</Dialog>

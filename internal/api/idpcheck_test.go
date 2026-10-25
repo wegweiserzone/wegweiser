@@ -12,12 +12,18 @@ import (
 // check asks the server to check a provider, as somebody named or nobody.
 func (h *harness) check(t *testing.T, id, username string) gen.IdentityProviderCheck {
 	t.Helper()
-	var body gen.IdentityProviderCheckRequest
+	body := gen.IdentityProviderCheckRequest{Id: &id}
 	if username != "" {
 		body.Username = &username
 	}
+	return h.checkWith(t, body)
+}
+
+// checkWith asks for a check as the request says.
+func (h *harness) checkWith(t *testing.T, body gen.IdentityProviderCheckRequest) gen.IdentityProviderCheck {
+	t.Helper()
 	var got gen.IdentityProviderCheck
-	h.decode(h.do(http.MethodPost, "/identity-providers/"+id+"/check", body), http.StatusOK, &got)
+	h.decode(h.do(http.MethodPost, "/identity-providers/check", body), http.StatusOK, &got)
 	return got
 }
 
@@ -116,6 +122,65 @@ func TestADirectoryIsChecked(t *testing.T) {
 	})
 }
 
+// A draft is tried before it is saved: on its own, or over a saved provider
+// whose secrets it keeps where it leaves them out.
+func TestADraftIsChecked(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a new one, not yet named", func(t *testing.T) {
+		t.Parallel()
+		h, _, p := directoryHarness(t, string(apply.GroupsMemberOf),
+			gen.GroupMapping{Group: "admins", Scope: gen.ScopeAdmin})
+		draft := inputOfProvider(p)
+		draft.Name = ""
+		draft.Ldap.BindPassword = ptr("service")
+		got := h.checkWith(t, gen.IdentityProviderCheckRequest{Provider: &draft, Username: ptr("alice")})
+		if !got.Ok || got.Person == nil || got.Person.Scope == nil || *got.Person.Scope != gen.ScopeAdmin {
+			t.Errorf("check = %s, want alice found with admin", statuses(got))
+		}
+	})
+
+	t.Run("over a saved one, keeping its bind password", func(t *testing.T) {
+		t.Parallel()
+		h, _, p := directoryHarness(t, string(apply.GroupsMemberOf))
+		draft := inputOfProvider(p)
+		draft.Ldap.UserFilter = "(cn={username})"
+		got := h.checkWith(t, gen.IdentityProviderCheckRequest{Id: &p.Id, Provider: &draft, Username: ptr("alice")})
+		// The bind works, because the saved password was used, and the
+		// filter the draft changed is the one that finds nobody.
+		if step := last(got); got.Ok || !strings.Contains(step.Detail, "finds nobody") {
+			t.Errorf("check = %s, want the draft's filter to find nobody", statuses(got))
+		}
+
+		// And nothing was saved.
+		var stored gen.IdentityProvider
+		h.decode(h.do(http.MethodGet, "/identity-providers/"+p.Id, nil), http.StatusOK, &stored)
+		if stored.Ldap.UserFilter != "(uid={username})" {
+			t.Errorf("filter = %q after a check, want the saved one untouched", stored.Ldap.UserFilter)
+		}
+	})
+
+	t.Run("a draft that could never work is refused as it would be saved", func(t *testing.T) {
+		t.Parallel()
+		h, _, p := directoryHarness(t, string(apply.GroupsMemberOf))
+		draft := inputOfProvider(p)
+		draft.Ldap.Url = "ldap://ipa.example.com"
+		resp := h.do(http.MethodPost, "/identity-providers/check", gen.IdentityProviderCheckRequest{Id: &p.Id, Provider: &draft})
+		if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Errorf("status = %d, want the refusal saving it would meet", resp.StatusCode)
+		}
+	})
+
+	t.Run("neither an id nor a draft", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t)
+		resp := h.do(http.MethodPost, "/identity-providers/check", gen.IdentityProviderCheckRequest{})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", resp.StatusCode)
+		}
+	})
+}
+
 func TestAnOpenIDConnectProviderIsChecked(t *testing.T) {
 	t.Parallel()
 
@@ -164,8 +229,8 @@ func TestAnOpenIDConnectProviderIsChecked(t *testing.T) {
 		t.Parallel()
 		h := newHarness(t)
 		p := addOIDCProvider(t, h, newTestIDP(t))
-		resp := h.do(http.MethodPost, "/identity-providers/"+p.Id+"/check",
-			gen.IdentityProviderCheckRequest{Username: ptr("alice")})
+		resp := h.do(http.MethodPost, "/identity-providers/check",
+			gen.IdentityProviderCheckRequest{Id: &p.Id, Username: ptr("alice")})
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}

@@ -57,11 +57,19 @@ func runIDPCheck(ctx context.Context, opts *options, f *clientFlags, name, usern
 	if err != nil {
 		return err
 	}
-	var body gen.IdentityProviderCheckRequest
+	body := gen.IdentityProviderCheckRequest{Id: &p.Id}
 	if username != "" {
 		body.Username = &username
 	}
-	resp, err := client.CheckIdentityProviderWithResponse(ctx, p.Id, body)
+	return checkIDP(ctx, opts, client, p.Name, body)
+}
+
+// checkIDP asks for a check and prints what came of it, for a saved provider
+// or for a draft that --dry-run is trying before it is saved.
+func checkIDP(
+	ctx context.Context, opts *options, client *gen.ClientWithResponses, name string, body gen.IdentityProviderCheckRequest,
+) error {
+	resp, err := client.CheckIdentityProviderWithResponse(ctx, body)
 	if err != nil {
 		return err
 	}
@@ -69,7 +77,7 @@ func runIDPCheck(ctx context.Context, opts *options, f *clientFlags, name, usern
 		return apiError(resp.HTTPResponse.StatusCode, resp.Body)
 	}
 
-	report := idpChecked{Name: p.Name, OK: resp.JSON200.Ok, Steps: resp.JSON200.Steps, Person: resp.JSON200.Person}
+	report := idpChecked{Name: name, OK: resp.JSON200.Ok, Steps: resp.JSON200.Steps, Person: resp.JSON200.Person}
 	pr := opts.Printer()
 	return pr.Print(report, func(w io.Writer) error {
 		return writeIDPCheck(w, pr, report)

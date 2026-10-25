@@ -33,20 +33,14 @@ func (s *Server) CheckIdentityProvider(
 	if err := requireAdmin(ctx, "checking an identity provider"); err != nil {
 		return nil, err
 	}
-	list, err := s.identityProviders(ctx)
+	if req.Body == nil {
+		return nil, badRequest("say which provider to check: the id of a saved one, a draft, or both")
+	}
+	p, err := s.providerToCheck(ctx, req.Body)
 	if err != nil {
 		return nil, err
 	}
-	i := slices.IndexFunc(list, func(p apply.IdentityProvider) bool { return p.ID == req.ProviderId })
-	if i < 0 {
-		return nil, fmt.Errorf("%w: there is no identity provider %s", store.ErrNotFound, req.ProviderId)
-	}
-	p := &list[i]
-
-	username := ""
-	if req.Body != nil {
-		username = strings.TrimSpace(deref(req.Body.Username, ""))
-	}
+	username := strings.TrimSpace(deref(req.Body.Username, ""))
 	if username != "" && p.Kind != apply.ProviderLDAP {
 		return nil, badRequest("only a directory can say who somebody is without them signing in; " +
 			"an OpenID Connect provider says so at the end of a sign-in")
@@ -64,6 +58,31 @@ func (s *Server) CheckIdentityProvider(
 		c.fail("Know the provider", "%s is a kind of provider this server does not know: %s", p.Name, p.Kind)
 	}
 	return gen.CheckIdentityProvider200JSONResponse(c.result()), nil
+}
+
+// providerToCheck is the provider a check is asked about: a saved one, or a
+// draft, over a saved one when both are given.
+func (s *Server) providerToCheck(ctx context.Context, in *gen.IdentityProviderCheckRequest) (*apply.IdentityProvider, error) {
+	list, err := s.identityProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pid := deref(in.Id, "")
+	if in.Provider != nil {
+		draft, derr := providerFromAPI(in.Provider)
+		if derr != nil {
+			return nil, derr
+		}
+		return apply.DraftIdentityProvider(list, pid, draft)
+	}
+	if pid == "" {
+		return nil, badRequest("say which provider to check: the id of a saved one, a draft, or both")
+	}
+	i := slices.IndexFunc(list, func(p apply.IdentityProvider) bool { return p.ID == pid })
+	if i < 0 {
+		return nil, fmt.Errorf("%w: there is no identity provider %s", store.ErrNotFound, pid)
+	}
+	return &list[i], nil
 }
 
 // checker collects the steps of a check.

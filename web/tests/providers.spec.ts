@@ -87,15 +87,15 @@ test("an OpenID Connect provider is added, given groups by scope, switched off a
   await expect(row).toContainText("Offered");
 
   // Switched off, it stays in the list and leaves the sign-in page.
-  await row.getByRole("link", { name: "Authentik" }).click();
+  await row.getByRole("link", { name: "Authentik", exact: true }).click();
   await page.getByLabel("Offered on the sign-in page").uncheck();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved. A session already open")).toBeVisible();
   await page.goto(`${server.url}/providers`);
   await expect(page.getByRole("row", { name: /Authentik/ })).toContainText("Off");
 
-  await page.getByRole("link", { name: "Authentik" }).click();
-  await page.getByRole("button", { name: "Remove Authentik" }).click();
+  await page.getByRole("link", { name: "Edit Authentik" }).click();
+  await page.getByRole("button", { name: "Remove", exact: true }).click();
   await page.getByRole("button", { name: "Remove it" }).click();
   await expect(page).toHaveURL(/\/providers$/);
   await expect(page.getByText("No providers yet")).toBeVisible();
@@ -129,8 +129,6 @@ test("a directory keeps its bind password to itself", async ({ page, server }) =
   // A change that leaves the password out keeps it: the provider is still
   // one the server will search with.
   await page.getByLabel("Name", { exact: true }).fill("IPA");
-  // A check tries what is saved, so it waits for the change to be.
-  await expect(page.getByRole("button", { name: "Check", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved. A session already open")).toBeVisible();
 
@@ -141,4 +139,16 @@ test("a directory keeps its bind password to itself", async ({ page, server }) =
   const tried = page.getByRole("list", { name: "What was tried" });
   await expect(tried).toContainText("Connect over TLS");
   await expect(tried).toContainText("Failed");
+
+  // A draft is tried before it is saved, and a change since says so.
+  await page.getByLabel("User filter").fill("(cn={username})");
+  await expect(page.getByText("The fields have changed since")).toBeVisible();
+  await page.getByRole("button", { name: "Check", exact: true }).click();
+  await expect(page.getByText("The fields have changed since")).toHaveCount(0);
+
+  // And it is removed from the list as well as from its page.
+  await page.goto(`${server.url}/providers`);
+  await page.getByRole("button", { name: "Remove IPA" }).click();
+  await page.getByRole("button", { name: "Remove it" }).click();
+  await expect(page.getByText("No providers yet")).toBeVisible();
 });

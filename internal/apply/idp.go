@@ -185,12 +185,7 @@ func (a *Applier) UpdateIdentityProvider(
 				"remove it and make another", zone.ErrInvalid)
 		}
 		p.ID, p.CreatedAt, p.UpdatedAt = old.ID, old.CreatedAt, now
-		if p.OIDC != nil && old.OIDC != nil && p.OIDC.ClientSecret == "" {
-			p.OIDC.ClientSecret = old.OIDC.ClientSecret
-		}
-		if p.LDAP != nil && old.LDAP != nil && p.LDAP.BindPassword == "" && p.LDAP.BindDN == old.LDAP.BindDN {
-			p.LDAP.BindPassword = old.LDAP.BindPassword
-		}
+		p.keepSecrets(&old)
 		p.withDefaults()
 		others := slices.Delete(slices.Clone(list), i, i+1)
 		if err := p.validate(others); err != nil {
@@ -204,6 +199,42 @@ func (a *Applier) UpdateIdentityProvider(
 		return nil, err
 	}
 	return &made, nil
+}
+
+// DraftIdentityProvider is a provider as it would stand if it were saved, so
+// that it can be tried before it is. Given the identifier of a stored one, it
+// keeps that one's secrets as an update would. Nothing is written, and the
+// name is not checked: a draft is tried for whether it reaches the provider,
+// and somebody trying a connection may not have named it yet.
+func DraftIdentityProvider(stored []IdentityProvider, pid string, p IdentityProvider) (*IdentityProvider, error) {
+	if pid != "" {
+		i := slices.IndexFunc(stored, func(q IdentityProvider) bool { return q.ID == pid })
+		if i < 0 {
+			return nil, fmt.Errorf("%w: no identity provider %s", store.ErrNotFound, pid)
+		}
+		if p.Kind != stored[i].Kind {
+			return nil, fmt.Errorf("%w: a provider stays the kind it was made as", zone.ErrInvalid)
+		}
+		p.ID = pid
+		p.keepSecrets(&stored[i])
+	}
+	p.withDefaults()
+	if err := p.validateSettings(); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// keepSecrets takes the secrets p leaves empty from old, so that changing a
+// mapping does not mean typing the client secret again. A bind password is
+// kept only while the bind DN stays the same, since it is that DN's.
+func (p *IdentityProvider) keepSecrets(old *IdentityProvider) {
+	if p.OIDC != nil && old.OIDC != nil && p.OIDC.ClientSecret == "" {
+		p.OIDC.ClientSecret = old.OIDC.ClientSecret
+	}
+	if p.LDAP != nil && old.LDAP != nil && p.LDAP.BindPassword == "" && p.LDAP.BindDN == old.LDAP.BindDN {
+		p.LDAP.BindPassword = old.LDAP.BindPassword
+	}
 }
 
 // DeleteIdentityProvider removes a provider. Nobody signs in through it
@@ -286,17 +317,25 @@ func (p *IdentityProvider) withDefaults() {
 // validate refuses a provider that could never sign anybody in, or one that
 // would sign them in insecurely. others are the providers beside it.
 func (p *IdentityProvider) validate(others []IdentityProvider) error {
-	invalid := func(format string, args ...any) error {
-		return fmt.Errorf("%w: "+format, append([]any{zone.ErrInvalid}, args...)...)
-	}
 	if strings.TrimSpace(p.Name) == "" {
-		return invalid("a provider needs a name, which is what the sign-in page offers it as")
+		return invalidProvider("a provider needs a name, which is what the sign-in page offers it as")
 	}
 	for i := range others {
 		if strings.EqualFold(others[i].Name, p.Name) {
 			return fmt.Errorf("%w: there is a provider called %q already", store.ErrConflict, others[i].Name)
 		}
 	}
+	return p.validateSettings()
+}
+
+func invalidProvider(format string, args ...any) error {
+	return fmt.Errorf("%w: "+format, append([]any{zone.ErrInvalid}, args...)...)
+}
+
+// validateSettings is validate without the name: everything that decides
+// whether the provider can be reached and sign anybody in.
+func (p *IdentityProvider) validateSettings() error {
+	invalid := invalidProvider
 	for _, m := range p.Mappings {
 		if strings.TrimSpace(m.Group) == "" {
 			return invalid("a mapping names the group it is for")

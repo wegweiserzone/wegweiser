@@ -36,6 +36,25 @@ func TestIdentityProviderCheck(t *testing.T) {
 		}
 	})
 
+	t.Run("--dry-run checks a new provider and saves nothing", func(t *testing.T) {
+		out := mustRun(t, srv, "idp", "add", "ldap", "Draft",
+			"--url", "ldaps://127.0.0.1:9", "--user-base", "dc=example,dc=com",
+			"--user-filter", "(uid={username})", "--dry-run")
+		if !strings.Contains(out, "Draft does not work as it stands") {
+			t.Errorf("output = %q, want the check of the draft", out)
+		}
+		if listed := mustRun(t, srv, "idp", "list"); strings.Contains(listed, "Draft") {
+			t.Errorf("listing = %q, want nothing saved", listed)
+		}
+	})
+
+	t.Run("--username without --dry-run is a mistake", func(t *testing.T) {
+		code, _, errOut := run(t, srv, "idp", "set", "Nowhere", "--username", "alice")
+		if code != ExitUsage || !strings.Contains(errOut, "--dry-run") {
+			t.Errorf("exit %d, stderr %q; want a usage error naming --dry-run", code, errOut)
+		}
+	})
+
 	t.Run("a username for a provider that cannot look one up is refused", func(t *testing.T) {
 		secretFile := filepath.Join(t.TempDir(), "secret")
 		if err := os.WriteFile(secretFile, []byte("s3cret\n"), 0o600); err != nil {
