@@ -129,6 +129,16 @@ test("a directory keeps its bind password to itself", async ({ page, server }) =
   // A change that leaves the password out keeps it: the provider is still
   // one the server will search with.
   await page.getByLabel("Name", { exact: true }).fill("IPA");
+  // A check tries what is saved, so it waits for the change to be.
+  await expect(page.getByRole("button", { name: "Check", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved. A session already open")).toBeVisible();
+
+  // Nothing listens there, and the check says where it stopped.
+  await page.getByLabel("Look somebody up").fill("alice");
+  await page.getByRole("button", { name: "Check", exact: true }).click();
+  await expect(page.getByText("It does not work as it stands.")).toBeVisible();
+  const tried = page.getByRole("list", { name: "What was tried" });
+  await expect(tried).toContainText("Connect over TLS");
+  await expect(tried).toContainText("Failed");
 });

@@ -13,7 +13,13 @@
   import { page } from "$app/state";
   import { asked } from "#lib/asked.ts";
   import { api, ApiError, NetworkError } from "#lib/api/index.ts";
-  import type { IdentityProvider, IdentityProviderInput, Scope } from "#lib/api/index.ts";
+  import type {
+    CheckStep,
+    IdentityProvider,
+    IdentityProviderCheck,
+    IdentityProviderInput,
+    Scope,
+  } from "#lib/api/index.ts";
   import { session } from "#lib/session.svelte.ts";
   import Bar from "#lib/components/Bar.svelte";
   import Button from "#lib/components/Button.svelte";
@@ -203,9 +209,15 @@
   let said = $state<string | null>(null);
   let removing = $state(false);
 
+  /** The last check of the provider as it is saved, and whom it looked up. */
+  let checked = $state<IdentityProviderCheck | null>(null);
+  let checking = $state(false);
+  let lookup = $state("");
+
   async function load(which: string) {
     trouble = null;
     refused = null;
+    checked = null;
     if (which === "new") {
       stored = null;
       draft = blank(page.url.searchParams.get("kind") === "ldap" ? "ldap" : "oidc");
@@ -267,6 +279,8 @@
           body: toInput(draft),
         });
         draft = toDraft(stored);
+        // A check describes what was saved before; it says nothing about this.
+        checked = null;
         said = "Saved. A session already open keeps the scope it was given until it ends.";
       }
     } catch (err) {
@@ -276,6 +290,30 @@
       saving = false;
     }
   }
+
+  async function check() {
+    if (!stored) return;
+    checking = true;
+    refused = null;
+    checked = null;
+    try {
+      const username = draft.kind === "ldap" ? lookup.trim() : "";
+      checked = await api.post("/identity-providers/{providerId}/check", {
+        path: { providerId: stored.id },
+        body: username ? { username } : {},
+      });
+    } catch (err) {
+      refused =
+        err instanceof ApiError ? (err.detail ?? err.title) : "The provider could not be checked.";
+    } finally {
+      checking = false;
+    }
+  }
+
+  const stepTone = (s: CheckStep) =>
+    s.status === "ok" ? "ok" : s.status === "failed" ? "crit" : "warn";
+  const stepWord = (s: CheckStep) =>
+    s.status === "ok" ? "OK" : s.status === "failed" ? "Failed" : "Unknown";
 
   async function remove() {
     if (!stored) return;
@@ -366,6 +404,83 @@
             </button>
           {/each}
         </div>
+      {/if}
+
+      {#if stored}
+        <Panel heading="Check it">
+          {#snippet blurb()}
+            Tries what a sign-in needs, from this member and short of somebody signing in. It
+            checks the provider as it is saved.
+          {/snippet}
+
+          <div class="flex flex-wrap items-end gap-3">
+            {#if draft.kind === "ldap"}
+              <div class="min-w-56 flex-1">
+                <Field
+                  label="Look somebody up"
+                  bind:value={lookup}
+                  placeholder="alice"
+                  autocomplete="off"
+                  spellcheck={false}
+                  hint="Optional. Who they are, their groups and their scope, without a password."
+                  onkeydown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void check();
+                    }
+                  }}
+                />
+              </div>
+            {/if}
+            <Button type="button" onclick={check} disabled={checking || dirty}>
+              {checking ? "Checking…" : "Check"}
+            </Button>
+            {#if dirty}
+              <span class="pb-2 text-xs text-ink-faint">Save first: the check tries what is saved.</span>
+            {/if}
+          </div>
+
+          {#if checked}
+            <p class="text-[13px] {checked.ok ? 'text-ok' : 'text-crit'}" role="status">
+              {checked.ok
+                ? "It works as far as can be told from here."
+                : "It does not work as it stands."}
+            </p>
+            <ol class="flex flex-col gap-2.5" aria-label="What was tried">
+              {#each checked.steps as step, i (i)}
+                <li class="flex items-start gap-3">
+                  <span class="w-16 shrink-0 pt-px"><Chip tone={stepTone(step)}>{stepWord(step)}</Chip></span>
+                  <span class="flex min-w-0 flex-col gap-0.5">
+                    <span class="text-[13px] text-ink">{step.step}</span>
+                    <span class="text-[12px] break-words text-ink-mute">{step.detail}</span>
+                  </span>
+                </li>
+              {/each}
+            </ol>
+            {#if checked.person}
+              <div class="flex flex-col gap-1.5 rounded-sm border border-line bg-raised px-3 py-2.5">
+                <p class="flex flex-wrap items-center gap-2 text-[13px]">
+                  <span class="text-ink">{checked.person.name}</span>
+                  {#if checked.person.scope}
+                    <Chip tone="signal">{checked.person.scope}</Chip>
+                  {:else}
+                    <Chip tone="crit">no scope</Chip>
+                  {/if}
+                </p>
+                <p class="num text-[12px] break-all text-ink-mute">{checked.person.dn}</p>
+                {#if checked.person.groups.length > 0}
+                  <ul class="num flex flex-col text-[12px] text-ink-mute" aria-label="Their groups">
+                    {#each checked.person.groups as group (group)}
+                      <li class="break-all">{group}</li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <p class="text-[12px] text-ink-faint">In no group.</p>
+                {/if}
+              </div>
+            {/if}
+          {/if}
+        </Panel>
       {/if}
 
       <Panel heading="Who it lets in">

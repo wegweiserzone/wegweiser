@@ -95,4 +95,6 @@ setting and managed through `/identity-providers`, `weg idp` and the interface's
 provider is built in `internal/api/oidc.go`, the flow sealed in a cookie of its own under the
 session key. Signing in through a directory is built in `internal/api/ldap.go`, and the
 sign-in page offers both. `weg login` signs in through either from the CLI
-([D52](d52-weg-login-holds-a-session.md)). Ending every session of one person is not built.
+([D52](d52-weg-login-holds-a-session.md)). A provider is checked, short of somebody signing
+in, through `/identity-providers/{providerId}/check`, `weg idp check` and its page. Ending
+every session of one person is not built.

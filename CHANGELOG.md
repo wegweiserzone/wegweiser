@@ -42,6 +42,8 @@ public API is unstable and may change without a deprecation period.
   in is set per scope, admin, write and read, as the groups given each, and a provider that
   lets nobody in says so. A secret is typed in and never shown again, and the redirect URI
   for the address the page is served from is offered with one click.
+- A provider's page checks it, and for a directory looks somebody up, listing what was
+  tried and what came of it.
 
 #### CLI
 

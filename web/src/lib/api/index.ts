@@ -41,6 +41,8 @@ export type SignInProvider = components["schemas"]["SignInProvider"];
 export type IdentityProvider = components["schemas"]["IdentityProvider"];
 export type IdentityProviderInput = components["schemas"]["IdentityProviderInput"];
 export type GroupMapping = components["schemas"]["GroupMapping"];
+export type IdentityProviderCheck = components["schemas"]["IdentityProviderCheck"];
+export type CheckStep = components["schemas"]["CheckStep"];
 
 /**
  * onUnauthenticated is what the interface does when a session has ended.
