@@ -14,7 +14,7 @@ import (
 
 // newRecordCommand groups everything that acts on the records inside a zone.
 func newRecordCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:     "record",

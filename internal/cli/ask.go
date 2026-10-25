@@ -15,7 +15,7 @@ import (
 
 // newAskCommand asks the server what it answers for a question.
 func newAskCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:   "ask NAME [TYPE]",

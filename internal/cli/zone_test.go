@@ -88,6 +88,10 @@ func newServer(t *testing.T, tweak ...func(*api.Config)) server {
 	if err != nil {
 		t.Fatalf("mint a token: %v", err)
 	}
+	// Minted as weg serve mints it, so that a session can be opened.
+	if _, _, rerr := applier.RotateSessionKeys(t.Context()); rerr != nil {
+		t.Fatalf("mint the session key: %v", rerr)
+	}
 
 	hub := stream.NewHub(stream.Options{})
 	cfg := api.Config{

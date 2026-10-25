@@ -18,7 +18,7 @@ import (
 
 // newTSIGCommand groups the keys a secondary signs a transfer with.
 func newTSIGCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:     "tsig",

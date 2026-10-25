@@ -47,6 +47,9 @@ const clientTimeout = 5 * time.Minute
 type clientFlags struct {
 	server string
 	token  string
+
+	// opts says where the sessions weg login opened are kept.
+	opts *options
 }
 
 // register adds the flags to a command. They are persistent, so a command
@@ -56,6 +59,13 @@ func (f *clientFlags) register(cmd *cobra.Command) {
 		"address of the Wegweiser API (default "+defaultServer+", or $"+serverEnv+")")
 	cmd.PersistentFlags().StringVar(&f.token, "token", "",
 		"API token (default $"+tokenEnv+")")
+}
+
+// registerServer adds --server alone, for a command that opens or ends a
+// session rather than authenticating with one.
+func (f *clientFlags) registerServer(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&f.server, "server", "",
+		"address of the Wegweiser API (default "+defaultServer+", or $"+serverEnv+")")
 }
 
 // client builds a client for the configured server.
@@ -112,17 +122,23 @@ func (f *clientFlags) address() (server, check string) {
 func (f *clientFlags) dial(timeout time.Duration) (string, []gen.ClientOption, error) {
 	server, check := f.address()
 
-	token := firstNonEmpty(f.token, os.Getenv(tokenEnv))
-	if token == "" {
-		return "", nil, usageError{fmt.Errorf(
-			"no API token: pass --token, or put one in $%s. The first start of weg serve "+
-				"prints one", tokenEnv)}
+	// A token named for this command beats a session opened earlier, because
+	// it is what the person meant just now (D52).
+	var authenticate func(r *http.Request)
+	if token := firstNonEmpty(f.token, os.Getenv(tokenEnv)); token != "" {
+		authenticate = func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+token) }
+	} else {
+		held, err := f.opts.sessionAt(server, time.Now())
+		if err != nil {
+			return "", nil, err
+		}
+		authenticate = held.attach
 	}
 
 	return server + basePath, []gen.ClientOption{
 		gen.WithHTTPClient(advising{&http.Client{Timeout: timeout}, server, check}),
 		gen.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
-			r.Header.Set("Authorization", "Bearer "+token)
+			authenticate(r)
 			return nil
 		}),
 	}, nil

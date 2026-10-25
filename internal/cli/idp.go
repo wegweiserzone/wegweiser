@@ -17,7 +17,7 @@ import (
 
 // newIDPCommand groups the providers people sign in through.
 func newIDPCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:     "idp",

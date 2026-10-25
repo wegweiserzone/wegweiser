@@ -16,7 +16,7 @@ import (
 )
 
 func newStatusCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:   "status",

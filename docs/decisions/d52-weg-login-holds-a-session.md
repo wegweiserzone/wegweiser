@@ -72,6 +72,6 @@ instead of opening it and listens on a port fixed in advance.
 
 ## Where this stands
 
-The server's half is built: `/auth/oidc/{providerId}/start` takes the port and the key, and
-the callback in `internal/api/oidc.go` seals the session to it through
-`internal/api/handoff`. `weg login` and `weg logout` are not built.
+Built as described. The server's half is in `internal/api/oidc.go`, the seal in
+`internal/api/handoff`, which both halves import, and the CLI's in `internal/cli/login.go`
+and `internal/cli/sessions.go`. Approving a sign-in by code is not built.

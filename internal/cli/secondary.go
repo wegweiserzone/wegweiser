@@ -20,7 +20,7 @@ import (
 
 // newSecondaryCommand groups what the other end of a zone transfer needs.
 func newSecondaryCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:     "secondary",

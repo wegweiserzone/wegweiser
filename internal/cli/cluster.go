@@ -17,7 +17,7 @@ import (
 // newClusterCommand groups what a node does about the servers it keeps its
 // data in step with.
 func newClusterCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:   "cluster",

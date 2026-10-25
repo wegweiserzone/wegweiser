@@ -41,8 +41,15 @@ type options struct {
 	// stdin is where a command reads a file from when it is handed one on a
 	// pipe. Nil takes the process's own, which is what the binary does; a test
 	// supplies its own so that reading from a pipe is testable.
-	stdin   io.Reader
-	printer *output.Printer
+	stdin io.Reader
+	// configDir is where weg keeps the sessions weg login opens. Empty takes
+	// the user's configuration directory, which is what the binary does; a
+	// test supplies its own.
+	configDir string
+	// openBrowser sends a browser to an address. Nil runs $BROWSER or
+	// xdg-open; a test plays the browser itself.
+	openBrowser func(ctx context.Context, address string) error
+	printer     *output.Printer
 }
 
 // Printer returns the configured output printer. It is only valid after flag
@@ -236,6 +243,7 @@ func newRootCommand(opts *options) *cobra.Command {
 			newHealthCommand(opts),
 		}},
 		{"access", "Access and defaults:", []*cobra.Command{
+			newLoginCommand(opts), newLogoutCommand(opts),
 			newTokenCommand(opts), newTSIGCommand(opts), newIDPCommand(opts), newSettingsCommand(opts),
 		}},
 		{"run", "Run a server:", []*cobra.Command{

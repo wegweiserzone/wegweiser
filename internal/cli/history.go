@@ -15,7 +15,7 @@ import (
 
 // newHistoryCommand groups everything that reads what was changed.
 func newHistoryCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:     "history",

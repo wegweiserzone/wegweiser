@@ -17,7 +17,7 @@ import (
 
 // newTokenCommand groups the credentials that may use this API.
 func newTokenCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:     "token",

@@ -39,6 +39,11 @@ public API is unstable and may change without a deprecation period.
 - `weg idp` adds, lists, shows, changes and removes the identity providers and their group
   mappings. A client secret or bind password is read from a file, or from standard input
   with `-`, so that it stays out of the shell's history.
+- `weg login` signs a person in through an identity provider: a directory asks for the
+  name and password in the terminal, without echo, and an OpenID Connect provider opens a
+  browser that comes back to the command. The session is kept per server address in a
+  file only its owner can read, and every command after it uses it unless `--token` or
+  `$WEG_TOKEN` names a token. `weg logout` ends it.
 
 #### Observation
 

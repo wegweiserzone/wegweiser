@@ -17,7 +17,7 @@ import (
 
 // newQueryCommand groups everything about the queries this server is answering.
 func newQueryCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:     "query",

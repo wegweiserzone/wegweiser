@@ -19,7 +19,7 @@ import (
 
 // newZoneCommand groups everything that acts on a whole zone.
 func newZoneCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:     "zone",

@@ -30,7 +30,7 @@ type serverSettings struct {
 }
 
 func newSettingsCommand(opts *options) *cobra.Command {
-	var f clientFlags
+	f := clientFlags{opts: opts}
 
 	cmd := &cobra.Command{
 		Use:   "settings",
