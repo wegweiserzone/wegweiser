@@ -1,0 +1,1 @@
+import{H as e}from"./CgSdMsZ9.js";import{t}from"./DAv7hOcz.js";import"./CumL2g7x.js";import{t as n}from"./D3linCZD.js";var r=new WeakMap;function i(i){let a=t.url,o=r.get(a)??new Set;return!a.searchParams.has(i)||o.has(i)?!1:(o.add(i),r.set(a,o),e(()=>{let e=new URL(a.href);e.searchParams.delete(i),n(e,{state:t.state,shallow:!0,replace:!0})}),!0)}export{i as t};

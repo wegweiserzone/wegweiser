@@ -72,6 +72,12 @@ public API is unstable and may change without a deprecation period.
   again at once rather than refused until the others notice it has gone. A witness is
   passed over, since it would only hand leadership on again.
 
+#### Web interface
+
+- The sign-in page is laid out anew: which server this is and how it stands on one side,
+  and on the other the identity providers as the way in, each saying what it will ask for,
+  with the API token folded away below them unless there is no provider.
+
 ### Fixed
 
 #### Web interface

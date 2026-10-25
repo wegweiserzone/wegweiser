@@ -33,6 +33,10 @@ test("a provider is offered, and one that cannot be reached says so", async ({ p
 
   try {
     await page.goto(server.url);
+    // With providers to offer, the token is folded away behind them.
+    await expect(page.getByRole("button", { name: "Sign in with Nowhere SSO" })).toBeVisible();
+    await expect(page.getByLabel("API token")).toBeHidden();
+    await page.getByRole("button", { name: "Use an API token" }).click();
     await expect(page.getByLabel("API token")).toBeVisible();
 
     // A directory is a way of filling the same form in.
