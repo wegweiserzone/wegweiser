@@ -79,6 +79,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D49** | [Asking the server what it answers, over the API](d49-asking-the-server-over-the-api.md) |
 | **D50** | [The client a resolver asks for is shown, when the resolver is one this server believes](d50-the-client-a-resolver-asked-for.md) |
 | **D51** | [Accounts come from an identity provider, and a session is signed rather than stored](d51-accounts-come-from-an-identity-provider.md) |
+| **D52** | [`weg login` holds the session a browser would, and a provider's answer reaches it over loopback](d52-weg-login-holds-a-session.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they
