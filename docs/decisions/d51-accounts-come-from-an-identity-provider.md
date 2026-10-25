@@ -90,9 +90,9 @@ Sessions are built as described, for the token sessions that exist: sealed in
 `internal/api/session.go` under the `session_keys` setting, rotated with the cookie secret's
 loop, and ended through the `ended_sessions` setting, which a member that does not lead hands
 to the leader. Providers and their group mappings are held in the `identity_providers`
-setting and managed through `/identity-providers`. Signing in through an OpenID Connect
+setting and managed through `/identity-providers`, `weg idp` and the interface's
+*Providers*. Signing in through an OpenID Connect
 provider is built in `internal/api/oidc.go`, the flow sealed in a cookie of its own under the
 session key. Signing in through a directory is built in `internal/api/ldap.go`, and the
 sign-in page offers both. `weg login` signs in through either from the CLI
-([D52](d52-weg-login-holds-a-session.md)). Managing the providers in the interface, and ending every session
-of one person, are not built.
+([D52](d52-weg-login-holds-a-session.md)). Ending every session of one person is not built.

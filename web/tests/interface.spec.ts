@@ -70,7 +70,7 @@ test("every section in the rail leads somewhere", async ({ page, server }) => {
   await signIn(page, server);
 
   const sections = page.getByLabel("Sections").getByRole("link");
-  await expect(sections).toHaveCount(10);
+  await expect(sections).toHaveCount(11);
   for (const name of [
     "Overview",
     "Zones",
@@ -81,6 +81,7 @@ test("every section in the rail leads somewhere", async ({ page, server }) => {
     "Cluster",
     "Tokens",
     "Keys",
+    "Providers",
     "Settings",
   ]) {
     await expect(page.getByLabel("Sections").getByRole("link", { name })).toBeVisible();
@@ -134,6 +135,11 @@ test("a session that may only read is told once why it sees no credentials", asy
   await expect(page.getByText("This session may not manage keys")).toBeVisible();
   await expect(page.getByText("could not be listed")).toHaveCount(0);
   await expect(page.getByText("No keys yet")).toHaveCount(0);
+
+  await page.goto(`${server.url}/providers`);
+  await expect(page.getByText("This session may not manage providers")).toBeVisible();
+  await expect(page.getByText("could not be listed")).toHaveCount(0);
+  await expect(page.getByText("No providers yet")).toHaveCount(0);
 });
 
 // Where a change would be, a session that may only read is told so rather than

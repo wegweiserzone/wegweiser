@@ -1,4 +1,0 @@
-import{J as e,c as t,j as n,k as r,n as i,st as a,t as o,w as s}from"./BqhsmpNn.js";var c=new Set([`$$slots`,`$$events`,`$$legacy`,`weight`,`children`,`class`]),l=n(`<button><!></button>`);function u(n,u){let d=o(u,`weight`,3,`default`),f=o(u,`class`,3,``),p=i(u,c),m={primary:`border-signal bg-signal text-signal-on hover:border-signal-hi hover:bg-signal-hi`,default:`border-line bg-surface text-ink hover:border-ink-faint hover:bg-raised`,quiet:`border-transparent bg-transparent text-ink-mute hover:bg-raised hover:text-ink`};var h=l();t(h,()=>({class:`sign inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-sm border px-3
-         text-[13px] whitespace-nowrap transition-colors ${m[d()]??``} ${f()??``}
-         disabled:cursor-not-allowed disabled:border-line disabled:bg-raised
-         disabled:text-ink-faint disabled:hover:border-line disabled:hover:bg-raised`,...p}));var g=e(h);s(g,()=>u.children),a(h),r(n,h)}export{u as t};

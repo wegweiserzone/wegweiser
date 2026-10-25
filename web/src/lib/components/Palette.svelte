@@ -45,6 +45,7 @@
     { key: "c", label: "Cluster", href: "/cluster" },
     { key: "t", label: "Tokens", href: "/tokens" },
     { key: "k", label: "Keys", href: "/keys" },
+    { key: "p", label: "Providers", href: "/providers" },
     // The comma rather than a letter, because that is the key every other
     // application puts settings on and the letters that fit are taken.
     { key: ",", label: "Settings", href: "/settings" },
@@ -92,6 +93,7 @@
     if (session.can("admin")) {
       all.push({ group: "Create", label: "New token", run: () => goto("/tokens?new") });
       all.push({ group: "Create", label: "New key", run: () => goto("/keys?new") });
+      all.push({ group: "Create", label: "New provider", run: () => goto("/providers?new") });
     }
     return all;
   });

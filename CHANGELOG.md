@@ -33,6 +33,10 @@ public API is unstable and may change without a deprecation period.
 - The sign-in page offers the identity providers that are switched on: a button for each
   OpenID Connect provider, and a directory's name and password beside the token. When a
   provider refuses somebody, the page says why.
+- *Providers* adds, changes, switches off and removes the identity providers. Who each lets
+  in is set per scope, admin, write and read, as the groups given each, and a provider that
+  lets nobody in says so. A secret is typed in and never shown again, and the redirect URI
+  for the address the page is served from is offered with one click.
 
 #### CLI
 
