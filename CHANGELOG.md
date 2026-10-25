@@ -27,6 +27,11 @@ public API is unstable and may change without a deprecation period.
 - `/auth/oidc/{providerId}/start` takes `loopback` and `key`, which `weg login` sends. The
   callback then sets no cookies in the browser and sends it to that port of 127.0.0.1
   instead, with the session sealed to the key, or with the reason there is none.
+- `POST /identity-providers/{providerId}/check` tries what a sign-in through a provider
+  needs, short of somebody signing in, and says at each step what it found or what is
+  wrong: an OpenID Connect provider's discovery document, a directory's connection, bind
+  and bases. Given a username, a directory also says who that is, which groups they are in
+  and the scope those give them, without a password.
 
 #### Web interface
 

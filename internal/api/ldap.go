@@ -188,21 +188,14 @@ func (s *Server) signInToDirectory(
 		return nil, berr
 	}
 
-	attrs := []string{l.NameAttribute}
-	if l.Groups == apply.GroupsMemberOf {
-		attrs = append(attrs, "memberOf")
+	found, err := searchPerson(conn, l, username)
+	if err != nil {
+		return nil, err
 	}
-	found, err := conn.Search(ldap.NewSearchRequest(
-		l.UserBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 2, int(directoryTimeout.Seconds()), false,
-		strings.ReplaceAll(l.UserFilter, apply.PlaceholderUsername, ldap.EscapeFilter(username)),
-		attrs, nil))
-	if err != nil && !ldap.IsErrorWithCode(err, ldap.LDAPResultSizeLimitExceeded) {
-		return nil, fmt.Errorf("the search for the person: %w", err)
-	}
-	if found == nil || len(found.Entries) != 1 {
+	if len(found) != 1 {
 		return nil, errNotSignedIn
 	}
-	entry := found.Entries[0]
+	entry := found[0]
 
 	if berr := conn.Bind(entry.DN, password); berr != nil {
 		if ldap.IsErrorWithCode(berr, ldap.LDAPResultInvalidCredentials) {
@@ -211,24 +204,16 @@ func (s *Server) signInToDirectory(
 		return nil, fmt.Errorf("binding as the person: %w", berr)
 	}
 
-	groups := entry.GetAttributeValues("memberOf")
 	if l.Groups == apply.GroupsSearch {
 		// Back to the service account, if there is one: what a person may
 		// read of the directory is theirs to decide, not this server's.
 		if berr := asService(); berr != nil {
 			return nil, berr
 		}
-		filter := strings.ReplaceAll(l.GroupFilter, apply.PlaceholderDN, ldap.EscapeFilter(entry.DN))
-		filter = strings.ReplaceAll(filter, apply.PlaceholderUsername, ldap.EscapeFilter(username))
-		in, serr := conn.Search(ldap.NewSearchRequest(
-			l.GroupBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, int(directoryTimeout.Seconds()), false,
-			filter, []string{"dn"}, nil))
-		if serr != nil {
-			return nil, fmt.Errorf("the search for the person's groups: %w", serr)
-		}
-		for _, g := range in.Entries {
-			groups = append(groups, g.DN)
-		}
+	}
+	groups, err := personGroups(conn, l, entry, username)
+	if err != nil {
+		return nil, err
 	}
 
 	name := entry.GetAttributeValue(l.NameAttribute)
@@ -243,6 +228,48 @@ func (s *Server) signInToDirectory(
 		}
 	}
 	return &directoryPerson{dn: entry.DN, name: name, scope: scope}, nil
+}
+
+// searchPerson is what the user filter finds for a name: one entry when it
+// works, and at most two, which is enough to tell that a filter is ambiguous.
+func searchPerson(conn directory, l *apply.LDAPProvider, username string) ([]*ldap.Entry, error) {
+	attrs := []string{l.NameAttribute}
+	if l.Groups == apply.GroupsMemberOf {
+		attrs = append(attrs, "memberOf")
+	}
+	found, err := conn.Search(ldap.NewSearchRequest(
+		l.UserBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 2, int(directoryTimeout.Seconds()), false,
+		strings.ReplaceAll(l.UserFilter, apply.PlaceholderUsername, ldap.EscapeFilter(username)),
+		attrs, nil))
+	if err != nil && !ldap.IsErrorWithCode(err, ldap.LDAPResultSizeLimitExceeded) {
+		return nil, fmt.Errorf("the search for the person: %w", err)
+	}
+	if found == nil {
+		return nil, nil
+	}
+	return found.Entries, nil
+}
+
+// personGroups is the DNs of the groups a person is in: their memberOf, or
+// what a search under the group base finds. A search runs as whoever the
+// connection is bound as.
+func personGroups(conn directory, l *apply.LDAPProvider, entry *ldap.Entry, username string) ([]string, error) {
+	if l.Groups != apply.GroupsSearch {
+		return entry.GetAttributeValues("memberOf"), nil
+	}
+	filter := strings.ReplaceAll(l.GroupFilter, apply.PlaceholderDN, ldap.EscapeFilter(entry.DN))
+	filter = strings.ReplaceAll(filter, apply.PlaceholderUsername, ldap.EscapeFilter(username))
+	in, err := conn.Search(ldap.NewSearchRequest(
+		l.GroupBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, int(directoryTimeout.Seconds()), false,
+		filter, []string{"dn"}, nil))
+	if err != nil {
+		return nil, fmt.Errorf("the search for the person's groups: %w", err)
+	}
+	groups := make([]string, 0, len(in.Entries))
+	for _, g := range in.Entries {
+		groups = append(groups, g.DN)
+	}
+	return groups, nil
 }
 
 // groupNames is each group as a DN and as the value of its first RDN, so that

@@ -884,6 +884,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/identity-providers/{providerId}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Try what a sign-in through a provider needs, short of a person signing in
+         * @description The provider as it is saved, switched on or not, is tried from the
+         *     member asked, and each step says what it found or what is wrong. The
+         *     steps stop at the first that fails, because the ones after it would
+         *     fail for the same reason.
+         *
+         *     An OpenID Connect provider is asked for its discovery document, which
+         *     has to name it as the issuer configured and offer what a sign-in uses.
+         *     Its client secret is only tried when a person signs in, and the answer
+         *     says so. A directory is connected to over TLS, bound to as the bind DN,
+         *     and its user base, and group base for a search, have to exist. Given a
+         *     username, a directory is also asked who that is, which groups they are
+         *     in and what scope those give them, without a password.
+         *
+         *     Nothing is written, so it works while the cluster takes no writes.
+         */
+        post: operations["checkIdentityProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/secondary-config": {
         parameters: {
             query?: never;
@@ -2012,6 +2048,45 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        IdentityProviderCheckRequest: {
+            /**
+             * @description For a directory: somebody to look up as a sign-in would, without
+             *     their password. Refused for an OpenID Connect provider, which says
+             *     who somebody is only once they have signed in.
+             * @example alice
+             */
+            username?: string;
+        };
+        IdentityProviderCheck: {
+            /** @description No step failed. A step that could not be tried does not count against it. */
+            ok: boolean;
+            steps: components["schemas"]["CheckStep"][];
+            person?: components["schemas"]["CheckedPerson"];
+        };
+        CheckStep: {
+            /**
+             * @description What was tried.
+             * @example Reach the issuer
+             */
+            step: string;
+            /**
+             * @description `unknown` is a step that could not be tried from here, such as a
+             *     client secret, or that the provider does not say enough to judge.
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "unknown";
+            /** @description What was found, or what is wrong and what to do about it. */
+            detail: string;
+        };
+        /** @description Who a directory says a username is, as a sign-in would find them. */
+        CheckedPerson: {
+            dn: string;
+            /** @description What a commit would call them. */
+            name: string;
+            /** @description The groups the directory says they are in, as DNs. */
+            groups: string[];
+            scope?: components["schemas"]["Scope"];
         };
         /**
          * @description The software a configuration is written for. PowerDNS is absent on
@@ -3383,6 +3458,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    checkIdentityProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of a provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["IdentityProviderCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description What was tried, and what came of it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityProviderCheck"];
+                };
             };
             default: components["responses"]["Problem"];
         };

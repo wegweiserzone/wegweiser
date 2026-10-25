@@ -103,6 +103,9 @@ func (d *fakeDirectory) Search(req *ldap.SearchRequest) (*ldap.SearchResult, err
 				}
 			}
 		}
+	default:
+		// As a directory answers a search below a base it does not hold.
+		return nil, ldap.NewError(ldap.LDAPResultNoSuchObject, errors.New("no such object"))
 	}
 	return out, nil
 }

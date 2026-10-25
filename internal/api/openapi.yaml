@@ -1164,6 +1164,44 @@ paths:
           description: The provider is gone.
         default: { $ref: "#/components/responses/Problem" }
 
+  /identity-providers/{providerId}/check:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        description: The ULID of a provider.
+        schema: { type: string }
+    post:
+      operationId: checkIdentityProvider
+      tags: [identity]
+      summary: Try what a sign-in through a provider needs, short of a person signing in
+      description: |
+        The provider as it is saved, switched on or not, is tried from the
+        member asked, and each step says what it found or what is wrong. The
+        steps stop at the first that fails, because the ones after it would
+        fail for the same reason.
+
+        An OpenID Connect provider is asked for its discovery document, which
+        has to name it as the issuer configured and offer what a sign-in uses.
+        Its client secret is only tried when a person signs in, and the answer
+        says so. A directory is connected to over TLS, bound to as the bind DN,
+        and its user base, and group base for a search, have to exist. Given a
+        username, a directory is also asked who that is, which groups they are
+        in and what scope those give them, without a password.
+
+        Nothing is written, so it works while the cluster takes no writes.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IdentityProviderCheckRequest" }
+      responses:
+        "200":
+          description: What was tried, and what came of it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IdentityProviderCheck" }
+        default: { $ref: "#/components/responses/Problem" }
+
   /secondary-config:
     get:
       operationId: getSecondaryConfig
@@ -2649,6 +2687,60 @@ components:
         ldap: { $ref: "#/components/schemas/LDAPSettings" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+
+    IdentityProviderCheckRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          description: |
+            For a directory: somebody to look up as a sign-in would, without
+            their password. Refused for an OpenID Connect provider, which says
+            who somebody is only once they have signed in.
+          example: alice
+
+    IdentityProviderCheck:
+      type: object
+      required: [ok, steps]
+      properties:
+        ok:
+          type: boolean
+          description: No step failed. A step that could not be tried does not count against it.
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/CheckStep" }
+        person: { $ref: "#/components/schemas/CheckedPerson" }
+
+    CheckStep:
+      type: object
+      required: [step, status, detail]
+      properties:
+        step:
+          type: string
+          description: What was tried.
+          example: Reach the issuer
+        status:
+          type: string
+          description: |
+            `unknown` is a step that could not be tried from here, such as a
+            client secret, or that the provider does not say enough to judge.
+          enum: [ok, failed, unknown]
+        detail:
+          type: string
+          description: What was found, or what is wrong and what to do about it.
+
+    CheckedPerson:
+      type: object
+      description: Who a directory says a username is, as a sign-in would find them.
+      required: [dn, name, groups]
+      properties:
+        dn: { type: string }
+        name: { type: string, description: What a commit would call them. }
+        groups:
+          type: array
+          description: The groups the directory says they are in, as DNs.
+          items: { type: string }
+        scope: { $ref: "#/components/schemas/Scope" }
 
     SecondaryFormat:
       type: string
