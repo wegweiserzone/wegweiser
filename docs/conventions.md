@@ -105,7 +105,7 @@ internal/cluster/   Transport (D43), the Raft node, membership and its status
 internal/tui/       Bubble Tea views                  (not built)
 web/                SvelteKit sources (build output lands in internal/api/dist)
 scripts/            Development helpers, not shipped; `make demo` is the one
-docs/               Conventions, decisions and the example configuration
+docs/               Conventions, design, decisions and the example configuration
 ```
 
 Commands live in `internal/cli`, not in `package main`, so they can be exercised by tests
@@ -240,7 +240,9 @@ over emptiness: virtualized, compact, keyboard-driven tables with instant filter
 feature: source, name, type, rcode, latency, filterable and pausable. Git-style diff view
 for zone changes with "revert to this state". Animation 150–200 ms, easing, state
 transitions only, honour `prefers-reduced-motion`. Empty states and errors are designed: an
-error says what broke and what to do next.
+error says what broke and what to do next. Every page is one of the three kinds
+[D53](decisions/d53-how-the-interface-is-laid-out.md) settles, and [design.md](design.md)
+says which pieces build it.
 
 ## CLI design bar
 
@@ -254,4 +256,6 @@ Errors carry context and a suggestion ("did you mean").
 `weg tui` opens a k9s-style full-screen view (zone tree, records, query tail, cluster
 status; vim keys, `/` to search), but it is not built and the fence is what counts.
 Shell completion for bash/zsh/fish, with zone names completed dynamically via the API.
+[design.md](design.md) says how a command is built to this: where its output goes, how it
+asks, how it reads a secret.
 
