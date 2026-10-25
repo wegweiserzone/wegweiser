@@ -13,6 +13,9 @@
   import Button from "#lib/components/Button.svelte";
   import Field from "#lib/components/Field.svelte";
   import Notice from "#lib/components/Notice.svelte";
+  import Row from "#lib/components/Row.svelte";
+  import Section from "#lib/components/Section.svelte";
+  import SettingsLayout from "#lib/components/SettingsLayout.svelte";
 
   let { data } = $props();
 
@@ -122,7 +125,7 @@
   ] as const;
 </script>
 
-<div class="flex flex-1 flex-col gap-8 overflow-auto px-5 py-6">
+<SettingsLayout>
   {#if zone.disabled}
     <Notice tone="warn" title="This zone is not on the wire">
       A disabled zone is invisible rather than merely marked: queries for it are answered as
@@ -135,145 +138,158 @@
     <Notice tone="crit" title="The change was not saved">{refused}</Notice>
   {/if}
 
-  <section class="flex flex-col gap-4">
-    <div class="flex items-baseline gap-3">
-      <h2 class="sign text-[11px] text-ink-faint">Start of authority</h2>
-      <p class="text-[12px] text-ink-mute">
-        The serial is not here: one commit advances it by exactly one, which is what lets the
-        history be replayed.
-      </p>
-    </div>
+  <Section heading="Start of authority">
+    {#snippet blurb()}
+      The serial is not here: one commit advances it by exactly one, which is what lets the
+      history be replayed.
+    {/snippet}
 
-    <div class="grid max-w-4xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <Field
-        label="Primary name server"
-        bind:value={draft.primaryNs}
-        spellcheck={false}
-        disabled={!writable}
-        hint="The MNAME field."
-      />
-      <Field
-        label="Mailbox"
-        bind:value={draft.mailbox}
-        spellcheck={false}
-        disabled={!writable}
-        hint="RNAME, as a domain name: hostmaster.example.com."
-      />
-      <Field
-        label="SOA record TTL"
-        bind:value={draft.soaTtl}
-        inputmode="numeric"
-        disabled={!writable}
-        hint="How long the SOA record itself may be held."
-      />
-      <Field
-        label="Refresh"
-        bind:value={draft.refresh}
-        inputmode="numeric"
-        disabled={!writable}
-        hint="How often a secondary checks for a new serial."
-      />
-      <Field
-        label="Retry"
-        bind:value={draft.retry}
-        inputmode="numeric"
-        disabled={!writable}
-        hint="How soon it tries again after a failed check."
-      />
-      <Field
-        label="Expire"
-        bind:value={draft.expire}
-        inputmode="numeric"
-        disabled={!writable}
-        hint="When a secondary stops answering for a zone it cannot refresh."
-      />
-      <Field
-        label="Minimum"
-        bind:value={draft.minimum}
-        inputmode="numeric"
-        disabled={!writable}
-        hint="The negative-caching TTL of RFC 2308 §4, not a floor on record TTLs."
-      />
-    </div>
-  </section>
-
-  <section class="flex flex-col gap-4">
-    <h2 class="sign text-[11px] text-ink-faint">Zone</h2>
-
-    <div class="grid max-w-4xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <Field
-        label="Default TTL"
-        bind:value={draft.defaultTtl}
-        inputmode="numeric"
-        disabled={!writable}
-        hint="Applied to a record added without one."
-      />
-      <Field
-        label="Comment"
-        bind:value={draft.comment}
-        disabled={!writable}
-        hint="For whoever reads this next."
-      />
-
-      <div class="flex flex-col gap-1.5">
-        <span class="sign text-[11px] text-ink-faint">Automatic reverse</span>
-        <div class="flex h-9 items-center rounded-sm border border-line bg-surface p-0.5">
-          {#each reverseChoices as choice (choice.label)}
-            <button
-              type="button"
-              disabled={!writable}
-              onclick={() => (draft.autoReverse = choice.value)}
-              aria-pressed={draft.autoReverse === choice.value}
-              class="sign h-full flex-1 cursor-pointer rounded-xs text-[11px] transition-colors
-                     disabled:cursor-not-allowed aria-pressed:bg-signal-lo
-                     aria-pressed:text-signal not-aria-pressed:text-ink-mute
-                     not-aria-pressed:hover:text-ink"
-            >
-              {choice.label}
-            </button>
-          {/each}
-        </div>
-        <p class="text-xs text-ink-mute">
-          Whether an address record here writes the matching PTR. Following the server is a
-          third state, not the same as off.
-        </p>
+    <Row title="Names">
+      {#snippet about()}
+        The server named as the zone's primary, and the mailbox of whoever answers for it.
+      {/snippet}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-4">
+        <Field
+          label="Primary name server"
+          bind:value={draft.primaryNs}
+          spellcheck={false}
+          disabled={!writable}
+          hint="The MNAME field."
+        />
+        <Field
+          label="Mailbox"
+          bind:value={draft.mailbox}
+          spellcheck={false}
+          disabled={!writable}
+          hint="RNAME, as a domain name: hostmaster.example.com."
+        />
       </div>
+    </Row>
 
-      <div class="flex flex-col gap-1.5">
-        <span class="sign text-[11px] text-ink-faint">On the wire</span>
-        <div class="flex h-9 items-center rounded-sm border border-line bg-surface p-0.5">
+    <Row title="Timers">
+      {#snippet about()}
+        How long the SOA may be held, and how a secondary paces itself. All in seconds.
+      {/snippet}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-4">
+        <Field
+          label="SOA record TTL"
+          bind:value={draft.soaTtl}
+          inputmode="numeric"
+          disabled={!writable}
+          hint="How long the SOA record itself may be held."
+        />
+        <Field
+          label="Refresh"
+          bind:value={draft.refresh}
+          inputmode="numeric"
+          disabled={!writable}
+          hint="How often a secondary checks for a new serial."
+        />
+        <Field
+          label="Retry"
+          bind:value={draft.retry}
+          inputmode="numeric"
+          disabled={!writable}
+          hint="How soon it tries again after a failed check."
+        />
+        <Field
+          label="Expire"
+          bind:value={draft.expire}
+          inputmode="numeric"
+          disabled={!writable}
+          hint="When a secondary stops answering for a zone it cannot refresh."
+        />
+        <Field
+          label="Minimum"
+          bind:value={draft.minimum}
+          inputmode="numeric"
+          disabled={!writable}
+          hint="The negative-caching TTL of RFC 2308 §4, not a floor on record TTLs."
+        />
+      </div>
+    </Row>
+  </Section>
+
+  <Section heading="Zone">
+    <Row title="Records and notes">
+      {#snippet about()}
+        The TTL a record added without one is given, and a comment for whoever reads this next.
+      {/snippet}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-4">
+        <Field
+          label="Default TTL"
+          bind:value={draft.defaultTtl}
+          inputmode="numeric"
+          disabled={!writable}
+        />
+        <Field label="Comment" bind:value={draft.comment} disabled={!writable} />
+      </div>
+    </Row>
+
+    <Row title="Automatic reverse">
+      {#snippet about()}
+        Whether an address record here writes the matching PTR. Following the server is a third
+        state, not the same as off.
+      {/snippet}
+      <div
+        class="flex h-9 max-w-sm items-center rounded-sm border border-line bg-surface p-0.5"
+        role="group"
+        aria-label="Automatic reverse"
+      >
+        {#each reverseChoices as choice (choice.label)}
           <button
             type="button"
             disabled={!writable}
-            onclick={() => (draft.disabled = false)}
-            aria-pressed={!draft.disabled}
+            onclick={() => (draft.autoReverse = choice.value)}
+            aria-pressed={draft.autoReverse === choice.value}
             class="sign h-full flex-1 cursor-pointer rounded-xs text-[11px] transition-colors
-                   disabled:cursor-not-allowed aria-pressed:bg-ok-lo aria-pressed:text-ok
-                   not-aria-pressed:text-ink-mute not-aria-pressed:hover:text-ink"
+                   disabled:cursor-not-allowed aria-pressed:bg-signal-lo
+                   aria-pressed:text-signal not-aria-pressed:text-ink-mute
+                   not-aria-pressed:hover:text-ink"
           >
-            Serving
+            {choice.label}
           </button>
-          <button
-            type="button"
-            disabled={!writable}
-            onclick={() => (draft.disabled = true)}
-            aria-pressed={draft.disabled}
-            class="sign h-full flex-1 cursor-pointer rounded-xs text-[11px] transition-colors
-                   disabled:cursor-not-allowed aria-pressed:bg-warn-lo aria-pressed:text-warn
-                   not-aria-pressed:text-ink-mute not-aria-pressed:hover:text-ink"
-          >
-            Disabled
-          </button>
-        </div>
-        <p class="text-xs text-ink-mute">
-          A disabled zone is answered as though this server held nothing for it.
-        </p>
+        {/each}
       </div>
-    </div>
-  </section>
+    </Row>
+
+    <Row title="On the wire">
+      {#snippet about()}
+        A disabled zone is answered as though this server held nothing for it.
+      {/snippet}
+      <div
+        class="flex h-9 max-w-sm items-center rounded-sm border border-line bg-surface p-0.5"
+        role="group"
+        aria-label="On the wire"
+      >
+        <button
+          type="button"
+          disabled={!writable}
+          onclick={() => (draft.disabled = false)}
+          aria-pressed={!draft.disabled}
+          class="sign h-full flex-1 cursor-pointer rounded-xs text-[11px] transition-colors
+                 disabled:cursor-not-allowed aria-pressed:bg-ok-lo aria-pressed:text-ok
+                 not-aria-pressed:text-ink-mute not-aria-pressed:hover:text-ink"
+        >
+          Serving
+        </button>
+        <button
+          type="button"
+          disabled={!writable}
+          onclick={() => (draft.disabled = true)}
+          aria-pressed={draft.disabled}
+          class="sign h-full flex-1 cursor-pointer rounded-xs text-[11px] transition-colors
+                 disabled:cursor-not-allowed aria-pressed:bg-warn-lo aria-pressed:text-warn
+                 not-aria-pressed:text-ink-mute not-aria-pressed:hover:text-ink"
+        >
+          Disabled
+        </button>
+      </div>
+    </Row>
+  </Section>
 
   {#if writable}
-    <div class="flex items-center gap-2 border-t border-line pt-5">
+    <div class="flex items-center gap-2">
       <Button weight="primary" onclick={save} disabled={!dirty || saving}>
         {saving ? "Saving…" : "Save changes"}
       </Button>
@@ -293,4 +309,4 @@
   <p class="num text-xs text-ink-faint">
     created {exact(zone.createdAt)} · id {zone.id}
   </p>
-</div>
+</SettingsLayout>

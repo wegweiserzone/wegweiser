@@ -15,7 +15,9 @@
   import Bar from "#lib/components/Bar.svelte";
   import ListSetting from "#lib/components/ListSetting.svelte";
   import Notice from "#lib/components/Notice.svelte";
-  import Panel from "#lib/components/Panel.svelte";
+  import Row from "#lib/components/Row.svelte";
+  import Section from "#lib/components/Section.svelte";
+  import SettingsLayout from "#lib/components/SettingsLayout.svelte";
 
   let settings = $state<Settings | null>(null);
   let failed = $state<string | null>(null);
@@ -159,9 +161,17 @@
 
 <Bar title="Settings" />
 
-<div class="flex flex-1 flex-col overflow-auto px-5 py-6">
-  <div class="mx-auto flex w-full max-w-3xl flex-col gap-7">
-    <div class="flex flex-col gap-3 empty:hidden">
+<SettingsLayout
+  sections={[
+    { id: "reverse", label: "Reverse entries" },
+    { id: "transfer", label: "Zone transfer" },
+    { id: "resolvers", label: "A resolver in front" },
+  ]}
+>
+  <!-- Only when there is something to say: :empty does not see through the
+       anchors Svelte leaves for each block, and an empty box still takes a gap. -->
+  {#if failed || refused || (!writable && !standing.stopped)}
+    <div class="flex flex-col gap-3">
       {#if failed}
         <Notice tone="crit" title="The settings could not be read">{failed}</Notice>
       {/if}
@@ -174,138 +184,127 @@
         </Notice>
       {/if}
     </div>
+  {/if}
 
-    <div class="flex flex-col gap-3">
-      <div class="flex items-center gap-3">
-        <h2 class="sign text-[11px] text-ink-mute">Reverse entries</h2>
-        <span class="h-px flex-1 bg-line"></span>
-      </div>
+  <Section id="reverse" heading="Reverse entries">
+    <Row title="When an address already answers">
+      {#snippet about()}
+        Several names on one address is the normal case: a virtual host, a load balancer, an
+        alias. This decides what the reverse entry does when the second name arrives, for the
+        whole server.
+      {/snippet}
 
-      <Panel heading="When an address already answers">
-        {#snippet blurb()}
-          Several names on one address is the normal case: a virtual host, a load balancer, a
-          service alias. This is what happens to the reverse entry when the second one
-          arrives. A zone cannot override it; it is the whole server.
-        {/snippet}
-
-        {#if settings === null && failed === null}
-          <p class="text-[12px] text-ink-mute">Reading the settings…</p>
-        {:else if settings}
-          <div class="flex flex-col gap-px overflow-hidden rounded-sm bg-line">
-            {#each policies as p (p.value)}
-              <button
-                type="button"
-                disabled={!writable || saving !== null}
-                onclick={() => choose(p.value)}
-                aria-pressed={settings.reverseConflictPolicy === p.value}
-                class="group flex cursor-pointer flex-col gap-1 bg-surface px-4 py-3 text-left
-                       transition-colors hover:bg-raised disabled:cursor-not-allowed
-                       aria-pressed:bg-signal-lo"
-              >
-                <span class="flex items-center gap-2">
-                  <span
-                    class="size-1.5 shrink-0 rounded-full bg-ink-faint
-                           group-aria-pressed:bg-signal"
-                  ></span>
-                  <span class="sign text-[11px] text-ink group-aria-pressed:text-signal">
-                    {p.label}
-                  </span>
-                  <span class="num text-[10px] text-ink-faint">{p.value}</span>
-                  {#if saving === p.value}
-                    <span class="text-[10px] text-ink-mute">saving…</span>
-                  {/if}
+      {#if settings === null && failed === null}
+        <p class="text-[12px] text-ink-mute">Reading the settings…</p>
+      {:else if settings}
+        <div class="flex flex-col gap-px overflow-hidden rounded-sm border border-line bg-line">
+          {#each policies as p (p.value)}
+            <button
+              type="button"
+              disabled={!writable || saving !== null}
+              onclick={() => choose(p.value)}
+              aria-pressed={settings.reverseConflictPolicy === p.value}
+              class="group flex cursor-pointer flex-col gap-1 bg-surface px-4 py-3 text-left
+                     transition-colors hover:bg-raised disabled:cursor-not-allowed
+                     aria-pressed:bg-signal-lo"
+            >
+              <span class="flex items-center gap-2">
+                <span
+                  class="size-1.5 shrink-0 rounded-full bg-ink-faint
+                         group-aria-pressed:bg-signal"
+                ></span>
+                <span class="sign text-[11px] text-ink group-aria-pressed:text-signal">
+                  {p.label}
                 </span>
-                <span class="pl-3.5 text-[12px] text-ink-mute">{p.what}</span>
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </Panel>
-    </div>
+                <span class="num text-[10px] text-ink-faint">{p.value}</span>
+                {#if saving === p.value}
+                  <span class="text-[10px] text-ink-mute">saving…</span>
+                {/if}
+              </span>
+              <span class="pl-3.5 text-[12px] text-ink-mute">{p.what}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </Row>
+  </Section>
 
-    <div class="flex flex-col gap-3">
-      <div class="flex items-center gap-3">
-        <h2 class="sign text-[11px] text-ink-mute">Zone transfer</h2>
-        <span class="h-px flex-1 bg-line"></span>
-      </div>
+  <Section id="transfer" heading="Zone transfer">
+    <Row title="Who may pull a whole zone">
+      {#snippet about()}
+        A transfer hands over every name and every address at once, an inventory of the
+        network. Nobody may until somebody is named here, and the same list decides who may
+        ask for only what has changed.
+      {/snippet}
 
-      <Panel heading="Who may pull a whole zone">
-        {#snippet blurb()}
-          A zone transfer hands over every name and every address at once, which is an
-          inventory of the network. Nobody may until somebody is named here, and the same list
-          decides who may ask for only what has changed since their copy. Addresses or CIDR
-          prefixes, separated by commas; a bare address means that host alone.
-        {/snippet}
+      {#if settings}
+        <ListSetting
+          label="Allowed clients"
+          placeholder="192.0.2.0/24, 2001:db8::1"
+          bind:value={allow}
+          stored={settings.transferAllow}
+          reads="Transfers go to"
+          empty="nobody"
+          disabled={!writable}
+          saving={savingAllow}
+          onsave={saveAllow}
+        />
+        <p class="text-xs text-ink-faint">
+          Addresses or CIDR prefixes, separated by commas. A bare address means that host alone.
+        </p>
+      {/if}
+    </Row>
 
-        {#if settings}
-          <ListSetting
-            label="Allowed clients"
-            placeholder="192.0.2.0/24, 2001:db8::1"
-            bind:value={allow}
-            stored={settings.transferAllow}
-            reads="Transfers go to"
-            empty="nobody"
-            disabled={!writable}
-            saving={savingAllow}
-            onsave={saveAllow}
-          />
-        {/if}
-      </Panel>
+    <Row title="Who is told when a zone changes">
+      {#snippet about()}
+        A secondary that is not told waits for its own refresh timer, usually an hour. This list
+        says where the news goes, so it holds addresses rather than networks.
+      {/snippet}
 
-      <Panel heading="Who is told when a zone changes">
-        {#snippet blurb()}
-          A secondary that is not told finds out when its own refresh timer fires, which is
-          usually an hour. This is a second list on purpose: the one above decides who may
-          take a copy, this one says where the news can arrive, so it holds addresses rather
-          than networks. A port may follow a colon, and a key after the address signs the
-          notification for a secondary that insists on one.
-        {/snippet}
+      {#if settings}
+        <ListSetting
+          label="Secondaries"
+          placeholder="192.0.2.53, 198.51.100.53 key:secondary.example.com."
+          bind:value={notify}
+          stored={settings.notifyTargets}
+          reads="A change is announced to"
+          empty="nobody"
+          disabled={!writable}
+          saving={savingNotify}
+          onsave={saveNotify}
+        />
+        <p class="text-xs text-ink-faint">
+          A port may follow a colon, and a key after the address signs the notification for a
+          secondary that insists on one.
+        </p>
+      {/if}
+    </Row>
+  </Section>
 
-        {#if settings}
-          <ListSetting
-            label="Secondaries"
-            placeholder="192.0.2.53, 198.51.100.53 key:secondary.example.com."
-            bind:value={notify}
-            stored={settings.notifyTargets}
-            reads="A change is announced to"
-            empty="nobody"
-            disabled={!writable}
-            saving={savingNotify}
-            onsave={saveNotify}
-          />
-        {/if}
-      </Panel>
-    </div>
+  <Section id="resolvers" heading="A resolver in front">
+    <Row title="Whose word on a client is believed">
+      {#snippet about()}
+        A resolver that sends the client subnet option of RFC 7871 says which client it asks
+        for. The query stream shows that client only for a resolver named here, since anybody
+        can write anything into the option. No answer depends on it.
+      {/snippet}
 
-    <div class="flex flex-col gap-3">
-      <div class="flex items-center gap-3">
-        <h2 class="sign text-[11px] text-ink-mute">A resolver in front</h2>
-        <span class="h-px flex-1 bg-line"></span>
-      </div>
-
-      <Panel heading="Whose word on a client is believed">
-        {#snippet blurb()}
-          Behind a resolver every query comes from the resolver. One that sends the client
-          subnet option of RFC 7871 says which client it is asking for, and the query stream
-          shows that client, but only for a resolver named here: anybody can write anything
-          into the option. Nothing about an answer depends on it. Addresses or CIDR prefixes,
-          separated by commas; Unbound on this machine is 127.0.0.1.
-        {/snippet}
-
-        {#if settings}
-          <ListSetting
-            label="Resolvers"
-            placeholder="127.0.0.1, ::1"
-            bind:value={resolvers}
-            stored={settings.resolvers}
-            reads="A client is named by"
-            empty="nobody"
-            disabled={!writable}
-            saving={savingResolvers}
-            onsave={saveResolvers}
-          />
-        {/if}
-      </Panel>
-    </div>
-  </div>
-</div>
+      {#if settings}
+        <ListSetting
+          label="Resolvers"
+          placeholder="127.0.0.1, ::1"
+          bind:value={resolvers}
+          stored={settings.resolvers}
+          reads="A client is named by"
+          empty="nobody"
+          disabled={!writable}
+          saving={savingResolvers}
+          onsave={saveResolvers}
+        />
+        <p class="text-xs text-ink-faint">
+          Addresses or CIDR prefixes, separated by commas. Unbound on this machine is 127.0.0.1.
+        </p>
+      {/if}
+    </Row>
+  </Section>
+</SettingsLayout>

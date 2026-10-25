@@ -77,6 +77,8 @@ public API is unstable and may change without a deprecation period.
 - The sign-in page is laid out anew: which server this is and how it stands on one side,
   and on the other the identity providers as the way in, each saying what it will ask for,
   with the API token folded away below them unless there is no provider.
+- Settings, and a zone's settings, are laid out as rows: what a setting is on the left and
+  its control on the right, in sections the settings page lists beside them.
 
 ### Fixed
 
