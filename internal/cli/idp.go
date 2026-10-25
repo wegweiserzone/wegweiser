@@ -38,6 +38,7 @@ func newIDPCommand(opts *options) *cobra.Command {
 			"  weg idp add ldap FreeIPA --url ldaps://ipa.example.com \\\n" +
 			"      --user-base cn=users,cn=accounts,dc=example,dc=com --user-filter '(uid={username})' \\\n" +
 			"      --ca-file /etc/ipa/ca.crt --map admins=admin\n" +
+			"  weg idp check FreeIPA --username alice\n" +
 			"  weg idp list",
 		RunE: func(c *cobra.Command, _ []string) error { return c.Help() },
 	}
@@ -56,6 +57,7 @@ func newIDPCommand(opts *options) *cobra.Command {
 	cmd.AddCommand(newIDPShowCommand(opts, &f))
 	cmd.AddCommand(add)
 	cmd.AddCommand(newIDPSetCommand(opts, &f))
+	cmd.AddCommand(newIDPCheckCommand(opts, &f))
 	cmd.AddCommand(newIDPRemoveCommand(opts, &f))
 	return cmd
 }

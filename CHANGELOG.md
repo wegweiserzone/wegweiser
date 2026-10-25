@@ -53,6 +53,8 @@ public API is unstable and may change without a deprecation period.
   browser that comes back to the command. The session is kept per server address in a
   file only its owner can read, and every command after it uses it unless `--token` or
   `$WEG_TOKEN` names a token. `weg logout` ends it.
+- `weg idp check NAME` runs that check and shows each step, and `--username` looks
+  somebody up in a directory.
 
 #### Observation
 
