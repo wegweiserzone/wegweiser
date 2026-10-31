@@ -38,8 +38,9 @@ yourself.
 
 Also here: authoritative UDP and TCP with EDNS0, DNS cookies, zonefile import and export,
 outbound zone transfer to the secondaries you name, signed with TSIG and announced with
-NOTIFY, SQLite persistence, token authentication, Prometheus metrics. One server, or a
-few of them as a cluster that keeps itself in step without a database beside it.
+NOTIFY, SQLite persistence, API tokens and sign-in through OpenID Connect and LDAP
+providers, Prometheus metrics. One server, or a few of them as a cluster that keeps itself
+in step without a database beside it.
 
 ## What it does not do
 
@@ -125,6 +126,31 @@ overview and the query stream have something to show without `dig` installed.
 `WEG_DEMO_NODES=1 make demo` runs a single server instead, and `make demo-stop` takes either
 away again. `scripts/demo.sh help` lists the rest, such as switching one server off to watch
 the cluster do without it.
+
+### Signing in as a person
+
+The token from the first start is for programs, and for setting up whatever comes after it.
+People sign in through an OpenID Connect provider such as Authentik or Keycloak, or through
+a directory such as FreeIPA or Active Directory. Each provider says which of its groups get
+which scope, and a person holds the strongest one their groups give them. Somebody in no
+mapped group is refused, however well they signed in.
+
+```console
+$ weg idp add ldap FreeIPA --url ldaps://ipa.example.com \
+      --user-base cn=users,cn=accounts,dc=example,dc=com --user-filter '(uid={username})' \
+      --ca-file /etc/ipa/ca.crt --map admins=admin
+$ weg idp check FreeIPA --username alice
+$ weg login FreeIPA
+```
+
+The check looks alice up the way a sign-in would, without a password, and says which groups
+they are in and what scope those give them. An OpenID Connect provider is added with its
+issuer, its client and the redirect URI registered there. It only says who somebody is at the
+end of a sign-in, so `weg idp check Authentik --sign-in` signs in at it once in a browser and
+opens no session. The interface does all of this under *Providers*, and its sign-in page
+offers each provider that is switched on. A session holds on every member of a cluster and
+survives a restart, as [D51](docs/decisions/d51-accounts-come-from-an-identity-provider.md)
+sets out.
 
 ### Running it for real
 
