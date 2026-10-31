@@ -125,6 +125,13 @@ func directoryHarness(t *testing.T, groups string, mappings ...gen.GroupMapping)
 	t.Helper()
 	d := newFakeDirectory()
 	h := newHarness(t, func(cfg *Config) { cfg.dialLDAP = d.dial })
+	return h, d, addDirectory(h, groups, mappings...)
+}
+
+// addDirectory adds the fake directory as a provider, mapped as the given
+// groups say.
+func addDirectory(h *harness, groups string, mappings ...gen.GroupMapping) gen.IdentityProvider {
+	h.t.Helper()
 	in := gen.IdentityProviderInput{
 		Name: "FreeIPA", Kind: gen.IdentityProviderKindLdap, Mappings: &mappings,
 		Ldap: &gen.LDAPSettings{
@@ -138,7 +145,7 @@ func directoryHarness(t *testing.T, groups string, mappings ...gen.GroupMapping)
 	}
 	var p gen.IdentityProvider
 	h.decode(h.do(http.MethodPost, "/identity-providers", in), http.StatusCreated, &p)
-	return h, d, p
+	return p
 }
 
 func signInToDirectory(h *harness, p gen.IdentityProvider, username, password string) *http.Response {
@@ -320,5 +327,42 @@ func TestASignInMustSayItIsJSON(t *testing.T) {
 	}
 	if got := signInToDirectory(h, p, "alice", "correct horse"); got.StatusCode != http.StatusCreated {
 		t.Errorf("a sign-in sent as JSON: status %d, want 201", got.StatusCode)
+	}
+}
+
+// A directory that cannot be asked is said to be so, and why stays in the
+// server's log: it names the service account, and whoever is told has not
+// signed in.
+func TestAnUnaskableDirectoryKeepsItsDetailsToItself(t *testing.T) {
+	t.Parallel()
+	var (
+		mu       sync.Mutex
+		reported []error
+	)
+	d := newFakeDirectory()
+	h := newHarness(t, func(cfg *Config) {
+		cfg.dialLDAP = d.dial
+		cfg.OnError = func(err error) {
+			mu.Lock()
+			defer mu.Unlock()
+			reported = append(reported, err)
+		}
+	})
+	p := addDirectory(h, string(apply.GroupsMemberOf), gen.GroupMapping{Group: "admins", Scope: gen.ScopeAdmin})
+	in := gen.IdentityProviderInput{Name: p.Name, Kind: p.Kind, Mappings: &p.Mappings, Ldap: p.Ldap}
+	in.Ldap.BindPassword = ptr("not the service's")
+	h.decode(h.do(http.MethodPut, "/identity-providers/"+p.Id, in), http.StatusOK, nil)
+
+	resp := signInToDirectory(h, p, "alice", "correct horse")
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status %d, want 502", resp.StatusCode)
+	}
+	if detail := problemDetail(t, resp); strings.Contains(detail, serviceDN) || strings.Contains(detail, "invalid credentials") {
+		t.Errorf("detail = %q, want the directory's account and its error kept out", detail)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(reported) != 1 || !strings.Contains(reported[0].Error(), serviceDN) {
+		t.Errorf("reported %v, want why in the server's log", reported)
 	}
 }

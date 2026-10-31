@@ -120,9 +120,13 @@ func (s *Server) CreateDirectorySession(
 		if errors.Is(err, errNotSignedIn) {
 			return nil, unauthorized(err.Error())
 		}
+		// Why names the directory's service account and its layout, which is
+		// for the server's log and the provider's check, not for whoever has
+		// not signed in yet.
 		return nil, &apiError{
 			status: http.StatusBadGateway, kind: typeUnavailable, title: "The directory could not be asked",
-			detail: fmt.Sprintf("%s could not be asked who this is: %v", p.Name, err),
+			detail: fmt.Sprintf("%s could not be asked who this is; the server's log says why", p.Name),
+			cause:  err,
 		}
 	}
 
