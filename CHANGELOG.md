@@ -105,6 +105,12 @@ public API is unstable and may change without a deprecation period.
 
 ### Fixed
 
+#### API
+
+- A sign-in, with a token at `POST /auth/session` or through a directory, has to say it is
+  `application/json` and is answered 415 otherwise. A form on another site could post one
+  as text/plain and sign a visitor's browser in as whoever wrote it.
+
 #### Web interface
 
 - Signing in holds on every member of a cluster and survives a restart. It used to hold

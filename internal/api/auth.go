@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"mime"
 	"net"
 	"net/http"
 	"strings"
@@ -275,6 +276,19 @@ func (s *Server) tokenSubject(tok *store.Token, hash []byte) (*subject, error) {
 func (s *Server) authenticator(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.unauthenticated(r) {
+			// The posts that come without a credential are sign-ins, and each
+			// answers with a session cookie. A form on another site can post
+			// JSON as text/plain, and the browser would keep the cookie its
+			// answer sets, signing whoever opened that site in as whoever wrote
+			// it. A form cannot say application/json without asking first,
+			// which nothing here answers.
+			if r.Method == http.MethodPost && !sentJSON(r) {
+				writeProblem(w, r, &apiError{
+					status: http.StatusUnsupportedMediaType, kind: typeInvalid,
+					title: "The request could not be used", detail: "a sign-in is sent as application/json",
+				})
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -344,6 +358,12 @@ func (s *Server) unauthenticated(r *http.Request) bool {
 		return true
 	}
 	return false
+}
+
+// sentJSON reports whether the request says its body is JSON.
+func sentJSON(r *http.Request) bool {
+	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && media == "application/json"
 }
 
 // presented reports whether the request carried a credential at all.

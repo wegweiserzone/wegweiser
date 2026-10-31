@@ -290,3 +290,35 @@ func problemDetail(t *testing.T, resp *http.Response) string {
 	}
 	return *problem.Detail
 }
+
+// A form on another site can post JSON as text/plain. A sign-in sent that way
+// is refused before it is tried, so that no site signs a visitor's browser in
+// as somebody else.
+func TestASignInMustSayItIsJSON(t *testing.T) {
+	t.Parallel()
+	h, d, p := directoryHarness(t, string(apply.GroupsMemberOf), gen.GroupMapping{Group: "admins", Scope: gen.ScopeAdmin})
+
+	asForm := func(r *http.Request) {
+		r.Header.Del("Authorization")
+		r.Header.Set("Content-Type", "text/plain")
+	}
+	before := len(d.bound())
+	for _, tc := range []struct {
+		path string
+		body any
+	}{
+		{ldapPath + "/" + p.Id, gen.CreateDirectorySession{Username: "alice", Password: "correct horse"}},
+		{sessionPath, gen.CreateSession{Token: h.token}},
+	} {
+		resp := h.do(http.MethodPost, tc.path, tc.body, asForm)
+		if resp.StatusCode != http.StatusUnsupportedMediaType || len(resp.Cookies()) != 0 {
+			t.Errorf("%s as text/plain: status %d with %d cookies, want 415 and none", tc.path, resp.StatusCode, len(resp.Cookies()))
+		}
+	}
+	if after := d.bound(); len(after) != before {
+		t.Errorf("a sign-in sent as a form reached the directory: %v", after[before:])
+	}
+	if got := signInToDirectory(h, p, "alice", "correct horse"); got.StatusCode != http.StatusCreated {
+		t.Errorf("a sign-in sent as JSON: status %d, want 201", got.StatusCode)
+	}
+}
