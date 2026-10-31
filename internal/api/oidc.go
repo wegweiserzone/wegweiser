@@ -278,9 +278,12 @@ func (s *Server) finishTest(ctx context.Context, code, state string, flow *oidcF
 	c.pass(signInStep, "%s took the client secret and the redirect URI, and signed %s in", p.Name, who.name)
 
 	claim := "The " + p.OIDC.GroupsClaim + " claim"
-	if who.hasGroups {
-		c.pass(claim, "%d groups", len(who.groups))
-	} else {
+	switch {
+	case who.hasGroups && len(who.groups) == 0:
+		c.pass(claim, "sent, naming no group")
+	case who.hasGroups:
+		c.pass(claim, "sent: %s", strings.Join(who.groups, ", "))
+	default:
 		c.fail(claim, "%s sent none, so whoever it signs in is refused. Many send groups only when a "+
 			"scope or a mapper asks for them", p.Name)
 	}
