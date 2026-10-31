@@ -353,16 +353,26 @@ func TestAnUnaskableDirectoryKeepsItsDetailsToItself(t *testing.T) {
 	in.Ldap.BindPassword = ptr("not the service's")
 	h.decode(h.do(http.MethodPut, "/identity-providers/"+p.Id, in), http.StatusOK, nil)
 
-	resp := signInToDirectory(h, p, "alice", "correct horse")
-	if resp.StatusCode != http.StatusBadGateway {
-		t.Fatalf("status %d, want 502", resp.StatusCode)
-	}
-	if detail := problemDetail(t, resp); strings.Contains(detail, serviceDN) || strings.Contains(detail, "invalid credentials") {
-		t.Errorf("detail = %q, want the directory's account and its error kept out", detail)
+	// More often than the limiter lets wrong passwords through: a directory
+	// that is down is not somebody guessing.
+	for range authBurst + 1 {
+		resp := signInToDirectory(h, p, "alice", "correct horse")
+		if resp.StatusCode != http.StatusBadGateway {
+			t.Fatalf("status %d, want 502", resp.StatusCode)
+		}
+		if detail := problemDetail(t, resp); strings.Contains(detail, serviceDN) || strings.Contains(detail, "invalid credentials") {
+			t.Fatalf("detail = %q, want the directory's account and its error kept out", detail)
+		}
 	}
 	mu.Lock()
-	defer mu.Unlock()
-	if len(reported) != 1 || !strings.Contains(reported[0].Error(), serviceDN) {
+	if len(reported) != authBurst+1 || !strings.Contains(reported[0].Error(), serviceDN) {
 		t.Errorf("reported %v, want why in the server's log", reported)
+	}
+	mu.Unlock()
+
+	in.Ldap.BindPassword = ptr("service")
+	h.decode(h.do(http.MethodPut, "/identity-providers/"+p.Id, in), http.StatusOK, nil)
+	if got := signInToDirectory(h, p, "alice", "correct horse"); got.StatusCode != http.StatusCreated {
+		t.Errorf("signing in once the directory is back: status %d, want 201", got.StatusCode)
 	}
 }

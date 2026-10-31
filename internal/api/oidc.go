@@ -226,7 +226,12 @@ func (s *Server) FinishOIDCSignIn(
 		}
 	}
 	fail := func(err error) (gen.FinishOIDCSignInResponseObject, error) {
-		s.limiter.spend(from, s.now())
+		// Only a callback this server did not start is anybody's guess. One it
+		// did start is bound to its flow by PKCE and the nonce, so nothing in it
+		// can be guessed at, and a provider that is down is not somebody trying.
+		if kerr == nil && flow == nil {
+			s.limiter.spend(from, s.now())
+		}
 		if flow != nil && flow.Test {
 			var c checker
 			c.fail(signInStep, "%s", failureDetail(err))

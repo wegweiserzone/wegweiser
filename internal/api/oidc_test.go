@@ -546,3 +546,30 @@ func TestTheUserInfoIsOnlyTakenForTheSamePerson(t *testing.T) {
 		})
 	}
 }
+
+// A sign-in this server started and the provider then refused is not a guess:
+// PKCE binds it to its flow. However often it fails, the next one goes through.
+func TestAFailingProviderDoesNotLockAnAddressOut(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	idp := newTestIDP(t)
+	p := addOIDCProvider(t, h, idp)
+	start := h.http.URL + basePath + oidcPath + "/" + p.Id + "/start"
+	claims := map[string]any{"preferred_username": "alice", "groups": []string{"dns-ops"}}
+
+	for range authBurst + 1 {
+		b := newBrowser(t)
+		back := idp.authorize(t, b.get(start).Header.Get("Location"), claims)
+		q := back.Query()
+		q.Set("code", "not-one-it-issued")
+		back.RawQuery = q.Encode()
+		landed, err := url.Parse(b.get(back.String()).Header.Get("Location"))
+		if err != nil || landed.Query().Get(signInError) == "" {
+			t.Fatalf("a refused code landed at %v, want the sign-in page saying why", landed)
+		}
+	}
+	b := newBrowser(t)
+	if landed := b.signIn(idp, start, claims); landed.Query().Get(signInError) != "" {
+		t.Errorf("the sign-in after them landed at %s, want it through", landed)
+	}
+}

@@ -112,12 +112,15 @@ func (s *Server) CreateDirectorySession(
 	defer cancel()
 	person, err := s.signInToDirectory(ctx, p, req.Body.Username, req.Body.Password)
 	if err != nil {
-		s.limiter.spend(from, s.now())
 		var refused *apiError
 		if errors.As(err, &refused) {
 			return nil, refused
 		}
+		// Only a name and password that did not fit are a guess. A directory
+		// that is down counted too, and an office behind one address locked
+		// itself out of a provider that had come back.
 		if errors.Is(err, errNotSignedIn) {
+			s.limiter.spend(from, s.now())
 			return nil, unauthorized(err.Error())
 		}
 		// Why names the directory's service account and its layout, which is
