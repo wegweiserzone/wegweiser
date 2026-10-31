@@ -501,11 +501,7 @@
       </td>
 
       <td class="py-1.5 pr-5 pl-3 text-right">
-        <!-- Quiet until pointed at, and always there on a screen nothing hovers over. -->
-        <div
-          class="flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100
-                 group-focus-within:opacity-100 pointer-coarse:opacity-100"
-        >
+        <div class="flex justify-end gap-0.5">
           <!-- Asking is a read, so a session that may only read has it too. -->
           <a
             href="/ask?name={encodeURIComponent(record.name)}&type={encodeURIComponent(record.type)}"

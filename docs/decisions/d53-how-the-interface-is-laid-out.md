@@ -57,6 +57,5 @@ look on the next.
 ## Where this stands
 
 The settings page, a zone's settings and an identity provider's page are laid out in rows,
-the provider's with its check beside the form, and the provider list carries its actions in
-each row. The other lists already were what this describes, apart from their rows' actions,
-which some show only on hover.
+the provider's with its check beside the form. Every list is what this describes, its rows'
+actions in plain sight.

@@ -91,6 +91,8 @@ public API is unstable and may change without a deprecation period.
   with the API token folded away below them unless there is no provider.
 - Settings, and a zone's settings, are laid out as rows: what a setting is on the left and
   its control on the right, in sections the settings page lists beside them.
+- What can be done to a zone, a record, a token or a key is shown in its row all the time,
+  not only while the pointer is over it.
 
 ### Fixed
 

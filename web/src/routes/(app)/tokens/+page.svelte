@@ -242,8 +242,7 @@
               onclick={() => ((revoking = token), (refused = null))}
               aria-label="Revoke {token.name}"
               class="grid size-6 cursor-pointer place-items-center rounded-xs text-ink-faint
-                     opacity-0 transition-opacity group-hover:opacity-100 hover:bg-crit-lo pointer-coarse:opacity-100
-                     hover:text-crit focus-visible:opacity-100"
+                     transition-colors hover:bg-crit-lo hover:text-crit"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-3.5">
                 <circle cx="12" cy="12" r="9" />
