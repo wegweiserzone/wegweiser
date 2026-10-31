@@ -122,7 +122,7 @@ func seal(key apply.SessionKey, cookie string, v any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	nonce := make([]byte, aead.NonceSize(), aead.NonceSize()+len(plain)+aead.Overhead())
+	nonce := make([]byte, aead.NonceSize())
 	if _, rerr := rand.Read(nonce); rerr != nil {
 		return "", fmt.Errorf("api: generate a cookie nonce: %w", rerr)
 	}
