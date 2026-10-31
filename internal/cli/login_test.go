@@ -353,10 +353,7 @@ func TestIDPCheckSignInComesBackThroughTheLoopback(t *testing.T) {
 		!strings.Contains(errOut, "--username") {
 		t.Errorf("--sign-in for a directory: exit code %d, stderr %q; want it pointed at --username", code, errOut)
 	}
-	// shortcut: cobra's flag groups fail outside the usage check in root.go,
-	// so this exits 1 rather than 2, as idp set --enabled --disabled does;
-	// worth fixing for every group at once.
-	if code, _, _ := run(t, srv, "idp", "check", "Authentik", "--sign-in", "--username", "alice"); code == ExitOK {
-		t.Error("--sign-in with --username succeeded")
+	if code, _, _ := run(t, srv, "idp", "check", "Authentik", "--sign-in", "--username", "alice"); code != ExitUsage {
+		t.Errorf("--sign-in with --username: exit code %d, want %d", code, ExitUsage)
 	}
 }

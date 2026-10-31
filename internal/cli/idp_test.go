@@ -78,6 +78,17 @@ func TestIdentityProviders(t *testing.T) {
 		}
 	})
 
+	t.Run("flags that cannot go together, or that are missing, are the command line's mistake", func(t *testing.T) {
+		for _, args := range [][]string{
+			{"idp", "set", "FreeIPA", "--enabled", "--disabled"},
+			{"idp", "add", "ldap", "Bare", "--url", "ldaps://127.0.0.1:9"},
+		} {
+			if code, _, errOut := run(t, srv, args...); code != ExitUsage || !strings.Contains(errOut, "--help") {
+				t.Errorf("%v: exit code %d, stderr %q; want %d and where to read on", args, code, errOut, ExitUsage)
+			}
+		}
+	})
+
 	t.Run("a name that is not one suggests the one meant", func(t *testing.T) {
 		if code, _, errOut := run(t, srv, "idp", "show", "FreeIPB"); code == ExitOK || !strings.Contains(errOut, "FreeIPA") {
 			t.Errorf("exit code = %d, stderr = %q; want FreeIPA suggested", code, errOut)

@@ -120,6 +120,9 @@ public API is unstable and may change without a deprecation period.
 #### CLI
 
 - `weg status --output json` carries `startedAt`, which it always meant to but never did.
+- Flags that cannot be given together, such as `--enabled` and `--disabled`, and a required
+  flag left out end with exit status 2 and a pointer to `--help`, as every other mistake on
+  the command line does, rather than with 1.
 
 ## [0.7.0] - 2026-10-24
 

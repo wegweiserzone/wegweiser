@@ -194,13 +194,23 @@ func newRootCommand(opts *options) *cobra.Command {
 		Args: usageArgs(cobra.NoArgs),
 
 		// Resolve global flags once, before any subcommand runs.
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
 			f, err := output.ParseFormat(format)
 			if err != nil {
 				return usageError{fmt.Errorf("%w%s", err, suggest.DidYouMean(format, output.Formats()))}
 			}
 			opts.format = f
 			opts.printer = nil // rebuild with the resolved format
+
+			// Cobra checks these itself once this hook is done, and says so
+			// with plain errors that would read as a failure to run. Checked
+			// here first, they are the command line's mistake, as they are.
+			if err := c.ValidateRequiredFlags(); err != nil {
+				return usageError{err}
+			}
+			if err := c.ValidateFlagGroups(); err != nil {
+				return usageError{err}
+			}
 			return nil
 		},
 
