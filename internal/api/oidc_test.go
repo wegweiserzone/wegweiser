@@ -149,9 +149,6 @@ type browser struct {
 	t      *testing.T
 	client *http.Client
 	jar    map[string]*http.Cookie
-	// bearer, when set, is sent as well, for a step only an administrator
-	// may take.
-	bearer string
 }
 
 func newBrowser(t *testing.T) *browser {
@@ -169,9 +166,6 @@ func (b *browser) get(target string) *http.Response {
 	}
 	for _, c := range b.jar {
 		req.AddCookie(c)
-	}
-	if b.bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+b.bearer)
 	}
 	resp, err := b.client.Do(req)
 	if err != nil {
@@ -433,25 +427,30 @@ func TestAnAdministratorTriesASignInThroughOpenIDConnect(t *testing.T) {
 	in := gen.IdentityProviderInput{Name: p.Name, Kind: p.Kind, Enabled: ptr(false), Mappings: &p.Mappings, CaCertificate: p.CaCertificate, Oidc: p.Oidc}
 	h.decode(h.do(http.MethodPut, "/identity-providers/"+p.Id, in), http.StatusOK, nil)
 
+	ticket := func(t *testing.T, body gen.TryOIDCSignInJSONRequestBody) string {
+		t.Helper()
+		var got gen.TryOIDCSignIn200JSONResponse
+		h.decode(h.do(http.MethodPost, "/identity-providers/"+p.Id+"/try-sign-in", body), http.StatusOK, &got)
+		return h.http.URL + got.Url
+	}
 	check := func(id, sealed string) *http.Response {
 		return h.do(http.MethodPost, "/identity-providers/check", gen.IdentityProviderCheckRequest{Id: &id, SignIn: &sealed})
 	}
-	try := func(t *testing.T, claims map[string]any) (gen.IdentityProviderCheck, string) {
+	// The browser that redeems the ticket brings no credential of its own.
+	try := func(t *testing.T, start string, claims map[string]any) (*browser, *url.URL) {
 		t.Helper()
 		b := newBrowser(t)
-		b.bearer = h.token
-		start := b.get(h.http.URL + basePath + "/identity-providers/" + p.Id + "/try-sign-in")
-		b.bearer = ""
-		if start.StatusCode != http.StatusFound || b.jar[flowCookie] == nil {
-			t.Fatalf("the start answered %d, want a redirect carrying the flow", start.StatusCode)
+		landed := b.signIn(idp, start, claims)
+		if b.jar[sessionCookie] != nil {
+			t.Errorf("a tried sign-in left a session: %v", b.jar)
 		}
-		done := b.get(idp.authorize(t, start.Header.Get("Location"), claims).String())
-		landed, err := url.Parse(done.Header.Get("Location"))
-		if err != nil || done.StatusCode != http.StatusFound || landed.Path != "/providers/"+p.Id {
-			t.Fatalf("the callback answered %d to %s, want the provider's page", done.StatusCode, landed)
-		}
-		if b.jar[sessionCookie] != nil || b.jar[flowCookie] != nil || landed.RawQuery != "" {
-			t.Errorf("a tried sign-in left cookies %v and query %q, want neither", b.jar, landed.RawQuery)
+		return b, landed
+	}
+	tried := func(t *testing.T, claims map[string]any) (gen.IdentityProviderCheck, string) {
+		t.Helper()
+		_, landed := try(t, ticket(t, gen.TryOIDCSignInJSONRequestBody{}), claims)
+		if landed.Path != "/providers/"+p.Id || landed.RawQuery != "" {
+			t.Fatalf("the callback sent the browser to %s, want the provider's page", landed)
 		}
 		frag, err := url.ParseQuery(landed.Fragment)
 		if err != nil {
@@ -462,18 +461,18 @@ func TestAnAdministratorTriesASignInThroughOpenIDConnect(t *testing.T) {
 		return got, frag.Get("tried")
 	}
 
-	got, sealed := try(t, map[string]any{"preferred_username": "alice", "groups": []string{"dns-ops", "staff"}})
+	got, sealed := tried(t, map[string]any{"preferred_username": "alice", "groups": []string{"dns-ops", "staff"}})
 	if who := got.Person; !got.Ok || who == nil || who.Name != "alice" || who.Subject != "u-1" ||
 		len(who.Groups) != 2 || who.Scope == nil || *who.Scope != gen.ScopeWrite {
 		t.Errorf("tried = %+v, want alice, her groups and write", got)
 	}
 
 	// Somebody it would refuse is what the sign-in came to, not a failure to try.
-	if got, _ := try(t, map[string]any{"preferred_username": "mallory", "groups": []string{"staff"}}); got.Ok ||
+	if got, _ := tried(t, map[string]any{"preferred_username": "mallory", "groups": []string{"staff"}}); got.Ok ||
 		got.Person == nil || got.Person.Scope != nil {
 		t.Errorf("tried = %+v, want mallory, refused", got)
 	}
-	if got, _ := try(t, map[string]any{"preferred_username": "bob"}); got.Ok ||
+	if got, _ := tried(t, map[string]any{"preferred_username": "bob"}); got.Ok ||
 		!slices.ContainsFunc(got.Steps, func(s gen.CheckStep) bool {
 			return s.Step == "The groups claim" && s.Status == gen.CheckStepStatusFailed
 		}) {
@@ -485,7 +484,26 @@ func TestAnAdministratorTriesASignInThroughOpenIDConnect(t *testing.T) {
 	h.decode(check("01ARZ3NDEKTSV4RRFFQ69G5FAV", sealed), http.StatusBadRequest, nil)
 	h.decode(check(p.Id, sealed[:len(sealed)-2]), http.StatusBadRequest, nil)
 
-	if got := newBrowser(t).get(h.http.URL + basePath + "/identity-providers/" + p.Id + "/try-sign-in"); got.StatusCode != http.StatusUnauthorized {
-		t.Errorf("trying without a credential answered %d, want 401", got.StatusCode)
+	// Started by weg idp check --sign-in, it ends at the CLI's loopback.
+	key, err := handoff.NewKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, landed := try(t, ticket(t, gen.TryOIDCSignInJSONRequestBody{Loopback: ptr(45678), Key: ptr(key.Public())}),
+		map[string]any{"preferred_username": "alice", "groups": []string{"dns-ops"}})
+	if landed.Host != "127.0.0.1:45678" || landed.Query().Get("tried") == "" || landed.Query().Has("session") {
+		t.Errorf("the CLI's sign-in landed at %s, want its loopback with what it came to", landed)
+	}
+
+	// Without a ticket it is a sign-in, which a provider switched off refuses;
+	// a ticket is good for its provider alone.
+	if got := newBrowser(t).get(h.http.URL + basePath + oidcPath + "/" + p.Id + "/start"); !strings.Contains(got.Header.Get("Location"), signInError) {
+		t.Errorf("a start without a ticket went to %s, want it refused", got.Header.Get("Location"))
+	}
+	var other gen.IdentityProvider
+	h.decode(h.do(http.MethodPost, "/identity-providers", authentikInput()), http.StatusCreated, &other)
+	forged := strings.Replace(ticket(t, gen.TryOIDCSignInJSONRequestBody{}), p.Id, other.Id, 1)
+	if got := newBrowser(t).get(forged); !strings.Contains(got.Header.Get("Location"), signInError) {
+		t.Errorf("a ticket for another provider went to %s, want it refused", got.Header.Get("Location"))
 	}
 }

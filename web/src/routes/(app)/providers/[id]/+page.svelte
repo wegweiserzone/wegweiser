@@ -12,7 +12,7 @@
   import { goto, replaceState } from "$app/navigation";
   import { page } from "$app/state";
   import { asked } from "#lib/asked.ts";
-  import { api, ApiError, basePath, NetworkError } from "#lib/api/index.ts";
+  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
   import type {
     CheckStep,
     IdentityProvider,
@@ -342,8 +342,19 @@
   }
 
   /** trySignIn sends the browser through a sign-in that opens no session, and back here. */
-  function trySignIn() {
-    if (stored) window.location.assign(`${basePath}/identity-providers/${stored.id}/try-sign-in`);
+  async function trySignIn() {
+    if (!stored) return;
+    refused = null;
+    try {
+      const { url } = await api.post("/identity-providers/{providerId}/try-sign-in", {
+        path: { providerId: stored.id },
+        body: {},
+      });
+      window.location.assign(url);
+    } catch (err) {
+      refused =
+        err instanceof ApiError ? (err.detail ?? err.title) : "The sign-in could not be started.";
+    }
   }
 
   async function showTried(providerId: string, signIn: string) {

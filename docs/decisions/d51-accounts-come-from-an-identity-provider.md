@@ -98,7 +98,7 @@ sign-in page offers both. `weg login` signs in through either from the CLI
 ([D52](d52-weg-login-holds-a-session.md)). A provider is checked, short of somebody signing
 in, through `/identity-providers/check`, `weg idp check` and its page, and an OpenID Connect
 provider also by a sign-in that opens no session, through
-`/identity-providers/{providerId}/try-sign-in` and its page. Every session of one person is
-ended through `/identity-providers/{providerId}/end-sessions`,
+`/identity-providers/{providerId}/try-sign-in`, `weg idp check --sign-in` and its page. Every
+session of one person is ended through `/identity-providers/{providerId}/end-sessions`,
 `weg idp end-sessions` and the provider's page, as an entry in `ended_sessions` naming the
 provider and the person, which refuses each of their sessions that ends before it does.

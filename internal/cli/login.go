@@ -258,15 +258,35 @@ func loginThroughOIDC(
 	if err != nil {
 		return nil, err
 	}
+	r, err := awaitBrowser(ctx, opts, lf, "sign in through "+p.Name, func(port int) (string, error) {
+		return server + basePath + "/auth/oidc/" + url.PathEscape(p.Id) + "/start?" +
+			url.Values{"loopback": {strconv.Itoa(port)}, "key": {key.Public()}}.Encode(), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	s, err := key.Open(r.session)
+	if err != nil {
+		return nil, err
+	}
+	return &heldSession{Value: s.Value, CSRF: s.CSRF, Expires: s.Expires}, nil
+}
+
+// awaitBrowser waits on a port of 127.0.0.1 for a browser sent through a
+// sign-in, to the address start makes of that port, and returns what the
+// server sent it back with. A sign-in that failed is returned as an error.
+func awaitBrowser(
+	ctx context.Context, opts *options, lf loginFlags, doing string, start func(port int) (string, error),
+) (loopbackResult, error) {
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(lf.port)))
 	if err != nil {
-		return nil, fmt.Errorf("cannot wait for the browser on 127.0.0.1: %w", err)
+		return loopbackResult{}, fmt.Errorf("cannot wait for the browser on 127.0.0.1: %w", err)
 	}
 	addr, ok := ln.Addr().(*net.TCPAddr)
 	if !ok {
 		ln.Close()
-		return nil, fmt.Errorf("cannot wait for the browser: listening on %s", ln.Addr())
+		return loopbackResult{}, fmt.Errorf("cannot wait for the browser: listening on %s", ln.Addr())
 	}
 
 	results := make(chan loopbackResult, 1)
@@ -274,22 +294,24 @@ func loginThroughOIDC(
 	go srv.Serve(ln) //nolint:errcheck // it ends when the Shutdown below ends it
 	defer func() {
 		// Long enough for the page to reach the browser that brought the
-		// session, and no longer.
+		// answer, and no longer.
 		done, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 		defer cancel()
 		srv.Shutdown(done) //nolint:errcheck // the answer is in hand; a browser slow to leave changes nothing
 	}()
 
-	start := server + basePath + "/auth/oidc/" + url.PathEscape(p.Id) + "/start?" +
-		url.Values{"loopback": {strconv.Itoa(addr.Port)}, "key": {key.Public()}}.Encode()
+	address, err := start(addr.Port)
+	if err != nil {
+		return loopbackResult{}, err
+	}
 	switch {
 	case lf.noBrowser:
-		fmt.Fprintf(opts.stderr, "Open this address in a browser to sign in through %s:\n\n  %s\n\n", p.Name, start)
+		fmt.Fprintf(opts.stderr, "Open this address in a browser to %s:\n\n  %s\n\n", doing, address)
 	default:
-		if berr := opts.browse(ctx, start); berr != nil {
-			fmt.Fprintf(opts.stderr, "No browser could be opened (%v). Open this address in one:\n\n  %s\n\n", berr, start)
+		if berr := opts.browse(ctx, address); berr != nil {
+			fmt.Fprintf(opts.stderr, "No browser could be opened (%v). Open this address in one:\n\n  %s\n\n", berr, address)
 		} else {
-			fmt.Fprintf(opts.stderr, "A browser opened to sign in through %s. If none did, open:\n\n  %s\n\n", p.Name, start)
+			fmt.Fprintf(opts.stderr, "A browser opened to %s. If none did, open:\n\n  %s\n\n", doing, address)
 		}
 	}
 	fmt.Fprintln(opts.stderr, "Waiting for the browser…")
@@ -299,25 +321,22 @@ func loginThroughOIDC(
 	select {
 	case <-wait.Done():
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return loopbackResult{}, ctx.Err()
 		}
-		return nil, errors.New("no sign-in came back within ten minutes; run weg login again")
+		return loopbackResult{}, errors.New("no sign-in came back within ten minutes; try again")
 	case r := <-results:
 		if r.err != "" {
-			return nil, errors.New(r.err)
+			return loopbackResult{}, errors.New(r.err)
 		}
-		s, err := key.Open(r.session)
-		if err != nil {
-			return nil, err
-		}
-		return &heldSession{Value: s.Value, CSRF: s.CSRF, Expires: s.Expires}, nil
+		return r, nil
 	}
 }
 
 // loopbackResult is what the server sent the browser back with: a sealed
-// session, or why there is none.
+// session, what a sign-in tried came to, or why there is neither.
 type loopbackResult struct {
 	session string
+	tried   string
 	err     string
 }
 
@@ -326,11 +345,11 @@ func loopbackHandler(results chan<- loopbackResult) http.Handler {
 	var once sync.Once
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		if r.URL.Path != "/" || (!q.Has("session") && !q.Has("error")) {
+		if r.URL.Path != "/" || (!q.Has("session") && !q.Has("tried") && !q.Has("error")) {
 			http.NotFound(w, r)
 			return
 		}
-		res := loopbackResult{session: q.Get("session"), err: q.Get("error")}
+		res := loopbackResult{session: q.Get("session"), tried: q.Get("tried"), err: q.Get("error")}
 		heading, detail := "Back to the terminal", "weg has what it needs. This tab can be closed."
 		if res.err != "" {
 			heading, detail = "Not signed in", res.err
@@ -344,7 +363,7 @@ func loopbackHandler(results chan<- loopbackResult) http.Handler {
 
 // loopbackPage is what the browser shows once it has handed weg the answer.
 const loopbackPage = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>weg login: %s</title>
+<html lang="en"><head><meta charset="utf-8"><title>weg: %s</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root { color-scheme: dark light; font-family: system-ui, sans-serif; }

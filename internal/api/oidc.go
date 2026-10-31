@@ -104,38 +104,77 @@ func (s *Server) StartOIDCSignIn(
 		return fail(err)
 	}
 
-	p, keys, err := s.oidcProvider(ctx, req.ProviderId, false)
+	ticket := valueOr(req.Params.Test)
+	p, keys, err := s.oidcProvider(ctx, req.ProviderId, ticket != "")
 	if err != nil {
 		return fail(err)
 	}
-	r, err := s.startOIDC(ctx, p, keys, oidcFlow{Loopback: back.port, Key: back.key})
+	flow := oidcFlow{Loopback: back.port, Key: back.key}
+	if ticket != "" {
+		var t testTicket
+		if _, ok := unseal(keys, ticketSeal, ticket, &t); !ok || t.Provider != p.ID || !s.now().Before(t.Expires) {
+			return fail(errors.New("that test sign-in was not started here in the last ten minutes; start it again"))
+		}
+		flow.Test = true
+	}
+	r, err := s.startOIDC(ctx, p, keys, flow)
 	if err != nil {
+		if flow.Test {
+			var c checker
+			c.fail("Start a sign-in", "%s", failureDetail(err))
+			return s.tried(keys, p.ID, &c, back, secure)
+		}
 		return fail(err)
 	}
 	return r, nil
 }
 
-// TryOIDCSignIn sends an administrator's browser through a sign-in that opens
-// no session, so that what a sign-in gives can be seen before anybody relies
-// on it, through a provider that may not be switched on yet.
+// ticketSeal is what a test sign-in's ticket is sealed as.
+const ticketSeal = "weg_oidc_test"
+
+// testTicket is what TryOIDCSignIn issues and the start redeems: a sign-in
+// an administrator asked for, through this provider, that opens no session.
+// It is a ticket rather than a cookie because the browser that redeems it is
+// not always the one that asked: weg idp check --sign-in holds a token, and
+// the browser it opens holds nothing.
+type testTicket struct {
+	Provider string    `json:"idp"`
+	Expires  time.Time `json:"exp"`
+}
+
+// TryOIDCSignIn issues the address of a sign-in that opens no session, so
+// that what a sign-in gives can be seen before anybody relies on it, through
+// a provider that may not be switched on yet.
 func (s *Server) TryOIDCSignIn(
 	ctx context.Context, req gen.TryOIDCSignInRequestObject,
 ) (gen.TryOIDCSignInResponseObject, error) {
 	if err := requireAdmin(ctx, "trying a sign-in through an identity provider"); err != nil {
 		return nil, err
 	}
-	secure := secureOf(ctx)
+	var in gen.TryOIDCSignInJSONBody
+	if req.Body != nil {
+		in = gen.TryOIDCSignInJSONBody(*req.Body)
+	}
+	back, err := returnFor(in.Loopback, in.Key)
+	if err != nil {
+		return nil, badRequest("%v", err)
+	}
 	p, keys, err := s.oidcProvider(ctx, req.ProviderId, true)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", store.ErrNotFound, err)
 	}
-	r, err := s.startOIDC(ctx, p, keys, oidcFlow{Test: true})
+	ticket, err := seal(keys.Current, ticketSeal, &testTicket{Provider: p.ID, Expires: s.now().Add(flowLifetime).UTC()})
 	if err != nil {
-		var c checker
-		c.fail("Start a sign-in", "%s", failureDetail(err))
-		return s.tried(keys, p.ID, &c, secure)
+		return nil, err
 	}
-	return r, nil
+	q := url.Values{"test": {ticket}}
+	if back.cli() {
+		q.Set("loopback", strconv.Itoa(back.port))
+		q.Set("key", back.key)
+	}
+	return gen.TryOIDCSignIn200JSONResponse{
+		Url: basePath + oidcPath + "/" + url.PathEscape(p.ID) + "/start?" + q.Encode(),
+	}, nil
 }
 
 // startOIDC sends the browser to p, with flow, which says where the sign-in
@@ -191,7 +230,7 @@ func (s *Server) FinishOIDCSignIn(
 		if flow != nil && flow.Test {
 			var c checker
 			c.fail(signInStep, "%s", failureDetail(err))
-			return s.tried(keys, flow.Provider, &c, secure)
+			return s.tried(keys, flow.Provider, &c, back, secure)
 		}
 		return &signInRedirect{to: back.failed(err), clearFlow: true, secure: secure}, nil
 	}
@@ -208,7 +247,7 @@ func (s *Server) FinishOIDCSignIn(
 		return fail(fmt.Errorf("the provider refused the sign-in: %s %s", *e, valueOr(req.Params.ErrorDescription)))
 	}
 	if flow != nil && flow.Test {
-		return s.tried(keys, flow.Provider, s.finishTest(ctx, valueOr(req.Params.Code), valueOr(req.Params.State), flow), secure)
+		return s.tried(keys, flow.Provider, s.finishTest(ctx, valueOr(req.Params.Code), valueOr(req.Params.State), flow), back, secure)
 	}
 
 	sess, err := s.finishOIDC(ctx, valueOr(req.Params.Code), valueOr(req.Params.State), flow)
@@ -309,15 +348,21 @@ type triedSignIn struct {
 	Result   gen.IdentityProviderCheck `json:"result"`
 }
 
-// tried sends the browser back to the provider's page with what a test
-// sign-in came to. It goes in the fragment, which the browser sends to no
-// server, so that it stays out of every log on the way.
-func (s *Server) tried(keys apply.SessionKeys, pid string, c *checker, secure bool) (*signInRedirect, error) {
+// tried sends the browser back with what a test sign-in came to: to the
+// CLI's loopback for one the CLI started, otherwise to the provider's page,
+// in the fragment, which the browser sends to no server, so that it stays
+// out of every log on the way.
+func (s *Server) tried(
+	keys apply.SessionKeys, pid string, c *checker, back signInReturn, secure bool,
+) (*signInRedirect, error) {
 	sealed, err := seal(keys.Current, triedSeal, &triedSignIn{
 		Provider: pid, Expires: s.now().Add(flowLifetime).UTC(), Result: c.result(),
 	})
 	if err != nil {
 		return nil, err
+	}
+	if back.cli() {
+		return &signInRedirect{to: back.loopback(url.Values{"tried": {sealed}}), clearFlow: true, secure: secure}, nil
 	}
 	to := "/providers/" + url.PathEscape(pid) + "#" + url.Values{"tried": {sealed}}.Encode()
 	return &signInRedirect{to: to, clearFlow: true, secure: secure}, nil
@@ -695,7 +740,6 @@ func (r *signInRedirect) visit(w http.ResponseWriter) error {
 }
 
 func (r *signInRedirect) VisitStartOIDCSignInResponse(w http.ResponseWriter) error { return r.visit(w) }
-func (r *signInRedirect) VisitTryOIDCSignInResponse(w http.ResponseWriter) error   { return r.visit(w) }
 func (r *signInRedirect) VisitFinishOIDCSignInResponse(w http.ResponseWriter) error {
 	return r.visit(w)
 }

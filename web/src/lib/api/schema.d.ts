@@ -925,23 +925,30 @@ export interface paths {
             };
             cookie?: never;
         };
+        get?: never;
+        put?: never;
         /**
-         * Sign in through a provider to see what a sign-in would give, and open no session
-         * @description A navigation, not a call, and an administrator's: the browser is sent
-         *     through a sign-in as `/auth/oidc/{providerId}/start` sends it, to a
-         *     provider that may be switched off, and whoever signs in there is
-         *     checked as a sign-in would check them. No session is opened.
+         * Start a sign-in through a provider that opens no session, to see what it gives
+         * @description Answers with the address a browser is sent to, to sign in at the
+         *     provider as `/auth/oidc/{providerId}/start` has it sign in, at a
+         *     provider that may be switched off. The address carries a ticket that
+         *     is good for ten minutes and for this provider alone, and whoever
+         *     signs in through it is checked as a sign-in would check them. No
+         *     session is opened.
          *
          *     The browser comes back to `/providers/{providerId}#tried=` and a value
-         *     sealed under the session key, which `POST /identity-providers/check`
-         *     takes as `signIn` and answers with what the sign-in came to: whether
-         *     the provider took the client secret and the redirect URI, who signed
-         *     in, the groups it sent and the scope those give them. The value is
-         *     good for ten minutes and for this provider alone.
+         *     sealed under the session key, or, given `loopback` and `key` as
+         *     `weg idp check --sign-in` gives them, to
+         *     `http://127.0.0.1:{loopback}/?tried=` and that value.
+         *     `POST /identity-providers/check` takes the value as `signIn` and
+         *     answers with what the sign-in came to: whether the provider took the
+         *     client secret and the redirect URI, who signed in, the groups it sent
+         *     and the scope those give them. The value too is good for ten minutes
+         *     and for this provider alone.
+         *
+         *     Nothing is written, so it works while the cluster takes no writes.
          */
-        get: operations["tryOIDCSignIn"];
-        put?: never;
-        post?: never;
+        post: operations["tryOIDCSignIn"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3170,6 +3177,11 @@ export interface operations {
                  *     base64url without padding. Needed with `loopback`.
                  */
                 key?: string;
+                /**
+                 * @description A ticket `POST /identity-providers/{providerId}/try-sign-in`
+                 *     issued, which makes this a sign-in that opens no session.
+                 */
+                test?: string;
             };
             header?: never;
             path: {
@@ -3579,14 +3591,31 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description The port of 127.0.0.1 the CLI waits on for the end of the sign-in. */
+                    loopback?: number;
+                    /** @description As for `/auth/oidc/{providerId}/start`; needed with `loopback`. */
+                    key?: string;
+                };
+            };
+        };
         responses: {
-            /** @description To the provider, or straight back to the provider's page with what failed. */
-            302: {
+            /** @description Where to send the browser. */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /**
+                         * @description A path below this server, to be opened in a browser.
+                         * @example /api/v1/auth/oidc/01ARZ3NDEKTSV4RRFFQ69G5FAV/start?test=…
+                         */
+                        url: string;
+                    };
+                };
             };
             default: components["responses"]["Problem"];
         };

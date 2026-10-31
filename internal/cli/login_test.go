@@ -310,3 +310,53 @@ func TestATokenBeatsAHeldSession(t *testing.T) {
 		t.Error("the broken session was accepted")
 	}
 }
+
+// weg idp check --sign-in sends a browser through a sign-in that opens no
+// session, and hands what came back to the check. Whether the server can
+// open what it sealed is the API's to test; here it is that the address and
+// the answer travel the way they should.
+func TestIDPCheckSignInComesBackThroughTheLoopback(t *testing.T) {
+	t.Parallel()
+	srv := newServer(t)
+	addAuthentik(t, srv)
+
+	browser := func(ctx context.Context, address string) error {
+		u, err := url.Parse(address)
+		if err != nil {
+			return err
+		}
+		q := u.Query()
+		if !strings.HasSuffix(u.Path, "/start") || q.Get("test") == "" || q.Get("key") == "" {
+			t.Errorf("the browser was sent to %s, want the start with a test ticket and a key", address)
+		}
+		back := "http://127.0.0.1:" + q.Get("loopback") + "/?" + url.Values{"tried": {"sealed-elsewhere"}}.Encode()
+		go func() {
+			req, rerr := http.NewRequestWithContext(ctx, http.MethodGet, back, http.NoBody)
+			if rerr != nil {
+				return
+			}
+			if resp, gerr := http.DefaultClient.Do(req); gerr == nil {
+				resp.Body.Close()
+			}
+		}()
+		return nil
+	}
+	_, _, err := runWith(t, &options{configDir: t.TempDir(), openBrowser: browser},
+		"idp", "check", "authentik", "--sign-in", "--server", srv.addr, "--token", srv.token)
+	if err == nil || !strings.Contains(err.Error(), "not a sign-in tried through this provider") {
+		t.Errorf("check --sign-in: %v, want what came back handed to the check, which refuses it", err)
+	}
+
+	mustRun(t, srv, "idp", "add", "ldap", "FreeIPA", "--url", "ldaps://127.0.0.1:9",
+		"--user-base", "dc=example,dc=com", "--user-filter", "(uid={username})")
+	if code, _, errOut := run(t, srv, "idp", "check", "FreeIPA", "--sign-in"); code != ExitUsage ||
+		!strings.Contains(errOut, "--username") {
+		t.Errorf("--sign-in for a directory: exit code %d, stderr %q; want it pointed at --username", code, errOut)
+	}
+	// shortcut: cobra's flag groups fail outside the usage check in root.go,
+	// so this exits 1 rather than 2, as idp set --enabled --disabled does;
+	// worth fixing for every group at once.
+	if code, _, _ := run(t, srv, "idp", "check", "Authentik", "--sign-in", "--username", "alice"); code == ExitOK {
+		t.Error("--sign-in with --username succeeded")
+	}
+}

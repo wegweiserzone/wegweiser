@@ -38,11 +38,10 @@ public API is unstable and may change without a deprecation period.
 - `POST /identity-providers/{providerId}/end-sessions` ends every session one person holds
   through a provider, on every member, so that somebody taken out of a group upstream loses
   what it gave them at once rather than when their session runs out. They can sign in again.
-- `GET /identity-providers/{providerId}/try-sign-in` sends an administrator through a
-  sign-in that opens no session, at an OpenID Connect provider whether it is switched on
-  or not.
-  `POST /identity-providers/check` then says what it came to: whether the provider took the
-  client secret, who signed in, the groups it sent and the scope those give them.
+- `POST /identity-providers/{providerId}/try-sign-in` gives an administrator the address of
+  a sign-in that opens no session, at an OpenID Connect provider whether it is switched on
+  or not. `POST /identity-providers/check` then says what it came to: whether the provider
+  took the client secret, who signed in, the groups it sent and the scope those give them.
 
 #### Web interface
 
@@ -68,7 +67,9 @@ public API is unstable and may change without a deprecation period.
 - `weg idp` adds, lists, shows, changes and removes the identity providers and their group
   mappings. A client secret or bind password is read from a file, or from standard input
   with `-`, so that it stays out of the shell's history. `weg idp end-sessions PROVIDER NAME`
-  ends every session one person holds through a provider.
+  ends every session one person holds through a provider. `weg idp check --sign-in` signs in
+  at an OpenID Connect provider in a browser, opening no session, and says who came back,
+  with which groups and the scope those give them.
 - `weg login` signs a person in through an identity provider: a directory asks for the
   name and password in the terminal, without echo, and an OpenID Connect provider opens a
   browser that comes back to the command. The session is kept per server address in a
