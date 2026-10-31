@@ -23,15 +23,20 @@ func TestAWitnessJoinsAndIsCountedAsOne(t *testing.T) {
 	if got, ok := suffrageOf(t, a, w.id); !ok || got != raft.Voter {
 		t.Errorf("the leader counts the witness as %v (listed %v), want a voter", got, ok)
 	}
-	st, err := b.node.Status(t.Context())
-	if err != nil {
-		t.Fatalf("Status: %v", err)
-	}
-	for _, m := range st.Members {
-		if (m.ID == w.id) != (m.Role == RoleWitness) {
-			t.Errorf("member %s is listed as a %s", m.ID, m.Role)
+	// A join adds the witness without a vote and then promotes it, and a
+	// follower knows of the promotion once the configuration reaches it.
+	waitFor(t, "a follower to list the witness, and only it, as one", func() bool {
+		st, err := b.node.Status(t.Context())
+		if err != nil {
+			return false
 		}
-	}
+		for _, m := range st.Members {
+			if (m.ID == w.id) != (m.Role == RoleWitness) {
+				return false
+			}
+		}
+		return true
+	})
 }
 
 // D39: witnesses stay fewer than half of the voters, on the way in and on
