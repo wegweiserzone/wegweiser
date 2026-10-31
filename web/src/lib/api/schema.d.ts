@@ -868,9 +868,10 @@ export interface paths {
          * Replace what a provider says about itself
          * @description The whole provider is sent, as it should stand afterwards, with one
          *     exception: a client secret or bind password left out is kept, so that
-         *     changing a mapping does not mean typing the secret again. A bind
-         *     password is kept only while the bind DN stays the same. A provider
-         *     stays the kind it was made as.
+         *     changing a mapping does not mean typing the secret again. It is kept
+         *     only while the account and the provider it is for stay the same: the
+         *     issuer and client ID, or the URL and bind DN. A provider stays the
+         *     kind it was made as.
          */
         put: operations["updateIdentityProvider"];
         post?: never;
@@ -1936,7 +1937,7 @@ export interface components {
             clientId: string;
             /**
              * @description Required when a provider is made. Never returned, and kept when an
-             *     update leaves it out.
+             *     update leaves it out and the issuer and client ID stay the same.
              */
             clientSecret?: string;
             /**
@@ -1985,7 +1986,7 @@ export interface components {
             bindDn?: string;
             /**
              * @description Required with a bind DN. Never returned, and kept when an update
-             *     leaves it out and the bind DN stays the same.
+             *     leaves it out and the URL and bind DN stay the same.
              */
             bindPassword?: string;
             /** @example cn=users,cn=accounts,dc=example,dc=com */

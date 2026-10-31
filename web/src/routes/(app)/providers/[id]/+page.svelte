@@ -261,6 +261,16 @@
   );
   const nobody = $derived(scopes.every(({ scope }) => draft.groups[scope].length === 0));
 
+  /** The server keeps a stored secret left empty only for the same account at the same provider. */
+  const kept = $derived({
+    oidc:
+      draft.oidc.issuer.trim() === stored?.oidc?.issuer &&
+      draft.oidc.clientId.trim() === stored.oidc.clientId,
+    ldap:
+      draft.ldap.url.trim() === stored?.ldap?.url &&
+      draft.ldap.bindDn.trim() === (stored.ldap.bindDn ?? ""),
+  });
+
   /** The callback on the address this page is served from, which is the one most often missing. */
   const callback = $derived(`${page.url.origin}/api/v1/auth/oidc/callback`);
   const callbackListed = $derived(
@@ -556,7 +566,7 @@
                   type="password"
                   bind:value={draft.oidc.clientSecret}
                   autocomplete="new-password"
-                  placeholder={creating ? "" : "kept; type a new one to replace it"}
+                  placeholder={kept.oidc ? "kept; type a new one to replace it" : ""}
                 />
               </div>
             </Row>
@@ -641,7 +651,7 @@
                   type="password"
                   bind:value={draft.ldap.bindPassword}
                   autocomplete="new-password"
-                  placeholder={creating ? "" : "kept; type a new one to replace it"}
+                  placeholder={kept.ldap ? "kept; type a new one to replace it" : ""}
                 />
               </div>
             </Row>

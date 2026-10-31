@@ -484,7 +484,7 @@ func newIDPSetCommand(opts *options, f *clientFlags) *cobra.Command {
 		Short: "Change a provider",
 		Long: "Change the settings given, and leave the rest as they are. --map\n" +
 			"replaces every mapping the provider had. A secret that is not given is\n" +
-			"kept; a bind password only while the bind DN stays the same.",
+			"kept while the issuer and client ID, or the URL and bind DN, stay the same.",
 		Args: usageArgs(cobra.ExactArgs(1)),
 		Example: "  weg idp set Authentik --map dns-admins=admin --map dns-ops=write\n" +
 			"  weg idp set FreeIPA --user-filter '(cn={username})' --dry-run --username alice\n" +

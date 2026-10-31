@@ -226,13 +226,16 @@ func DraftIdentityProvider(stored []IdentityProvider, pid string, p IdentityProv
 }
 
 // keepSecrets takes the secrets p leaves empty from old, so that changing a
-// mapping does not mean typing the client secret again. A bind password is
-// kept only while the bind DN stays the same, since it is that DN's.
+// mapping does not mean typing the client secret again. A secret belongs to
+// one account at one provider, so it is kept only while both stay the same:
+// otherwise whoever edits the provider could send it to a host of their own.
 func (p *IdentityProvider) keepSecrets(old *IdentityProvider) {
-	if p.OIDC != nil && old.OIDC != nil && p.OIDC.ClientSecret == "" {
+	if p.OIDC != nil && old.OIDC != nil && p.OIDC.ClientSecret == "" &&
+		p.OIDC.Issuer == old.OIDC.Issuer && p.OIDC.ClientID == old.OIDC.ClientID {
 		p.OIDC.ClientSecret = old.OIDC.ClientSecret
 	}
-	if p.LDAP != nil && old.LDAP != nil && p.LDAP.BindPassword == "" && p.LDAP.BindDN == old.LDAP.BindDN {
+	if p.LDAP != nil && old.LDAP != nil && p.LDAP.BindPassword == "" &&
+		p.LDAP.URL == old.LDAP.URL && p.LDAP.BindDN == old.LDAP.BindDN {
 		p.LDAP.BindPassword = old.LDAP.BindPassword
 	}
 }
@@ -369,7 +372,8 @@ func (o *OIDCProvider) validate(invalid func(string, ...any) error) error {
 		return invalid("an OpenID Connect provider needs the client ID it was registered under")
 	}
 	if o.ClientSecret == "" {
-		return invalid("an OpenID Connect provider needs the client secret it was registered with")
+		return invalid("an OpenID Connect provider needs the client secret it was registered with, " +
+			"which a changed issuer or client ID does not keep")
 	}
 	if len(o.RedirectURIs) == 0 {
 		return invalid("name the redirect URIs registered with the provider, one for each address " +
@@ -398,7 +402,7 @@ func (l *LDAPProvider) validate(invalid func(string, ...any) error) error {
 		return invalid("%q is not a directory URL; it starts ldaps:// or ldap://", l.URL)
 	}
 	if l.BindDN != "" && l.BindPassword == "" {
-		return invalid("a bind DN needs its password, which a changed bind DN does not keep; " +
+		return invalid("a bind DN needs its password, which a changed URL or bind DN does not keep; " +
 			"leave both out to search anonymously")
 	}
 	if l.UserBase == "" {

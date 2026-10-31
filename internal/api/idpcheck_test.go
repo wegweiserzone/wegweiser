@@ -204,7 +204,8 @@ func TestAnOpenIDConnectProviderIsChecked(t *testing.T) {
 		idp := newTestIDP(t)
 		p := addOIDCProvider(t, h, idp)
 		in := inputOfProvider(p)
-		in.Oidc.Issuer = idp.srv.URL + "/"
+		// A new issuer does not keep the secret; it is typed in again.
+		in.Oidc.Issuer, in.Oidc.ClientSecret = idp.srv.URL+"/", ptr("s3cret")
 		h.decode(h.do(http.MethodPut, "/identity-providers/"+p.Id, in), http.StatusOK, nil)
 		got := h.check(t, p.Id, "")
 		if step := last(got); got.Ok || !strings.Contains(step.Detail, "calls itself "+idp.srv.URL) {

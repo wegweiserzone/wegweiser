@@ -173,10 +173,40 @@ func TestUpdatingAnIdentityProviderKeepsItsSecret(t *testing.T) {
 	if got, err := f.a.UpdateIdentityProvider(t.Context(), ldap.ID, sameDN); err != nil || got.LDAP.BindPassword != "hunter2" {
 		t.Errorf("an update leaving the password out gave %+v, %v; want it kept", got, err)
 	}
-	otherDN := freeIPA()
-	otherDN.LDAP.BindDN, otherDN.LDAP.BindPassword = "uid=someone-else,dc=example,dc=com", ""
-	if _, err := f.a.UpdateIdentityProvider(t.Context(), ldap.ID, otherDN); !errors.Is(err, zone.ErrInvalid) {
-		t.Errorf("a new bind DN without its password gave %v, want it refused", err)
+	// A secret stays with the account and the provider it was given for, or
+	// whoever edits the provider could send it to a host of their own.
+	noSecret := func(id string) apply.IdentityProvider {
+		if id == oidc.ID {
+			p := authentik()
+			p.OIDC.ClientSecret = ""
+			return p
+		}
+		p := freeIPA()
+		p.LDAP.BindPassword = ""
+		return p
+	}
+	for _, c := range []struct {
+		name   string
+		id     string
+		change func(*apply.IdentityProvider)
+	}{
+		{"a new issuer", oidc.ID, func(p *apply.IdentityProvider) { p.OIDC.Issuer = "https://evil.example.com" }},
+		{"a new client ID", oidc.ID, func(p *apply.IdentityProvider) { p.OIDC.ClientID = "someone-else" }},
+		{"a new URL", ldap.ID, func(p *apply.IdentityProvider) { p.LDAP.URL = "ldaps://evil.example.com" }},
+		{"a new bind DN", ldap.ID, func(p *apply.IdentityProvider) { p.LDAP.BindDN = "uid=someone-else,dc=example,dc=com" }},
+	} {
+		p := noSecret(c.id)
+		c.change(&p)
+		if _, err := f.a.UpdateIdentityProvider(t.Context(), c.id, p); !errors.Is(err, zone.ErrInvalid) {
+			t.Errorf("%s without its secret gave %v, want it refused", c.name, err)
+		}
+		if _, err := apply.DraftIdentityProvider(storedProviders(t, f), c.id, p); !errors.Is(err, zone.ErrInvalid) {
+			t.Errorf("a draft with %s without its secret gave %v, want it refused", c.name, err)
+		}
+	}
+	if d, err := apply.DraftIdentityProvider(storedProviders(t, f), ldap.ID, noSecret(ldap.ID)); err != nil ||
+		d.LDAP.BindPassword != "hunter2" {
+		t.Errorf("a draft leaving the password out gave %+v, %v; want it kept", d, err)
 	}
 
 	if _, err := f.a.UpdateIdentityProvider(t.Context(), oidc.ID, freeIPA()); err == nil ||
