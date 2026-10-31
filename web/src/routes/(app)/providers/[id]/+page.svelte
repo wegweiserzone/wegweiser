@@ -12,7 +12,7 @@
   import { goto, replaceState } from "$app/navigation";
   import { page } from "$app/state";
   import { asked } from "#lib/asked.ts";
-  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import { api, ApiError, basePath, NetworkError } from "#lib/api/index.ts";
   import type {
     CheckStep,
     IdentityProvider,
@@ -283,7 +283,7 @@
   });
 
   /** The callback on the address this page is served from, which is the one most often missing. */
-  const callback = $derived(`${page.url.origin}/api/v1/auth/oidc/callback`);
+  const callback = $derived(`${page.url.origin}${basePath}/auth/oidc/callback`);
   const callbackListed = $derived(
     draft.oidc.redirectUris.some((u) => u.toLowerCase() === callback.toLowerCase()),
   );
