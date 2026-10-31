@@ -612,29 +612,36 @@ func (n *Node) handOver() {
 	if f.Error() != nil {
 		return
 	}
-	var to *raft.Server
+	var candidates []raft.Server
 	witnesses := false
 	for _, srv := range f.Configuration().Servers {
 		switch {
 		case srv.Suffrage != raft.Voter || srv.ID == n.id:
 		case IsWitness(string(srv.ID)):
 			witnesses = true
-		case to == nil:
-			to = &srv
+		default:
+			candidates = append(candidates, srv)
 		}
 	}
-	var handed raft.Future
-	switch {
-	case to == nil:
+	if len(candidates) == 0 {
 		return
-	case witnesses:
-		handed = n.raft.LeadershipTransferToServer(to.ID, to.Address)
-	default:
-		handed = n.raft.LeadershipTransfer()
 	}
-	if err := handed.Error(); err != nil {
-		n.log.Warn("stopping without handing leadership on", "reason", err.Error())
+	if !witnesses {
+		if err := n.raft.LeadershipTransfer().Error(); err != nil {
+			n.log.Warn("stopping without handing leadership on", "reason", err.Error())
+		}
+		return
 	}
+	// Each in turn, because the first named may be the one that is down, and
+	// Raft gives up on a voter only after an election timeout.
+	for _, to := range candidates {
+		err := n.raft.LeadershipTransferToServer(to.ID, to.Address).Error()
+		if err == nil || !n.IsLeader() {
+			return
+		}
+		n.log.Warn("leadership not taken", "member", string(to.ID), "reason", err.Error())
+	}
+	n.log.Warn("stopping without handing leadership on", "reason", "no voter took it")
 }
 
 // raftStream is the cluster port's Raft streams, as the stream layer Raft's

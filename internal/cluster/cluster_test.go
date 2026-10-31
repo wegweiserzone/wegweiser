@@ -131,6 +131,30 @@ func TestALeaderThatStopsPassesOverAWitness(t *testing.T) {
 	}
 }
 
+// With a witness among them, the voter leadership is handed to is named, and
+// the first named may be down. The next is asked instead.
+func TestALeaderThatStopsPassesOverAVoterThatIsDown(t *testing.T) {
+	t.Parallel()
+	a := startAlone(t, "a")
+	b, c, d := startMember(t, "b"), startMember(t, "c"), startMember(t, "d")
+	w := startMember(t, WitnessPrefix+"w")
+	for _, m := range []*member{b, c, d, w} {
+		if err := a.node.AddVoter(m.id, m.addr); err != nil {
+			t.Fatalf("AddVoter %s: %v", m.id, err)
+		}
+	}
+	propose(t, a, "one.example.")
+	for _, m := range []*member{b, c, d, w} {
+		holds(t, m, 1)
+	}
+
+	b.stop(t)
+	a.stop(t)
+	if got := leadsAtOnce(t, c, d, w); got == w {
+		t.Errorf("%s leads, want c or d: b is down and a witness hands leadership on again", got.id)
+	}
+}
+
 // A member added after the log it would need is compacted away starts from a
 // log snapshot, which is the path D30 exists for.
 func TestALateMemberStartsFromASnapshot(t *testing.T) {
