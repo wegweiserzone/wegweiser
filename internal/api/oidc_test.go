@@ -37,6 +37,8 @@ type testIDP struct {
 	codes map[string]issued
 	// claims are what the next ID token says beyond who issued it to whom.
 	claims map[string]any
+	// userinfo, when set, is what the user info endpoint answers.
+	userinfo map[string]any
 }
 
 type issued struct{ challenge, nonce string }
@@ -55,6 +57,7 @@ func newTestIDP(t *testing.T) *testIDP {
 			"authorization_endpoint":                idp.srv.URL + "/authorize",
 			"token_endpoint":                        idp.srv.URL + "/token",
 			"jwks_uri":                              idp.srv.URL + "/keys",
+			"userinfo_endpoint":                     idp.srv.URL + "/userinfo",
 			"id_token_signing_alg_values_supported": []string{"RS256"},
 		})
 	})
@@ -81,6 +84,16 @@ func newTestIDP(t *testing.T) *testIDP {
 			"access_token": "at", "token_type": "Bearer", "expires_in": 300,
 			"id_token": idp.sign(t, got.nonce, claims),
 		})
+	})
+	mux.HandleFunc("GET /userinfo", func(w http.ResponseWriter, r *http.Request) {
+		idp.mu.Lock()
+		info := idp.userinfo
+		idp.mu.Unlock()
+		if info == nil {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, info)
 	})
 	idp.srv = httptest.NewTLSServer(mux)
 	t.Cleanup(idp.srv.Close)
@@ -505,5 +518,31 @@ func TestAnAdministratorTriesASignInThroughOpenIDConnect(t *testing.T) {
 	forged := strings.Replace(ticket(t, gen.TryOIDCSignInJSONRequestBody{}), p.Id, other.Id, 1)
 	if got := newBrowser(t).get(forged); !strings.Contains(got.Header.Get("Location"), signInError) {
 		t.Errorf("a ticket for another provider went to %s, want it refused", got.Header.Get("Location"))
+	}
+}
+
+// A provider that gives the groups only to whoever asks for the user info is
+// asked, and what it answers counts only for the person the ID token names.
+func TestTheUserInfoIsOnlyTakenForTheSamePerson(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name    string
+		subject string
+		want    int
+	}{
+		{"the same person", "u-1", http.StatusOK},
+		{"somebody else", "u-2", http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			idp := newTestIDP(t)
+			idp.userinfo = map[string]any{"sub": tc.subject, "groups": []string{"dns-ops"}}
+			b, landed, _ := signInThroughOIDC(t, h, idp, map[string]any{"preferred_username": "alice"})
+			if status, _ := b.session(h); status != tc.want {
+				t.Errorf("landed at %s with a session answering %d, want %d", landed, status, tc.want)
+			}
+		})
 	}
 }

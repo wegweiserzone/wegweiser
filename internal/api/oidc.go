@@ -439,9 +439,12 @@ func (s *Server) oidcIdentity(
 	}
 	// Some providers keep the groups out of the ID token and give them only
 	// to whoever asks for the user info, Keycloak among them unless told
-	// otherwise.
+	// otherwise. What it says counts only if it is about the same person
+	// (OpenID Connect Core 1.0 §5.3.2), or one person's groups could sign
+	// another in.
 	if _, present := claims[p.OIDC.GroupsClaim]; !present {
-		if info, ierr := client.provider.UserInfo(ctx, oauth2.StaticTokenSource(tok)); ierr == nil {
+		if info, ierr := client.provider.UserInfo(ctx, oauth2.StaticTokenSource(tok)); ierr == nil &&
+			info.Subject == idt.Subject {
 			var more map[string]any
 			if info.Claims(&more) == nil {
 				for k, v := range more {
