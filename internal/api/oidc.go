@@ -63,6 +63,10 @@ type oidcFlow struct {
 	// key it is sealed to, for a sign-in the CLI started (D52).
 	Loopback int    `json:"loopback,omitempty"`
 	Key      string `json:"key,omitempty"`
+
+	// Test is a sign-in an administrator started to see what it gives,
+	// which opens no session and ends on the provider's page.
+	Test bool `json:"test,omitempty"`
 }
 
 // ListSignInProviders names the providers that are switched on.
@@ -100,39 +104,68 @@ func (s *Server) StartOIDCSignIn(
 		return fail(err)
 	}
 
-	p, keys, err := s.oidcProvider(ctx, req.ProviderId)
+	p, keys, err := s.oidcProvider(ctx, req.ProviderId, false)
 	if err != nil {
 		return fail(err)
 	}
-	redirect, err := redirectFor(p.OIDC.RedirectURIs, hostOf(ctx))
+	r, err := s.startOIDC(ctx, p, keys, oidcFlow{Loopback: back.port, Key: back.key})
 	if err != nil {
 		return fail(err)
+	}
+	return r, nil
+}
+
+// TryOIDCSignIn sends an administrator's browser through a sign-in that opens
+// no session, so that what a sign-in gives can be seen before anybody relies
+// on it, through a provider that may not be switched on yet.
+func (s *Server) TryOIDCSignIn(
+	ctx context.Context, req gen.TryOIDCSignInRequestObject,
+) (gen.TryOIDCSignInResponseObject, error) {
+	if err := requireAdmin(ctx, "trying a sign-in through an identity provider"); err != nil {
+		return nil, err
+	}
+	secure := secureOf(ctx)
+	p, keys, err := s.oidcProvider(ctx, req.ProviderId, true)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", store.ErrNotFound, err)
+	}
+	r, err := s.startOIDC(ctx, p, keys, oidcFlow{Test: true})
+	if err != nil {
+		var c checker
+		c.fail("Start a sign-in", "%s", failureDetail(err))
+		return s.tried(keys, p.ID, &c, secure)
+	}
+	return r, nil
+}
+
+// startOIDC sends the browser to p, with flow, which says where the sign-in
+// ends, sealed into its cookie with what the callback checks the answer by.
+func (s *Server) startOIDC(
+	ctx context.Context, p *apply.IdentityProvider, keys apply.SessionKeys, flow oidcFlow,
+) (*signInRedirect, error) {
+	redirect, err := redirectFor(p.OIDC.RedirectURIs, hostOf(ctx))
+	if err != nil {
+		return nil, err
 	}
 	client, err := s.oidc.client(ctx, p)
 	if err != nil {
-		return fail(err)
-	}
-
-	state, err := randomSecret()
-	if err != nil {
 		return nil, err
 	}
-	nonce, err := randomSecret()
-	if err != nil {
+	if flow.State, err = randomSecret(); err != nil {
 		return nil, err
 	}
-	flow := oidcFlow{
-		Provider: p.ID, State: state, Nonce: nonce, Verifier: oauth2.GenerateVerifier(),
-		RedirectURI: redirect, Expires: s.now().Add(flowLifetime).UTC(),
-		Loopback: back.port, Key: back.key,
+	if flow.Nonce, err = randomSecret(); err != nil {
+		return nil, err
 	}
+	flow.Provider, flow.Verifier, flow.RedirectURI = p.ID, oauth2.GenerateVerifier(), redirect
+	flow.Expires = s.now().Add(flowLifetime).UTC()
 	sealed, err := seal(keys.Current, flowCookie, &flow)
 	if err != nil {
 		return nil, err
 	}
-	to := client.config(p, redirect).AuthCodeURL(state,
-		oidc.Nonce(nonce), oauth2.S256ChallengeOption(flow.Verifier))
-	return &signInRedirect{to: to, flow: sealed, flowExpires: flow.Expires, secure: secure}, nil
+	to := client.config(p, redirect).AuthCodeURL(flow.State,
+		oidc.Nonce(flow.Nonce), oauth2.S256ChallengeOption(flow.Verifier))
+	return &signInRedirect{to: to, flow: sealed, flowExpires: flow.Expires, secure: secureOf(ctx)}, nil
 }
 
 // FinishOIDCSignIn takes the browser back from the provider.
@@ -155,6 +188,11 @@ func (s *Server) FinishOIDCSignIn(
 	}
 	fail := func(err error) (gen.FinishOIDCSignInResponseObject, error) {
 		s.limiter.spend(from, s.now())
+		if flow != nil && flow.Test {
+			var c checker
+			c.fail(signInStep, "%s", failureDetail(err))
+			return s.tried(keys, flow.Provider, &c, secure)
+		}
 		return &signInRedirect{to: back.failed(err), clearFlow: true, secure: secure}, nil
 	}
 	if !s.limiter.allow(from, s.now()) {
@@ -168,6 +206,9 @@ func (s *Server) FinishOIDCSignIn(
 	}
 	if e := req.Params.Error; e != nil {
 		return fail(fmt.Errorf("the provider refused the sign-in: %s %s", *e, valueOr(req.Params.ErrorDescription)))
+	}
+	if flow != nil && flow.Test {
+		return s.tried(keys, flow.Provider, s.finishTest(ctx, valueOr(req.Params.Code), valueOr(req.Params.State), flow), secure)
 	}
 
 	sess, err := s.finishOIDC(ctx, valueOr(req.Params.Code), valueOr(req.Params.State), flow)
@@ -204,21 +245,125 @@ func openFlow(keys apply.SessionKeys, sealed string) *oidcFlow {
 // finishOIDC checks the provider's answer against the flow the start sealed,
 // and opens a session for the person it names.
 func (s *Server) finishOIDC(ctx context.Context, code, state string, flow *oidcFlow) (*session, error) {
-	now := s.now()
-	if flow == nil || !now.Before(flow.Expires) {
-		return nil, errors.New("the sign-in took too long, or was not started in this browser; try again")
-	}
-	if code == "" || state == "" || state != flow.State {
-		return nil, errors.New("the provider's answer is not the one this sign-in asked for; try again")
-	}
-
-	p, _, err := s.oidcProvider(ctx, flow.Provider)
+	p, who, err := s.oidcIdentity(ctx, code, state, flow)
 	if err != nil {
 		return nil, err
+	}
+	scope, ok := scopeOf(p, who.groups)
+	if !ok {
+		return nil, fmt.Errorf("%s signed %s in, and none of their groups is given a scope here", p.Name, who.name)
+	}
+	id, err := randomSecret()
+	if err != nil {
+		return nil, err
+	}
+	return &session{
+		ID: id, Provider: p.ID, Subject: who.subject, Name: who.name, Scope: scope,
+		Expires: s.now().Add(apply.SessionLifetime).UTC(),
+	}, nil
+}
+
+// signInStep is the step a test sign-in reports the provider's part under.
+const signInStep = "Sign in at the provider"
+
+// finishTest checks the provider's answer as finishOIDC does, and says what
+// it came to instead of opening a session.
+func (s *Server) finishTest(ctx context.Context, code, state string, flow *oidcFlow) *checker {
+	var c checker
+	p, who, err := s.oidcIdentity(ctx, code, state, flow)
+	if err != nil {
+		c.fail(signInStep, "%s", failureDetail(err))
+		return &c
+	}
+	c.pass(signInStep, "%s took the client secret and the redirect URI, and signed %s in", p.Name, who.name)
+
+	claim := "The " + p.OIDC.GroupsClaim + " claim"
+	if who.hasGroups {
+		c.pass(claim, "%d groups", len(who.groups))
+	} else {
+		c.fail(claim, "%s sent none, so whoever it signs in is refused. Many send groups only when a "+
+			"scope or a mapper asks for them", p.Name)
+	}
+	c.person = &gen.CheckedPerson{Subject: who.subject, Name: who.name, Groups: who.groups}
+	if scope, ok := scopeOf(p, who.groups); ok {
+		c.person.Scope = ptr(gen.Scope(scope))
+		c.pass("Their scope", "%s would sign in with %s", who.name, scope)
+	} else {
+		c.fail("Their scope", "none of their groups is given a scope here, so a sign-in is refused")
+	}
+	return &c
+}
+
+// triedSeal is what a test sign-in's outcome is sealed as, so that nothing
+// sealed for another use can be passed off as one.
+const triedSeal = "weg_oidc_tried"
+
+// triedSignIn is what a test sign-in came to, sealed for the page it started
+// from to hand to the check, which alone opens it.
+type triedSignIn struct {
+	Provider string                    `json:"idp"`
+	Expires  time.Time                 `json:"exp"`
+	Result   gen.IdentityProviderCheck `json:"result"`
+}
+
+// tried sends the browser back to the provider's page with what a test
+// sign-in came to. It goes in the fragment, which the browser sends to no
+// server, so that it stays out of every log on the way.
+func (s *Server) tried(keys apply.SessionKeys, pid string, c *checker, secure bool) (*signInRedirect, error) {
+	sealed, err := seal(keys.Current, triedSeal, &triedSignIn{
+		Provider: pid, Expires: s.now().Add(flowLifetime).UTC(), Result: c.result(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	to := "/providers/" + url.PathEscape(pid) + "#" + url.Values{"tried": {sealed}}.Encode()
+	return &signInRedirect{to: to, clearFlow: true, secure: secure}, nil
+}
+
+// openTried reads back what tried sealed, for the provider by pid, while it
+// is still good.
+func (s *Server) openTried(ctx context.Context, pid, sealed string) (gen.IdentityProviderCheck, error) {
+	keys, err := s.sessionKeys(ctx)
+	if err != nil {
+		return gen.IdentityProviderCheck{}, err
+	}
+	var t triedSignIn
+	if _, ok := unseal(keys, triedSeal, sealed, &t); !ok || t.Provider != pid || !s.now().Before(t.Expires) {
+		return gen.IdentityProviderCheck{}, badRequest("that is not a sign-in tried through this provider in the " +
+			"last ten minutes; try it again")
+	}
+	return t.Result, nil
+}
+
+// oidcPerson is who a provider says signed in.
+type oidcPerson struct {
+	subject, name string
+	groups        []string
+	// hasGroups is whether the provider sent the groups claim at all, which
+	// an empty list of groups does not tell apart.
+	hasGroups bool
+}
+
+// oidcIdentity checks the provider's answer against the flow the start sealed,
+// and returns the provider and who it says signed in.
+func (s *Server) oidcIdentity(
+	ctx context.Context, code, state string, flow *oidcFlow,
+) (*apply.IdentityProvider, *oidcPerson, error) {
+	now := s.now()
+	if flow == nil || !now.Before(flow.Expires) {
+		return nil, nil, errors.New("the sign-in took too long, or was not started in this browser; try again")
+	}
+	if code == "" || state == "" || state != flow.State {
+		return nil, nil, errors.New("the provider's answer is not the one this sign-in asked for; try again")
+	}
+
+	p, _, err := s.oidcProvider(ctx, flow.Provider, flow.Test)
+	if err != nil {
+		return nil, nil, err
 	}
 	client, err := s.oidc.client(ctx, p)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	ctx, cancel := context.WithTimeout(oidc.ClientContext(ctx, client.http), discoveryTimeout)
 	defer cancel()
@@ -226,23 +371,23 @@ func (s *Server) finishOIDC(ctx context.Context, code, state string, flow *oidcF
 	cfg := client.config(p, flow.RedirectURI)
 	tok, err := cfg.Exchange(ctx, code, oauth2.VerifierOption(flow.Verifier))
 	if err != nil {
-		return nil, fmt.Errorf("%s did not exchange the code: %w", p.Name, err)
+		return nil, nil, fmt.Errorf("%s did not exchange the code: %w", p.Name, err)
 	}
 	raw, ok := tok.Extra("id_token").(string)
 	if !ok {
-		return nil, fmt.Errorf("%s answered without an ID token", p.Name)
+		return nil, nil, fmt.Errorf("%s answered without an ID token", p.Name)
 	}
 	idt, err := client.provider.Verifier(&oidc.Config{ClientID: p.OIDC.ClientID}).Verify(ctx, raw)
 	if err != nil {
-		return nil, fmt.Errorf("the ID token from %s does not verify: %w", p.Name, err)
+		return nil, nil, fmt.Errorf("the ID token from %s does not verify: %w", p.Name, err)
 	}
 	if idt.Nonce != flow.Nonce {
-		return nil, fmt.Errorf("the ID token from %s was not issued for this sign-in", p.Name)
+		return nil, nil, fmt.Errorf("the ID token from %s was not issued for this sign-in", p.Name)
 	}
 
 	var claims map[string]any
 	if cerr := idt.Claims(&claims); cerr != nil {
-		return nil, fmt.Errorf("the ID token from %s is not readable: %w", p.Name, cerr)
+		return nil, nil, fmt.Errorf("the ID token from %s is not readable: %w", p.Name, cerr)
 	}
 	// Some providers keep the groups out of the ID token and give them only
 	// to whoever asks for the user info, Keycloak among them unless told
@@ -264,24 +409,16 @@ func (s *Server) finishOIDC(ctx context.Context, code, state string, flow *oidcF
 	if name == "" {
 		name = idt.Subject
 	}
-	scope, ok := scopeOf(p, stringsOf(claims[p.OIDC.GroupsClaim]))
-	if !ok {
-		return nil, fmt.Errorf("%s signed %s in, and none of their groups is given a scope here", p.Name, name)
-	}
-
-	id, err := randomSecret()
-	if err != nil {
-		return nil, err
-	}
-	return &session{
-		ID: id, Provider: p.ID, Subject: idt.Subject, Name: name, Scope: scope,
-		Expires: now.Add(apply.SessionLifetime).UTC(),
+	_, hasGroups := claims[p.OIDC.GroupsClaim]
+	return p, &oidcPerson{
+		subject: idt.Subject, name: name, groups: stringsOf(claims[p.OIDC.GroupsClaim]), hasGroups: hasGroups,
 	}, nil
 }
 
 // oidcProvider returns the OpenID Connect provider by this identifier, if it
-// is switched on, with the session keys read in the same transaction.
-func (s *Server) oidcProvider(ctx context.Context, pid string) (*apply.IdentityProvider, apply.SessionKeys, error) {
+// is switched on or off is allowed, with the session keys read in the same
+// transaction.
+func (s *Server) oidcProvider(ctx context.Context, pid string, off bool) (*apply.IdentityProvider, apply.SessionKeys, error) {
 	var (
 		list []apply.IdentityProvider
 		keys apply.SessionKeys
@@ -301,7 +438,7 @@ func (s *Server) oidcProvider(ctx context.Context, pid string) (*apply.IdentityP
 		return nil, keys, errors.New("this server holds no key to seal a session under yet; try again shortly")
 	}
 	i := slices.IndexFunc(list, func(p apply.IdentityProvider) bool { return p.ID == pid })
-	if i < 0 || list[i].Kind != apply.ProviderOIDC || !list[i].Enabled {
+	if i < 0 || list[i].Kind != apply.ProviderOIDC || !list[i].Enabled && !off {
 		return nil, keys, errors.New("that provider is not one this server signs anybody in through")
 	}
 	return &list[i], keys, nil
@@ -555,6 +692,7 @@ func (r *signInRedirect) visit(w http.ResponseWriter) error {
 }
 
 func (r *signInRedirect) VisitStartOIDCSignInResponse(w http.ResponseWriter) error { return r.visit(w) }
+func (r *signInRedirect) VisitTryOIDCSignInResponse(w http.ResponseWriter) error   { return r.visit(w) }
 func (r *signInRedirect) VisitFinishOIDCSignInResponse(w http.ResponseWriter) error {
 	return r.visit(w)
 }

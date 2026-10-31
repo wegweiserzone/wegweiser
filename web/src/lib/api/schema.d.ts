@@ -915,6 +915,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/identity-providers/{providerId}/try-sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of an OpenID Connect provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Sign in through a provider to see what a sign-in would give, and open no session
+         * @description A navigation, not a call, and an administrator's: the browser is sent
+         *     through a sign-in as `/auth/oidc/{providerId}/start` sends it, to a
+         *     provider that may be switched off, and whoever signs in there is
+         *     checked as a sign-in would check them. No session is opened.
+         *
+         *     The browser comes back to `/providers/{providerId}#tried=` and a value
+         *     sealed under the session key, which `POST /identity-providers/check`
+         *     takes as `signIn` and answers with what the sign-in came to: whether
+         *     the provider took the client secret and the redirect URI, who signed
+         *     in, the groups it sent and the scope those give them. The value is
+         *     good for ten minutes and for this provider alone.
+         */
+        get: operations["tryOIDCSignIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/identity-providers/check": {
         parameters: {
             query?: never;
@@ -2094,6 +2127,13 @@ export interface components {
              * @example alice
              */
             username?: string;
+            /**
+             * @description What a sign-in `/identity-providers/{providerId}/try-sign-in`
+             *     started came to, as the browser brought it back, with `id` naming
+             *     the same provider. The answer is that sign-in's rather than a
+             *     check's, and nothing else in the request is looked at.
+             */
+            signIn?: string;
         };
         IdentityProviderCheck: {
             /** @description No step failed. A step that could not be tried does not count against it. */
@@ -2116,12 +2156,13 @@ export interface components {
             /** @description What was found, or what is wrong and what to do about it. */
             detail: string;
         };
-        /** @description Who a directory says a username is, as a sign-in would find them. */
+        /** @description Who a provider says somebody is, as a sign-in would find them. */
         CheckedPerson: {
-            dn: string;
+            /** @description Their entry's DN in a directory, or their subject at an OpenID Connect provider. */
+            subject: string;
             /** @description What a commit would call them. */
             name: string;
-            /** @description The groups the directory says they are in, as DNs. */
+            /** @description The groups the provider says they are in; a directory gives them as DNs. */
             groups: string[];
             scope?: components["schemas"]["Scope"];
         };
@@ -3520,6 +3561,28 @@ export interface operations {
         responses: {
             /** @description Their sessions are ended. */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    tryOIDCSignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of an OpenID Connect provider. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description To the provider, or straight back to the provider's page with what failed. */
+            302: {
                 headers: {
                     [name: string]: unknown;
                 };

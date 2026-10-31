@@ -36,6 +36,13 @@ func (s *Server) CheckIdentityProvider(
 	if req.Body == nil {
 		return nil, badRequest("say which provider to check: the id of a saved one, a draft, or both")
 	}
+	if sealed := deref(req.Body.SignIn, ""); sealed != "" {
+		result, err := s.openTried(ctx, deref(req.Body.Id, ""), sealed)
+		if err != nil {
+			return nil, err
+		}
+		return gen.CheckIdentityProvider200JSONResponse(result), nil
+	}
 	p, err := s.providerToCheck(ctx, req.Body)
 	if err != nil {
 		return nil, err
@@ -295,7 +302,7 @@ func (s *Server) checkDirectory(ctx context.Context, p *apply.IdentityProvider, 
 	if name == "" {
 		name = username
 	}
-	c.person = &gen.CheckedPerson{Dn: entry.DN, Name: name, Groups: groups}
+	c.person = &gen.CheckedPerson{Subject: entry.DN, Name: name, Groups: groups}
 
 	scope, ok := scopeOf(p, groupNames(groups))
 	switch {

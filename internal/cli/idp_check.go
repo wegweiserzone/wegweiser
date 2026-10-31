@@ -118,7 +118,7 @@ func writeIDPCheck(w io.Writer, pr *output.Printer, report idpChecked) error {
 			groups = strings.Join(p.Groups, "\n           ")
 		}
 		if _, err := fmt.Fprintf(w, "\n  %s is %s, with %s.\n  groups   %s\n",
-			p.Name, p.Dn, scope, groups); err != nil {
+			p.Name, p.Subject, scope, groups); err != nil {
 			return err
 		}
 	}

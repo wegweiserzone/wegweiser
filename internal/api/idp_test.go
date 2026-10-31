@@ -116,6 +116,8 @@ func TestIdentityProvidersNeedTheAdminScope(t *testing.T) {
 		{http.MethodGet, "/identity-providers/01ARZ3NDEKTSV4RRFFQ69G5FAV"},
 		{http.MethodPut, "/identity-providers/01ARZ3NDEKTSV4RRFFQ69G5FAV"},
 		{http.MethodDelete, "/identity-providers/01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+		{http.MethodPost, "/identity-providers/01ARZ3NDEKTSV4RRFFQ69G5FAV/end-sessions"},
+		{http.MethodGet, "/identity-providers/01ARZ3NDEKTSV4RRFFQ69G5FAV/try-sign-in"},
 	} {
 		resp := h.do(tc.method, tc.path, authentikInput(), as)
 		if resp.StatusCode != http.StatusForbidden {

@@ -38,6 +38,11 @@ public API is unstable and may change without a deprecation period.
 - `POST /identity-providers/{providerId}/end-sessions` ends every session one person holds
   through a provider, on every member, so that somebody taken out of a group upstream loses
   what it gave them at once rather than when their session runs out. They can sign in again.
+- `GET /identity-providers/{providerId}/try-sign-in` sends an administrator through a
+  sign-in that opens no session, at an OpenID Connect provider whether it is switched on
+  or not.
+  `POST /identity-providers/check` then says what it came to: whether the provider took the
+  client secret, who signed in, the groups it sent and the scope those give them.
 
 #### Web interface
 
@@ -54,6 +59,9 @@ public API is unstable and may change without a deprecation period.
   lists their groups, and a click gives one a scope.
 - A provider's page ends every session one person holds through it, by the name a commit
   gives them.
+- An OpenID Connect provider's page tries a sign-in before the provider is switched on, and
+  its check column shows who came back and with which groups, each given a scope with a
+  click.
 
 #### CLI
 

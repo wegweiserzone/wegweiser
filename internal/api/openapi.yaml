@@ -1201,6 +1201,34 @@ paths:
           description: Their sessions are ended.
         default: { $ref: "#/components/responses/Problem" }
 
+  /identity-providers/{providerId}/try-sign-in:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        description: The ULID of an OpenID Connect provider.
+        schema: { type: string }
+    get:
+      operationId: tryOIDCSignIn
+      tags: [identity]
+      summary: Sign in through a provider to see what a sign-in would give, and open no session
+      description: |
+        A navigation, not a call, and an administrator's: the browser is sent
+        through a sign-in as `/auth/oidc/{providerId}/start` sends it, to a
+        provider that may be switched off, and whoever signs in there is
+        checked as a sign-in would check them. No session is opened.
+
+        The browser comes back to `/providers/{providerId}#tried=` and a value
+        sealed under the session key, which `POST /identity-providers/check`
+        takes as `signIn` and answers with what the sign-in came to: whether
+        the provider took the client secret and the redirect URI, who signed
+        in, the groups it sent and the scope those give them. The value is
+        good for ten minutes and for this provider alone.
+      responses:
+        "302":
+          description: To the provider, or straight back to the provider's page with what failed.
+        default: { $ref: "#/components/responses/Problem" }
+
   /identity-providers/check:
     post:
       operationId: checkIdentityProvider
@@ -2740,6 +2768,13 @@ components:
             their password. Refused for an OpenID Connect provider, which says
             who somebody is only once they have signed in.
           example: alice
+        signIn:
+          type: string
+          description: |
+            What a sign-in `/identity-providers/{providerId}/try-sign-in`
+            started came to, as the browser brought it back, with `id` naming
+            the same provider. The answer is that sign-in's rather than a
+            check's, and nothing else in the request is looked at.
 
     IdentityProviderCheck:
       type: object
@@ -2773,14 +2808,16 @@ components:
 
     CheckedPerson:
       type: object
-      description: Who a directory says a username is, as a sign-in would find them.
-      required: [dn, name, groups]
+      description: Who a provider says somebody is, as a sign-in would find them.
+      required: [subject, name, groups]
       properties:
-        dn: { type: string }
+        subject:
+          type: string
+          description: Their entry's DN in a directory, or their subject at an OpenID Connect provider.
         name: { type: string, description: What a commit would call them. }
         groups:
           type: array
-          description: The groups the directory says they are in, as DNs.
+          description: The groups the provider says they are in; a directory gives them as DNs.
           items: { type: string }
         scope: { $ref: "#/components/schemas/Scope" }
 

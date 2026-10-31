@@ -9,10 +9,10 @@
    */
   import { untrack } from "svelte";
 
-  import { goto } from "$app/navigation";
+  import { goto, replaceState } from "$app/navigation";
   import { page } from "$app/state";
   import { asked } from "#lib/asked.ts";
-  import { api, ApiError, NetworkError } from "#lib/api/index.ts";
+  import { api, ApiError, basePath, NetworkError } from "#lib/api/index.ts";
   import type {
     CheckStep,
     IdentityProvider,
@@ -233,6 +233,15 @@
     try {
       stored = await api.get("/identity-providers/{providerId}", { path: { providerId: which } });
       draft = toDraft(stored);
+      // A sign-in tried from here comes back with what it came to in the
+      // fragment. It is shown once and taken out of the address.
+      const url = new URL(window.location.href);
+      const tried = new URLSearchParams(url.hash.slice(1)).get("tried");
+      if (tried) {
+        url.hash = "";
+        replaceState(url, {});
+        void showTried(stored.id, tried);
+      }
     } catch (err) {
       stored = null;
       trouble =
@@ -332,6 +341,25 @@
     }
   }
 
+  /** trySignIn sends the browser through a sign-in that opens no session, and back here. */
+  function trySignIn() {
+    if (stored) window.location.assign(`${basePath}/identity-providers/${stored.id}/try-sign-in`);
+  }
+
+  async function showTried(providerId: string, signIn: string) {
+    checking = true;
+    try {
+      checked = await api.post("/identity-providers/check", { body: { id: providerId, signIn } });
+      checkedDraft = connection(draft);
+    } catch (err) {
+      checked = null;
+      refused =
+        err instanceof ApiError ? (err.detail ?? err.title) : "The sign-in tried could not be read.";
+    } finally {
+      checking = false;
+    }
+  }
+
   async function check() {
     checking = true;
     refused = null;
@@ -368,9 +396,11 @@
 
   /**
    * shortName is a group by the value of its first RDN, which is what a
-   * mapping usually names it by and what the server compares too (D51).
+   * mapping usually names it by and what the server compares too (D51). An
+   * OpenID Connect provider's groups are names already, and kept whole.
    */
   function shortName(dn: string): string {
+    if (draft.kind === "oidc") return dn;
     const first = dn.split(",")[0] ?? dn;
     const at = first.indexOf("=");
     return at >= 0 ? first.slice(at + 1) : dn;
@@ -860,6 +890,17 @@
           signing in. Nothing is saved by it.
         </p>
 
+        {#if draft.kind === "oidc" && stored}
+          <div class="flex flex-col gap-1.5">
+            <Button onclick={trySignIn} disabled={dirty}>Try signing in</Button>
+            <p class="text-[12px] text-ink-mute">
+              {dirty
+                ? "Save first: a sign-in goes through the provider as it is saved."
+                : "Signs in at the provider, switched on or not, and shows who came back and with which groups. No session is opened."}
+            </p>
+          </div>
+        {/if}
+
         {#if draft.kind === "ldap"}
           <Field
             label="Look somebody up"
@@ -908,7 +949,7 @@
                     <Chip tone="crit">refused</Chip>
                   {/if}
                 </p>
-                <p class="num text-[11px] break-all text-ink-faint">{person.dn}</p>
+                <p class="num text-[11px] break-all text-ink-faint">{person.subject}</p>
               </div>
               {#if person.groups.length > 0}
                 <ul class="flex flex-col divide-y divide-line-soft" aria-label="Their groups">

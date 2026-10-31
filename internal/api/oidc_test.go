@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -148,6 +149,9 @@ type browser struct {
 	t      *testing.T
 	client *http.Client
 	jar    map[string]*http.Cookie
+	// bearer, when set, is sent as well, for a step only an administrator
+	// may take.
+	bearer string
 }
 
 func newBrowser(t *testing.T) *browser {
@@ -165,6 +169,9 @@ func (b *browser) get(target string) *http.Response {
 	}
 	for _, c := range b.jar {
 		req.AddCookie(c)
+	}
+	if b.bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+b.bearer)
 	}
 	resp, err := b.client.Do(req)
 	if err != nil {
@@ -413,5 +420,72 @@ func TestTheSignInPageIsToldWhichProvidersThereAre(t *testing.T) {
 		http.StatusOK, &listed)
 	if len(listed) != 1 || listed[0].Name != "Authentik" || listed[0].Kind != gen.IdentityProviderKindOidc {
 		t.Errorf("listed %+v, want the one switched on, asked without a credential", listed)
+	}
+}
+
+// An administrator tries a sign-in through a provider that is switched off,
+// and sees what it gives without anybody being signed in by it.
+func TestAnAdministratorTriesASignInThroughOpenIDConnect(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	idp := newTestIDP(t)
+	p := addOIDCProvider(t, h, idp)
+	in := gen.IdentityProviderInput{Name: p.Name, Kind: p.Kind, Enabled: ptr(false), Mappings: &p.Mappings, CaCertificate: p.CaCertificate, Oidc: p.Oidc}
+	h.decode(h.do(http.MethodPut, "/identity-providers/"+p.Id, in), http.StatusOK, nil)
+
+	check := func(id, sealed string) *http.Response {
+		return h.do(http.MethodPost, "/identity-providers/check", gen.IdentityProviderCheckRequest{Id: &id, SignIn: &sealed})
+	}
+	try := func(t *testing.T, claims map[string]any) (gen.IdentityProviderCheck, string) {
+		t.Helper()
+		b := newBrowser(t)
+		b.bearer = h.token
+		start := b.get(h.http.URL + basePath + "/identity-providers/" + p.Id + "/try-sign-in")
+		b.bearer = ""
+		if start.StatusCode != http.StatusFound || b.jar[flowCookie] == nil {
+			t.Fatalf("the start answered %d, want a redirect carrying the flow", start.StatusCode)
+		}
+		done := b.get(idp.authorize(t, start.Header.Get("Location"), claims).String())
+		landed, err := url.Parse(done.Header.Get("Location"))
+		if err != nil || done.StatusCode != http.StatusFound || landed.Path != "/providers/"+p.Id {
+			t.Fatalf("the callback answered %d to %s, want the provider's page", done.StatusCode, landed)
+		}
+		if b.jar[sessionCookie] != nil || b.jar[flowCookie] != nil || landed.RawQuery != "" {
+			t.Errorf("a tried sign-in left cookies %v and query %q, want neither", b.jar, landed.RawQuery)
+		}
+		frag, err := url.ParseQuery(landed.Fragment)
+		if err != nil {
+			t.Fatalf("the fragment %q: %v", landed.Fragment, err)
+		}
+		var got gen.IdentityProviderCheck
+		h.decode(check(p.Id, frag.Get("tried")), http.StatusOK, &got)
+		return got, frag.Get("tried")
+	}
+
+	got, sealed := try(t, map[string]any{"preferred_username": "alice", "groups": []string{"dns-ops", "staff"}})
+	if who := got.Person; !got.Ok || who == nil || who.Name != "alice" || who.Subject != "u-1" ||
+		len(who.Groups) != 2 || who.Scope == nil || *who.Scope != gen.ScopeWrite {
+		t.Errorf("tried = %+v, want alice, her groups and write", got)
+	}
+
+	// Somebody it would refuse is what the sign-in came to, not a failure to try.
+	if got, _ := try(t, map[string]any{"preferred_username": "mallory", "groups": []string{"staff"}}); got.Ok ||
+		got.Person == nil || got.Person.Scope != nil {
+		t.Errorf("tried = %+v, want mallory, refused", got)
+	}
+	if got, _ := try(t, map[string]any{"preferred_username": "bob"}); got.Ok ||
+		!slices.ContainsFunc(got.Steps, func(s gen.CheckStep) bool {
+			return s.Step == "The groups claim" && s.Status == gen.CheckStepStatusFailed
+		}) {
+		t.Errorf("tried = %+v, want the missing groups claim said", got)
+	}
+
+	// What came back is good for the provider it was tried through, and is
+	// nothing anybody can write.
+	h.decode(check("01ARZ3NDEKTSV4RRFFQ69G5FAV", sealed), http.StatusBadRequest, nil)
+	h.decode(check(p.Id, sealed[:len(sealed)-2]), http.StatusBadRequest, nil)
+
+	if got := newBrowser(t).get(h.http.URL + basePath + "/identity-providers/" + p.Id + "/try-sign-in"); got.StatusCode != http.StatusUnauthorized {
+		t.Errorf("trying without a credential answered %d, want 401", got.StatusCode)
 	}
 }

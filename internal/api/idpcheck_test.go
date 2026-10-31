@@ -64,7 +64,7 @@ func TestADirectoryIsChecked(t *testing.T) {
 			gen.GroupMapping{Group: "admins", Scope: gen.ScopeAdmin})
 		got := h.check(t, p.Id, "alice")
 		if !got.Ok || got.Person == nil || got.Person.Scope == nil || *got.Person.Scope != gen.ScopeAdmin ||
-			got.Person.Dn != "uid=alice,"+usersBase || len(got.Person.Groups) != 2 {
+			got.Person.Subject != "uid=alice,"+usersBase || len(got.Person.Groups) != 2 {
 			t.Fatalf("check = %s, person %+v; want alice, in two groups, with admin", statuses(got), got.Person)
 		}
 		// Without a password: nobody but the service account was bound as.
