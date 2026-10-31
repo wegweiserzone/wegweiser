@@ -425,7 +425,7 @@ func (s *Server) openedSession(ctx context.Context, value string) (*session, *su
 		}
 		id := endedID(sess.ID)
 		for _, e := range ended {
-			if e.ID == id {
+			if e.Ends(id, sess.Provider, sess.Name, sess.Expires) {
 				return ErrTokenInvalid
 			}
 		}

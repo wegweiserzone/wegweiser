@@ -84,6 +84,15 @@ func TestIdentityProviders(t *testing.T) {
 		}
 	})
 
+	t.Run("a person's sessions are ended by their name", func(t *testing.T) {
+		if out := mustRun(t, srv, "idp", "end-sessions", "freeipa", "alice"); !strings.Contains(out, "alice through FreeIPA") {
+			t.Errorf("output = %q, want it said whose sessions ended", out)
+		}
+		if code, _, _ := run(t, srv, "idp", "end-sessions", "FreeIPA", " "); code == ExitOK {
+			t.Error("ending the sessions of nobody succeeded")
+		}
+	})
+
 	t.Run("removing one leaves the other", func(t *testing.T) {
 		mustRun(t, srv, "idp", "remove", "Authentik", "--yes")
 		if out := mustRun(t, srv, "idp", "list"); strings.Contains(out, "Authentik") || !strings.Contains(out, "FreeIPA") {

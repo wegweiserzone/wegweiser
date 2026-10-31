@@ -1165,6 +1165,42 @@ paths:
           description: The provider is gone.
         default: { $ref: "#/components/responses/Problem" }
 
+  /identity-providers/{providerId}/end-sessions:
+    parameters:
+      - name: providerId
+        in: path
+        required: true
+        description: The ULID of the provider the person signed in through.
+        schema: { type: string }
+    post:
+      operationId: endIdentityProviderSessions
+      tags: [identity]
+      summary: End every session one person holds through a provider
+      description: |
+        A person keeps the scope their groups gave them until their session
+        ends, at most twelve hours. This ends every session they hold through
+        the provider at once, on every member, so that someone removed from a
+        group upstream loses what it gave them now. They can sign in again, and
+        get what their groups give them then.
+
+        The person is named as a commit names them, without the provider in
+        brackets, and compared without case.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  example: alice
+      responses:
+        "204":
+          description: Their sessions are ended.
+        default: { $ref: "#/components/responses/Problem" }
+
   /identity-providers/check:
     post:
       operationId: checkIdentityProvider

@@ -132,6 +132,13 @@ test("a directory keeps its bind password to itself", async ({ page, server }) =
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Saved. A session already open")).toBeVisible();
 
+  // Somebody's sessions are ended by their name, and Enter there does not
+  // save the provider.
+  await page.getByLabel("Person", { exact: true }).fill("alice");
+  await page.getByLabel("Person", { exact: true }).press("Enter");
+  await expect(page.getByText("Every session of alice through IPA is ended.")).toBeVisible();
+  await expect(page.getByLabel("Person", { exact: true })).toHaveValue("");
+
   // Nothing listens there, and the check says where it stopped.
   await page.getByLabel("Look somebody up").fill("alice");
   await page.getByRole("button", { name: "Check", exact: true }).click();

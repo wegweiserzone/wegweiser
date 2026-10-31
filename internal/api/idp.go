@@ -101,6 +101,20 @@ func (s *Server) DeleteIdentityProvider(
 	return gen.DeleteIdentityProvider204Response{}, nil
 }
 
+// EndIdentityProviderSessions ends every session one person holds through a
+// provider (D51).
+func (s *Server) EndIdentityProviderSessions(
+	ctx context.Context, req gen.EndIdentityProviderSessionsRequestObject,
+) (gen.EndIdentityProviderSessionsResponseObject, error) {
+	if err := requireAdmin(ctx, "ending somebody's sessions"); err != nil {
+		return nil, err
+	}
+	if err := s.applier.EndPersonSessions(ctx, req.ProviderId, req.Body.Name); err != nil {
+		return nil, err
+	}
+	return gen.EndIdentityProviderSessions204Response{}, nil
+}
+
 // identityProviders reads the providers the store holds.
 func (s *Server) identityProviders(ctx context.Context) ([]apply.IdentityProvider, error) {
 	var list []apply.IdentityProvider

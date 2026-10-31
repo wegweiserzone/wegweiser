@@ -35,6 +35,9 @@ public API is unstable and may change without a deprecation period.
   discovery document, a directory's connection, bind and bases. Given a username, a
   directory also says who that is, which groups they are in and the scope those give them,
   without a password.
+- `POST /identity-providers/{providerId}/end-sessions` ends every session one person holds
+  through a provider, on every member, so that somebody taken out of a group upstream loses
+  what it gave them at once rather than when their session runs out. They can sign in again.
 
 #### Web interface
 
@@ -49,12 +52,15 @@ public API is unstable and may change without a deprecation period.
 - A provider's page checks it as its fields stand, saved or not, in a column beside the
   form, and says when the fields have changed since. Looking somebody up in a directory
   lists their groups, and a click gives one a scope.
+- A provider's page ends every session one person holds through it, by the name a commit
+  gives them.
 
 #### CLI
 
 - `weg idp` adds, lists, shows, changes and removes the identity providers and their group
   mappings. A client secret or bind password is read from a file, or from standard input
-  with `-`, so that it stays out of the shell's history.
+  with `-`, so that it stays out of the shell's history. `weg idp end-sessions PROVIDER NAME`
+  ends every session one person holds through a provider.
 - `weg login` signs a person in through an identity provider: a directory asks for the
   name and password in the terminal, without echo, and an OpenID Connect provider opens a
   browser that comes back to the command. The session is kept per server address in a

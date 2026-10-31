@@ -188,6 +188,54 @@ func TestAPersonSignsInThroughADirectory(t *testing.T) {
 	}
 }
 
+// D51: an administrator ends every session one person holds, and nobody
+// else's; the person can sign in again afterwards.
+func TestAnAdministratorEndsEverySessionOfOnePerson(t *testing.T) {
+	t.Parallel()
+	h, _, p := directoryHarness(t, string(apply.GroupsMemberOf),
+		gen.GroupMapping{Group: "admins", Scope: gen.ScopeAdmin}, gen.GroupMapping{Group: "staff", Scope: gen.ScopeRead})
+
+	session := func(name, password string) func(*http.Request) {
+		value, csrf := cookiesOf(t, signInToDirectory(h, p, name, password))
+		return func(r *http.Request) {
+			r.Header.Del("Authorization")
+			r.AddCookie(&http.Cookie{Name: sessionCookie, Value: value})
+			r.Header.Set(csrfHeader, csrf)
+		}
+	}
+	status := func(as func(*http.Request)) int {
+		resp := h.do(http.MethodGet, "/auth/session", nil, as)
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	alice, aliceAgain, bob := session("alice", "correct horse"), session("alice", "correct horse"), session("bob", "battery staple")
+
+	end := func(name string) *http.Response {
+		return h.do(http.MethodPost, "/identity-providers/"+p.Id+"/end-sessions",
+			gen.EndIdentityProviderSessionsJSONRequestBody{Name: name})
+	}
+	h.decode(end("Alice"), http.StatusNoContent, nil)
+	if status(alice) != http.StatusUnauthorized || status(aliceAgain) != http.StatusUnauthorized {
+		t.Error("alice's sessions still work after they were ended")
+	}
+	if got := status(bob); got != http.StatusOK {
+		t.Errorf("bob's session: status %d, want it untouched", got)
+	}
+	if got := status(session("alice", "correct horse")); got != http.StatusOK {
+		t.Errorf("alice signing in again: status %d, want 200", got)
+	}
+
+	h.decode(end(" "), http.StatusUnprocessableEntity, nil)
+	if resp := h.do(http.MethodPost, "/identity-providers/01ARZ3NDEKTSV4RRFFQ69G5FAV/end-sessions",
+		gen.EndIdentityProviderSessionsJSONRequestBody{Name: "alice"}); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("no such provider: status %d, want 404", resp.StatusCode)
+	}
+	if got := h.do(http.MethodPost, "/identity-providers/"+p.Id+"/end-sessions",
+		gen.EndIdentityProviderSessionsJSONRequestBody{Name: "alice"}, bob); got.StatusCode != http.StatusForbidden {
+		t.Errorf("bob, with read, ending alice's sessions: status %d, want 403", got.StatusCode)
+	}
+}
+
 func TestASignInThroughADirectoryIsRefused(t *testing.T) {
 	t.Parallel()
 	h, d, p := directoryHarness(t, string(apply.GroupsMemberOf), gen.GroupMapping{Group: "admins", Scope: gen.ScopeAdmin})

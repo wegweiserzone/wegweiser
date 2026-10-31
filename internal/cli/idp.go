@@ -59,6 +59,7 @@ func newIDPCommand(opts *options) *cobra.Command {
 	cmd.AddCommand(add)
 	cmd.AddCommand(newIDPSetCommand(opts, &f))
 	cmd.AddCommand(newIDPCheckCommand(opts, &f))
+	cmd.AddCommand(newIDPEndSessionsCommand(opts, &f))
 	cmd.AddCommand(newIDPRemoveCommand(opts, &f))
 	return cmd
 }
@@ -609,6 +610,48 @@ func newIDPRemoveCommand(opts *options, f *clientFlags) *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "remove without asking")
 	return cmd
+}
+
+// sessionsEnded is what end-sessions reports.
+type sessionsEnded struct {
+	Provider string `json:"provider"`
+	Name     string `json:"name"`
+}
+
+func newIDPEndSessionsCommand(opts *options, f *clientFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "end-sessions PROVIDER NAME",
+		Short: "End every session one person holds through a provider",
+		Long: "End every session the person holds through the provider, on every\n" +
+			"member, so that they keep nothing a group they have left upstream gave\n" +
+			"them. They can sign in again. NAME is what a commit calls them, without\n" +
+			"the provider in brackets, and is compared without case.",
+		Args:              usageArgs(cobra.ExactArgs(2)),
+		Example:           "  weg idp end-sessions FreeIPA alice",
+		ValidArgsFunction: completeIDPs(f),
+		RunE: func(c *cobra.Command, args []string) error {
+			client, err := f.client()
+			if err != nil {
+				return err
+			}
+			p, err := pickIDP(c.Context(), client, args[0])
+			if err != nil {
+				return err
+			}
+			resp, err := client.EndIdentityProviderSessionsWithResponse(c.Context(), p.Id,
+				gen.EndIdentityProviderSessionsJSONRequestBody{Name: args[1]})
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode() != http.StatusNoContent {
+				return apiError(resp.StatusCode(), resp.Body)
+			}
+			return opts.Printer().Print(sessionsEnded{Provider: p.Name, Name: args[1]}, func(w io.Writer) error {
+				_, werr := fmt.Fprintf(w, "ended every session of %s through %s\n", args[1], p.Name)
+				return werr
+			})
+		},
+	}
 }
 
 func fetchIDPs(ctx context.Context, client *gen.ClientWithResponses) ([]gen.IdentityProvider, error) {

@@ -885,6 +885,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/identity-providers/{providerId}/end-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of the provider the person signed in through. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End every session one person holds through a provider
+         * @description A person keeps the scope their groups gave them until their session
+         *     ends, at most twelve hours. This ends every session they hold through
+         *     the provider at once, on every member, so that someone removed from a
+         *     group upstream loses what it gave them now. They can sign in again, and
+         *     get what their groups give them then.
+         *
+         *     The person is named as a commit names them, without the provider in
+         *     brackets, and compared without case.
+         */
+        post: operations["endIdentityProviderSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/identity-providers/check": {
         parameters: {
             query?: never;
@@ -3460,6 +3490,35 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description The provider is gone. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    endIdentityProviderSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ULID of the provider the person signed in through. */
+                providerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @example alice */
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Their sessions are ended. */
             204: {
                 headers: {
                     [name: string]: unknown;

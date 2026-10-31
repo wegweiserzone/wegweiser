@@ -221,6 +221,8 @@
     trouble = null;
     refused = null;
     checked = null;
+    ended = null;
+    person = "";
     if (which === "new") {
       stored = null;
       draft = blank(page.url.searchParams.get("kind") === "ldap" ? "ldap" : "oidc");
@@ -299,6 +301,34 @@
         err instanceof ApiError ? (err.detail ?? err.title) : "The provider was not saved.";
     } finally {
       saving = false;
+    }
+  }
+
+  /** Whose sessions to end, and what came of the last attempt. */
+  let person = $state("");
+  let endingSessions = $state(false);
+  let ended = $state<{ ok: boolean; text: string } | null>(null);
+
+  async function endSessions(event: SubmitEvent) {
+    event.preventDefault();
+    if (!stored) return;
+    const name = person.trim();
+    endingSessions = true;
+    ended = null;
+    try {
+      await api.post("/identity-providers/{providerId}/end-sessions", {
+        path: { providerId: stored.id },
+        body: { name },
+      });
+      ended = { ok: true, text: `Every session of ${name} through ${stored.name} is ended.` };
+      person = "";
+    } catch (err) {
+      ended = {
+        ok: false,
+        text: err instanceof ApiError ? (err.detail ?? err.title) : "Their sessions were not ended.",
+      };
+    } finally {
+      endingSessions = false;
     }
   }
 
@@ -780,7 +810,45 @@
             ></textarea>
           </Row>
         </Section>
+
+        {#if stored}
+          <Section heading="Sessions">
+            {#snippet blurb()}
+              A person keeps the scope their groups gave them until their session ends, at most
+              twelve hours. Ending their sessions takes it back now, on every member. They can sign
+              in again, and get what their groups give them then.
+            {/snippet}
+            <Row title="End someone's">
+              {#snippet about()}
+                Their name as a commit gives it, without the provider in brackets.
+              {/snippet}
+              <!-- The field and button belong to the form after this one, which
+                   a form cannot hold, so that Enter here ends sessions rather
+                   than saving the provider. -->
+              <div class="flex flex-wrap items-end gap-x-3 gap-y-3">
+                <div class="min-w-56 flex-1">
+                  <Field
+                    id="end-sessions-person"
+                    label="Person"
+                    form="end-sessions"
+                    bind:value={person}
+                    placeholder="alice"
+                    spellcheck={false}
+                    autocomplete="off"
+                  />
+                </div>
+                <Button type="submit" form="end-sessions" disabled={endingSessions || !person.trim()}>
+                  {endingSessions ? "Ending…" : "End their sessions"}
+                </Button>
+              </div>
+              {#if ended}
+                <p class="text-xs {ended.ok ? 'text-signal' : 'text-crit'}" role="status">{ended.text}</p>
+              {/if}
+            </Row>
+          </Section>
+        {/if}
       </form>
+      <form id="end-sessions" class="hidden" onsubmit={endSessions}></form>
 
       <aside id="check" class="flex flex-col gap-4 xl:sticky xl:top-6 xl:self-start" aria-label="Check it">
         <div class="flex items-center justify-between gap-3 border-b border-line pb-2.5">

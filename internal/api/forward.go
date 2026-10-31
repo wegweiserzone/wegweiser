@@ -48,6 +48,8 @@ var writes = map[string]bool{
 	"POST /identity-providers":                true,
 	"PUT /identity-providers/{providerId}":    true,
 	"DELETE /identity-providers/{providerId}": true,
+
+	"POST /identity-providers/{providerId}/end-sessions": true,
 }
 
 // forwardedHeader carries who a forwarded write is from. It is read on the

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/wegweiserzone/wegweiser/internal/store"
@@ -185,15 +186,46 @@ func StoredSessionKeys(ctx context.Context, r store.Reader) (SessionKeys, error)
 	return keys, nil
 }
 
-// EndedSession is one session ended before its time.
+// EndedSession is one session ended before its time, or every session one
+// person had open when an administrator ended them.
 type EndedSession struct {
 	// ID is the SHA-256 of the session's identifier, in hex. What is stored
 	// is not what a cookie carries, for the reason D5 stores a token's hash.
-	ID string `json:"id"`
+	ID string `json:"id,omitempty"`
+
+	// Provider and Name, given in place of ID, are a person as their sessions
+	// carry them: the provider they signed in through and what they are
+	// called in a commit, compared without case.
+	Provider string `json:"idp,omitempty"`
+	Name     string `json:"name,omitempty"`
 
 	// Until is when the session would have ended anyway. After it there is
-	// nothing left to refuse, and the entry is dropped.
+	// nothing left to refuse, and the entry is dropped. For a person it is
+	// one lifetime after they were ended, so that it covers every session
+	// opened before and none opened after.
 	Until time.Time `json:"until"`
+}
+
+// Ends reports whether the entry refuses a session: the one by this hashed
+// identifier, or one of this person's that ends no later than the entry.
+//
+// shortcut: this trusts the members' clocks to agree with the leader's, as
+// every session's expiry already does. A member whose clock is behind refuses
+// a person signing in again for the difference; one whose clock is ahead lets
+// a session it opened that much before the end survive it. Worth a margin if
+// members are ever expected to run without time sync.
+func (e EndedSession) Ends(id, provider, name string, expires time.Time) bool {
+	if e.ID != "" {
+		return e.ID == id
+	}
+	return e.Provider != "" && e.Provider == provider && strings.EqualFold(e.Name, name) &&
+		!expires.After(e.Until)
+}
+
+// replaces reports whether e and o name the same session or the same person,
+// so that one written second takes the place of the first.
+func (e EndedSession) replaces(o EndedSession) bool {
+	return e.ID == o.ID && e.Provider == o.Provider && strings.EqualFold(e.Name, o.Name)
 }
 
 // StoredEndedSessions returns the sessions ended before their time, including
@@ -214,15 +246,44 @@ func StoredEndedSessions(ctx context.Context, r store.Reader) ([]EndedSession, e
 }
 
 // EndSession records a session as ended, so that no member opens it again.
+func (a *Applier) EndSession(ctx context.Context, id string, until time.Time) error {
+	if id == "" {
+		return fmt.Errorf("%w: no session named to end", zone.ErrInvalid)
+	}
+	return a.endSessions(ctx, func(_ store.Reader, _ time.Time) (EndedSession, error) {
+		return EndedSession{ID: id, Until: until.UTC()}, nil
+	})
+}
+
+// EndPersonSessions ends every session the person by this name holds through
+// the provider, so that they sign in again and get what their groups give
+// them now (D51).
+func (a *Applier) EndPersonSessions(ctx context.Context, provider, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("%w: name the person whose sessions are to end", zone.ErrInvalid)
+	}
+	return a.endSessions(ctx, func(r store.Reader, now time.Time) (EndedSession, error) {
+		providers, err := StoredIdentityProviders(ctx, r)
+		if err != nil {
+			return EndedSession{}, err
+		}
+		if !slices.ContainsFunc(providers, func(p IdentityProvider) bool { return p.ID == provider }) {
+			return EndedSession{}, fmt.Errorf("%w: no identity provider %s", store.ErrNotFound, provider)
+		}
+		return EndedSession{Provider: provider, Name: name, Until: now.Add(SessionLifetime).UTC()}, nil
+	})
+}
+
+// endSessions adds the entry entry works out to the list of ended sessions.
 //
 // The list is written whole, and the entries whose sessions would have ended
 // by now are dropped while it is planned, so that every node is handed the
 // same list rather than each pruning by its own clock (D24). It never holds
 // more than one lifetime's worth.
-func (a *Applier) EndSession(ctx context.Context, id string, until time.Time) error {
-	if id == "" {
-		return fmt.Errorf("%w: no session named to end", zone.ErrInvalid)
-	}
+func (a *Applier) endSessions(
+	ctx context.Context, entry func(store.Reader, time.Time) (EndedSession, error),
+) error {
 	ctx, done, serr := a.settle(ctx)
 	if serr != nil {
 		return serr
@@ -232,21 +293,27 @@ func (a *Applier) EndSession(ctx context.Context, id string, until time.Time) er
 	defer unlock()
 
 	now := a.now()
-	if !now.Before(until) {
-		return nil
-	}
-	var ended []EndedSession
+	var (
+		ended []EndedSession
+		next  EndedSession
+	)
 	if err := a.store.View(ctx, func(r store.Reader) error {
 		var verr error
+		if next, verr = entry(r, now); verr != nil {
+			return verr
+		}
 		ended, verr = StoredEndedSessions(ctx, r)
 		return verr
 	}); err != nil {
 		return err
 	}
+	if !now.Before(next.Until) {
+		return nil
+	}
 	ended = slices.DeleteFunc(ended, func(e EndedSession) bool {
-		return e.ID == id || !now.Before(e.Until)
+		return e.replaces(next) || !now.Before(e.Until)
 	})
-	ended = append(ended, EndedSession{ID: id, Until: until.UTC()})
+	ended = append(ended, next)
 
 	raw, err := json.Marshal(ended)
 	if err != nil {
