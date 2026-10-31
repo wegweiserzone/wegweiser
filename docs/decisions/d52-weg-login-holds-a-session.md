@@ -75,3 +75,11 @@ instead of opening it and listens on a port fixed in advance.
 Built as described. The server's half is in `internal/api/oidc.go`, the seal in
 `internal/api/handoff`, which both halves import, and the CLI's in `internal/cli/login.go`
 and `internal/cli/sessions.go`. Approving a sign-in by code is not built.
+
+The loopback takes whatever reaches it first. Port and key travel in the address the browser
+opens, which another user on the same machine can read from the process list, and a public
+key is one anybody can seal to. Such a user can hand `weg login` a session of their own
+before the browser comes back. `weg login` says whom it signed in as, so the swap shows, but
+nothing stops it. Closing it takes a value the CLI keeps to itself and the server checks when
+the outcome is collected, which means holding that outcome somewhere until then: the state
+this record kept out of signing in.

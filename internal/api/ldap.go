@@ -199,6 +199,9 @@ func (s *Server) signInToDirectory(
 	if err != nil {
 		return nil, err
 	}
+	// shortcut: answered alike, but a name the directory has costs the bind
+	// below and one it lacks does not, so the time tells them apart; a bind
+	// against a DN nobody has would even it out, if names ever need hiding.
 	if len(found) != 1 {
 		return nil, errNotSignedIn
 	}
