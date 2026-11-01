@@ -102,7 +102,10 @@ echo "--- a server that does not come back after an upgrade leaves dpkg working"
 systemctl start wegweiser
 serving "$(version_of "$new")" || fail "weg health did not report $(version_of "$new")"
 mv "$config" "$config.away"
-dpkg -i "$new" >/dev/null 2>&1 || fail "dpkg failed because the restart did"
+dpkg -i "$new" >/tmp/systemd-test-dpkg.log 2>&1 || {
+	cat /tmp/systemd-test-dpkg.log >&2
+	fail "dpkg failed because the restart did"
+}
 dpkg-query -W -f '${Status}' wegweiser | grep -q 'install ok installed' ||
 	fail "the package is $(dpkg-query -W -f '${Status}' wegweiser)"
 mv "$config.away" "$config"

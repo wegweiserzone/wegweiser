@@ -30,7 +30,7 @@ if [ ! -e "$config" ]; then
 fi
 
 if [ -d /run/systemd/system ]; then
-	systemctl daemon-reload
+	systemctl daemon-reload || true
 	# A server that was running runs the new binary; one that was stopped
 	# stays stopped. One that does not come back is reported, not fatal: a
 	# failing script would leave the package manager stuck for everything else

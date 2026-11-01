@@ -13,5 +13,5 @@ if [ "$1" = purge ]; then
 fi
 
 if [ -d /run/systemd/system ]; then
-	systemctl daemon-reload
+	systemctl daemon-reload || true
 fi
