@@ -119,7 +119,9 @@ dpkg -r wegweiser >/dev/null
 echo ok
 
 echo "--- purging takes the configuration and keeps the database"
-dpkg -i "$new" >/dev/null
+dpkg -i "$new" >/tmp/systemd-test-dpkg.log 2>&1
+grep -q "enable --now" /tmp/systemd-test-dpkg.log ||
+	fail "installing again after a removal does not say how to start it"
 dpkg --purge wegweiser >/dev/null
 [ ! -e /etc/wegweiser ] || fail "purging left /etc/wegweiser"
 [ -f "$state/wegweiser.db" ] || fail "purging took the database"
