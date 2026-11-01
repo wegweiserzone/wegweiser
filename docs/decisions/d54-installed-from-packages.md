@@ -97,5 +97,5 @@ Built for both projects. The release workflows attach the packages to every rele
 installs, upgrades and removes them under systemd, in a minimal Ubuntu image, and in Rocky
 Linux and Fedora. The workflow that builds the repository, signs it and uploads it is in the
 wegweiser.zone repository, and installs from what it uploaded on Debian, Ubuntu, Rocky Linux,
-Fedora and openSUSE. Both units read their configuration as a credential. The repository
-holds nothing until the first release that carries packages has been published to it.
+Fedora and openSUSE. Both units read their configuration as a credential. The repository is
+published, and holds every release from the first that carried packages.
