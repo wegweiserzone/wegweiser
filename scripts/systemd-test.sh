@@ -127,7 +127,7 @@ echo ok
 
 echo "--- a first installation writes the example as the configuration, mode 0600"
 dpkg -i "$new" >/dev/null
-cmp -s "$config" /usr/share/doc/wegweiser/wegweiser.example.yaml || fail "$config is not the example"
+cmp -s "$config" /usr/share/wegweiser/wegweiser.example.yaml || fail "$config is not the example"
 [ "$(stat -c '%a %U' "$config")" = "600 root" ] || fail "$config is $(stat -c '%a %U' "$config")"
 echo ok
 

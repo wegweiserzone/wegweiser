@@ -10,7 +10,7 @@ set -eu
 old=$1
 new=$2
 config=/etc/wegweiser/config.yaml
-example=/usr/share/doc/wegweiser/wegweiser.example.yaml
+example=/usr/share/wegweiser/wegweiser.example.yaml
 
 fail() {
 	echo "FAIL: $*" >&2

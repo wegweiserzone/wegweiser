@@ -26,7 +26,7 @@ config=/etc/wegweiser/config.yaml
 # the cluster's secret; the unit hands it to the service as a credential.
 if [ ! -e "$config" ]; then
 	install -d -m 0755 /etc/wegweiser
-	install -m 0600 -o root -g root /usr/share/doc/wegweiser/wegweiser.example.yaml "$config"
+	install -m 0600 -o root -g root /usr/share/wegweiser/wegweiser.example.yaml "$config"
 fi
 
 if [ -d /run/systemd/system ]; then
