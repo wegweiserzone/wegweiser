@@ -8,7 +8,7 @@ Wants=network-online.target
 
 [Service]
 Type=exec
-ExecStart=/usr/bin/weg serve
+ExecStart=/usr/bin/weg serve --config ${CREDENTIALS_DIRECTORY}/config.yaml
 
 # No ExecReload on purpose. There is nothing here to reload: the file holds
 # bootstrap settings only (docs/decisions/ D11), and everything an operator
@@ -22,11 +22,17 @@ ExecStart=/usr/bin/weg serve
 DynamicUser=yes
 
 # StateDirectory creates and owns /var/lib/wegweiser, which is where the
-# example configuration puts the database. ConfigurationDirectory is
-# /etc/wegweiser, which weg reads by default.
+# example configuration puts the database.
 StateDirectory=wegweiser
 StateDirectoryMode=0700
 ConfigurationDirectory=wegweiser
+
+# The configuration can hold the cluster's secret, so it wants to be readable by
+# root alone, and a dynamic user is no user a file can be given to. systemd
+# reads it as root and hands the service a copy only the service can read
+# (docs/decisions/ D54). The copy is taken at each start, which is the only time
+# weg reads it. A missing file stops the start rather than running on defaults.
+LoadCredential=config.yaml:/etc/wegweiser/config.yaml
 
 # Port 53 without root (architecture invariant 7). AmbientCapabilities grants
 # it to the process; CapabilityBoundingSet is what stops it acquiring anything

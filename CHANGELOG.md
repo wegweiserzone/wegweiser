@@ -8,7 +8,15 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+#### Packaging
+
+- The systemd unit reads `/etc/wegweiser/config.yaml` as a credential, so the file can be
+  mode 0600 and owned by root, as one holding the cluster's secret should be. The service
+  runs as a dynamic user, and until now could read the file only if every account on the
+  host could. The service no longer starts without the file, rather than running on the
+  defaults. A unit installed by hand has to be replaced to get this.
 
 ## [0.8.0] - 2026-10-31
 
