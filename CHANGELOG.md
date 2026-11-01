@@ -27,7 +27,10 @@ public API is unstable and may change without a deprecation period.
   mode 0600 and owned by root, as one holding the cluster's secret should be. The service
   runs as a dynamic user, and until now could read the file only if every account on the
   host could. The service no longer starts without the file, rather than running on the
-  defaults. A unit installed by hand has to be replaced to get this.
+  defaults. A unit installed by hand has to be replaced to get this. Once the file is mode
+  0600, `weg` run by anyone but root cannot read the API's address from it and asks
+  `127.0.0.1:8053`, where the API listens unless told otherwise; an API moved elsewhere is
+  named with `--server` or `$WEG_SERVER`.
 
 ## [0.8.0] - 2026-10-31
 
