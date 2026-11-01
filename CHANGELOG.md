@@ -8,6 +8,17 @@ public API is unstable and may change without a deprecation period.
 
 ## [Unreleased]
 
+### Added
+
+#### Packaging
+
+- Every release carries deb and rpm packages for amd64 and arm64 beside the archives, listed
+  in `checksums.txt`. They install `weg`, the systemd unit and shell completions for bash,
+  zsh and fish. Installing starts nothing. The configuration file is written from the
+  example only where there is none, and is never replaced afterwards. An upgrade restarts a
+  server that was running and leaves a stopped one stopped. Purging takes the configuration
+  and leaves the database.
+
 ### Security
 
 #### Packaging

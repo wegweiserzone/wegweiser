@@ -1,19 +1,24 @@
 #!/bin/sh
-# Installs weg the way the deployment page does, under a running systemd, and
-# checks that the unit starts it with a configuration only root can read.
+# Installs, upgrades, removes and purges the deb package under a running
+# systemd, and checks what D54 promises at each step.
 #
-#   sudo scripts/systemd-test.sh [path/to/weg]
+#   make package VERSION=0.0.1 && make package VERSION=0.0.2
+#   sudo scripts/systemd-test.sh dist/wegweiser_0.0.1_amd64.deb dist/wegweiser_0.0.2_amd64.deb
 #
-# Needs root and a running systemd, which CI's runner has. It refuses to run
-# on a machine that already has weg installed, because cleaning up afterwards
-# means deleting the state directory, and on such a machine that is a database.
+# The two packages must be different versions, the first older. Needs root
+# and a running systemd, which CI's runner has. It refuses to run on a machine
+# that already has weg on it, because cleaning up afterwards means deleting
+# the state directory, and on such a machine that is a database.
 set -eu
 
-bin=${1:-bin/weg}
-unit=packaging/systemd/wegweiser.service
+old=$1
+new=$2
+config=/etc/wegweiser/config.yaml
+unit=/usr/lib/systemd/system/wegweiser.service
+state=/var/lib/private/wegweiser
 
 for path in /usr/bin/weg /etc/wegweiser /etc/systemd/system/wegweiser.service \
-	/var/lib/wegweiser /var/lib/private/wegweiser; do
+	"$unit" /var/lib/wegweiser "$state"; do
 	if [ -e "$path" ]; then
 		echo "systemd-test: $path exists; this is for a machine without weg on it" >&2
 		exit 2
@@ -27,46 +32,100 @@ fail() {
 }
 
 cleanup() {
-	systemctl stop wegweiser 2>/dev/null || true
+	dpkg --purge wegweiser >/dev/null 2>&1 || true
 	systemctl reset-failed wegweiser 2>/dev/null || true
-	rm -rf /usr/bin/weg /etc/systemd/system/wegweiser.service /etc/wegweiser \
-		/var/lib/wegweiser /var/lib/private/wegweiser
-	systemctl daemon-reload
+	rm -rf /etc/wegweiser /var/lib/wegweiser "$state"
 }
 trap cleanup EXIT
 
-healthy() {
+version_of() { dpkg-deb -f "$1" Version; }
+
+# Waits for weg health to report the given version.
+serving() {
 	i=0
 	while [ "$i" -lt 20 ]; do
-		weg health >/dev/null 2>&1 && return 0
+		if weg health --output json 2>/dev/null | grep -q "\"version\": *\"$1\""; then
+			return 0
+		fi
 		i=$((i + 1))
 		sleep 1
 	done
 	return 1
 }
 
-install -m 0755 "$bin" /usr/bin/weg
-install -m 0644 "$unit" /etc/systemd/system/wegweiser.service
+sum() { sha256sum "$1" | cut -d' ' -f1; }
+
+echo "--- a configuration already there survives the first installation"
 install -d -m 0755 /etc/wegweiser
 # 127.0.0.1 rather than every address: systemd-resolved holds 127.0.0.53:53 on
-# Ubuntu, and the default ":53" cannot be bound beside it. The database goes
-# where the example configuration puts it.
+# Ubuntu, and the default ":53" cannot be bound beside it.
 (umask 077 && printf '%s\n' 'dns:' '  listen: "127.0.0.1:53"' 'database:' \
-	'  path: "/var/lib/wegweiser/wegweiser.db"' >/etc/wegweiser/config.yaml)
-systemctl daemon-reload
+	'  path: "/var/lib/wegweiser/wegweiser.db"' >"$config")
+before=$(sum "$config")
+dpkg -i "$old" >/dev/null
+[ "$(sum "$config")" = "$before" ] || fail "the installation changed $config"
+echo ok
 
-echo "--- a configuration of mode 0600 is read"
-systemctl start wegweiser || fail "the unit did not start"
-healthy || fail "weg health did not answer within 20 seconds"
+echo "--- installing starts nothing"
+[ -f "$unit" ] || fail "no unit at $unit"
+[ -f /usr/share/bash-completion/completions/weg ] || fail "no bash completion"
+[ "$(systemctl is-active wegweiser || true)" = inactive ] || fail "the service is running"
+[ "$(systemctl is-enabled wegweiser || true)" = disabled ] || fail "the service is enabled"
+echo ok
+
+echo "--- the unit starts it, with a configuration only root can read"
+systemctl enable --now wegweiser
+serving "$(version_of "$old")" || fail "weg health did not report $(version_of "$old")"
+echo ok
+
+echo "--- an upgrade restarts a running server on the new binary"
+dpkg -i "$new" >/dev/null
+serving "$(version_of "$new")" || fail "weg health did not report $(version_of "$new")"
+[ "$(sum "$config")" = "$before" ] || fail "the upgrade changed $config"
+echo ok
+
+echo "--- an upgrade leaves a stopped server stopped"
+systemctl stop wegweiser
+dpkg -i "$new" >/dev/null
+[ "$(systemctl is-active wegweiser || true)" = inactive ] || fail "the reinstallation started the service"
 echo ok
 
 echo "--- a missing configuration stops the start rather than running on defaults"
-systemctl stop wegweiser
-mv /etc/wegweiser/config.yaml /etc/wegweiser/config.yaml.away
+mv "$config" "$config.away"
 if systemctl start wegweiser 2>/dev/null; then
 	fail "the unit started without a configuration file"
 fi
-mv /etc/wegweiser/config.yaml.away /etc/wegweiser/config.yaml
+mv "$config.away" "$config"
+echo ok
+
+echo "--- a server that does not come back after an upgrade leaves dpkg working"
+systemctl start wegweiser
+serving "$(version_of "$new")" || fail "weg health did not report $(version_of "$new")"
+mv "$config" "$config.away"
+dpkg -i "$new" >/dev/null 2>&1 || fail "dpkg failed because the restart did"
+dpkg-query -W -f '${Status}' wegweiser | grep -q 'install ok installed' ||
+	fail "the package is $(dpkg-query -W -f '${Status}' wegweiser)"
+mv "$config.away" "$config"
+echo ok
+
+echo "--- removing keeps the configuration and the database"
+dpkg -r wegweiser >/dev/null
+[ ! -e "$unit" ] || fail "the unit is still there"
+[ -f "$config" ] || fail "removing took $config"
+[ -f "$state/wegweiser.db" ] || fail "removing took the database"
+echo ok
+
+echo "--- purging takes the configuration and keeps the database"
+dpkg -i "$new" >/dev/null
+dpkg --purge wegweiser >/dev/null
+[ ! -e /etc/wegweiser ] || fail "purging left /etc/wegweiser"
+[ -f "$state/wegweiser.db" ] || fail "purging took the database"
+echo ok
+
+echo "--- a first installation writes the example as the configuration, mode 0600"
+dpkg -i "$new" >/dev/null
+cmp -s "$config" /usr/share/doc/wegweiser/wegweiser.example.yaml || fail "$config is not the example"
+[ "$(stat -c '%a %U' "$config")" = "600 root" ] || fail "$config is $(stat -c '%a %U' "$config")"
 echo ok
 
 echo "--- exposure"

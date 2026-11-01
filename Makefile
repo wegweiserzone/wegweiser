@@ -35,6 +35,7 @@ OAPI_CODEGEN  := $(GOBIN)/oapi-codegen
 # is repeated in .github/workflows/ci.yml.
 GOLANGCI_LINT_VERSION := v2.15.0
 OAPI_CODEGEN_VERSION  := v2.8.0
+NFPM_VERSION          := v2.48.0
 
 FUZZTIME ?= 30s
 
@@ -70,6 +71,26 @@ image: ## Build the container image
 		--build-arg DATE=$(DATE) \
 		-f packaging/Containerfile -t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
 	@echo "built $(IMAGE):$(VERSION)"
+
+# The architecture packaged is the one built, so `GOARCH=arm64 make package`
+# packages for arm64. A package version has no leading v.
+PKG_ARCH    ?= $(or $(GOARCH),$(shell go env GOARCH))
+PKG_VERSION := $(patsubst v%,%,$(VERSION))
+
+# The completions are printed by a binary that runs here, whatever GOARCH says,
+# and so is nfpm.
+.PHONY: package
+package: build ## Build the deb and rpm packages into dist/ (docs/decisions/ D54)
+	@mkdir -p $(BIN_DIR)/completions dist
+	env -u GOOS -u GOARCH CGO_ENABLED=0 go build -o $(BIN_DIR)/weg-host ./cmd/weg
+	$(BIN_DIR)/weg-host completion bash > $(BIN_DIR)/completions/weg.bash
+	$(BIN_DIR)/weg-host completion fish > $(BIN_DIR)/completions/weg.fish
+	$(BIN_DIR)/weg-host completion zsh > $(BIN_DIR)/completions/_weg
+	for format in deb rpm; do \
+		env -u GOOS -u GOARCH PKG_ARCH=$(PKG_ARCH) PKG_VERSION=$(PKG_VERSION) \
+			go run github.com/goreleaser/nfpm/v2/cmd/nfpm@$(NFPM_VERSION) \
+			package -f packaging/nfpm.yaml -p $$format -t dist/; \
+	done
 
 ## --- web ------------------------------------------------------------------
 
@@ -139,7 +160,7 @@ unit-check: ## Check the systemd unit for mistakes and score its exposure
 
 .PHONY: clean
 clean: ## Remove build and coverage artefacts
-	rm -rf $(BIN_DIR) coverage.out coverage.html
+	rm -rf $(BIN_DIR) dist coverage.out coverage.html
 
 ## --- verify --------------------------------------------------------------
 

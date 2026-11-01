@@ -58,6 +58,9 @@ jobs:
       - name: Build
         run: |
           version="${GITHUB_REF_NAME#v}"
+          # One build date for every build below, so that the binary in a
+          # package is the binary in the archive beside it.
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           mkdir -p dist
           for arch in amd64 arm64; do
             GOOS=linux GOARCH="$arch" make build
@@ -65,8 +68,11 @@ jobs:
             tar -czf "dist/weg_${version}_linux_${arch}.tar.gz" \
               -C bin weg \
               -C "$GITHUB_WORKSPACE" LICENSE README.md CHANGELOG.md
+            # The deb and the rpm, which the repository at pkg.wegweiser.zone
+            # is built from (docs/decisions/d54-installed-from-packages.md).
+            GOARCH="$arch" make package
           done
-          cd dist && sha256sum ./*.tar.gz > checksums.txt && cat checksums.txt
+          cd dist && sha256sum ./*.tar.gz ./*.deb ./*.rpm > checksums.txt && cat checksums.txt
 
       # The section this tag's version already has in the changelog, so the
       # release page says the same thing the repository does rather than a

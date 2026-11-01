@@ -1,0 +1,80 @@
+# The deb and rpm packages (docs/decisions/d54-installed-from-packages.md).
+#
+# `make package` builds them into dist/ and sets the two variables used below.
+# The packages carry no dependencies: the binary is static.
+
+name: wegweiser
+arch: ${PKG_ARCH}
+platform: linux
+version: ${PKG_VERSION}
+section: net
+priority: optional
+maintainer: NichSchlagen <tim@wegweiser.zone>
+vendor: Wegweiser
+homepage: https://wegweiser.zone
+license: AGPL-3.0-or-later
+description: |
+  Authoritative DNS server with a web interface.
+  Automatic reverse zones, every change in a journal that can be rolled back,
+  and a cluster that needs no external database. One static binary, `weg`,
+  serves DNS, the API and the interface, and is the command line as well.
+
+contents:
+  - src: bin/weg
+    dst: /usr/bin/weg
+    file_info:
+      mode: 0755
+
+  # /usr/lib rather than /etc: a unit under /etc/systemd/system belongs to the
+  # administrator, and takes precedence over this one.
+  - src: packaging/systemd/wegweiser.service
+    dst: /usr/lib/systemd/system/wegweiser.service
+    file_info:
+      mode: 0644
+
+  # The example, and not /etc/wegweiser/config.yaml itself. The post-install
+  # script copies it there once, when there is no file yet; owning the file
+  # would have dpkg ask about it on every release whose example changed.
+  - dst: /usr/share/doc/wegweiser
+    type: dir
+  - src: docs/wegweiser.example.yaml
+    dst: /usr/share/doc/wegweiser/wegweiser.example.yaml
+    file_info:
+      mode: 0644
+  - src: LICENSE
+    dst: /usr/share/doc/wegweiser/LICENSE
+    file_info:
+      mode: 0644
+  - src: README.md
+    dst: /usr/share/doc/wegweiser/README.md
+    file_info:
+      mode: 0644
+  - src: CHANGELOG.md
+    dst: /usr/share/doc/wegweiser/CHANGELOG.md
+    file_info:
+      mode: 0644
+
+  - src: bin/completions/weg.bash
+    dst: /usr/share/bash-completion/completions/weg
+    file_info:
+      mode: 0644
+  - src: bin/completions/weg.fish
+    dst: /usr/share/fish/vendor_completions.d/weg.fish
+    file_info:
+      mode: 0644
+  # Debian and Fedora look for zsh's in different places.
+  - src: bin/completions/_weg
+    dst: /usr/share/zsh/vendor-completions/_weg
+    file_info:
+      mode: 0644
+    packager: deb
+  - src: bin/completions/_weg
+    dst: /usr/share/zsh/site-functions/_weg
+    file_info:
+      mode: 0644
+    packager: rpm
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  preremove: packaging/scripts/preremove.sh
+  postremove: packaging/scripts/postremove.sh
