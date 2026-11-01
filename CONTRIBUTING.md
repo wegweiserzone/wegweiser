@@ -77,7 +77,10 @@ because an installation has to know about them before it upgrades
 ([D54](docs/decisions/d54-installed-from-packages.md)). A new migration in
 `internal/store/sqlite/migrations/` is one: once it has run, an older release refuses the
 database. A change to `batchVersion` or `snapshotVersion` in `internal/apply` is the other:
-it decides the order in which a cluster's members are upgraded.
+it decides the order in which a cluster's members are upgraded. Such a change keeps reading
+the previous version too, with a test that decodes one, because a member already upgraded
+goes on applying what a leader not yet upgraded writes, and the order the documentation
+gives rests on that ([D29](docs/decisions/d29-a-node-that-cannot-apply.md)).
 
 What earns nothing: a refactor nobody can observe from outside, and a test-only change.
 
