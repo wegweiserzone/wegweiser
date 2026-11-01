@@ -154,6 +154,16 @@ sets out.
 
 ### Running it for real
 
+Debian, Ubuntu, RHEL and its rebuilds, Fedora and openSUSE install it from the project's
+package repository at `pkg.wegweiser.zone`, signed with this key:
+
+```
+1B12 102F 15DD 28E0 A9D0  10C1 BC11 6760 1CAC C922
+```
+
+[Running Wegweiser](https://wegweiser.zone/docs/deployment/#packages) says how to add the
+repository, what installing does and does not do, and how a cluster is upgraded.
+
 Bootstrap settings come from a config file, the environment or a flag, in that order of
 precedence. [docs/wegweiser.example.yaml](docs/wegweiser.example.yaml) documents every one of
 them, the packaging looks for it at `/etc/wegweiser/config.yaml`, and `weg config show`

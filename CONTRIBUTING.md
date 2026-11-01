@@ -72,6 +72,13 @@ headings, grouped by area, phrased from the reader's side rather than from the d
 A path under `docs/` that moves or is renamed earns a line too. Links to it break, and the
 person holding the broken link is exactly the reader a changelog is for.
 
+Two kinds of change also write a line under `### Upgrading`, first in the release's section,
+because an installation has to know about them before it upgrades
+([D54](docs/decisions/d54-installed-from-packages.md)). A new migration in
+`internal/store/sqlite/migrations/` is one: once it has run, an older release refuses the
+database. A change to `batchVersion` or `snapshotVersion` in `internal/apply` is the other:
+it decides the order in which a cluster's members are upgraded.
+
 What earns nothing: a refactor nobody can observe from outside, and a test-only change.
 
 If it is unclear whether a change earns a line, or which heading it belongs under, say so in
