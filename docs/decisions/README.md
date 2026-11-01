@@ -81,6 +81,7 @@ before it gets a commit; see [CONTRIBUTING.md](../../CONTRIBUTING.md). Keep one 
 | **D51** | [Accounts come from an identity provider, and a session is signed rather than stored](d51-accounts-come-from-an-identity-provider.md) |
 | **D52** | [`weg login` holds the session a browser would, and a provider's answer reaches it over loopback](d52-weg-login-holds-a-session.md) |
 | **D53** | [Three kinds of page, the full width, and a dialog or a page by how much there is](d53-how-the-interface-is-laid-out.md) |
+| **D54** | [Wegweiser is installed from packages, out of a repository of its own](d54-installed-from-packages.md) |
 
 D18 through D28 were written as architecture decision records in a directory of their own.
 They are the same kind of document and were folded into one series, keeping the dates they
